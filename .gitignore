@@ -1,0 +1,16 @@
+*~
+.cache
+.ensime*
+.idea
+.project
+bin*
+coreLibs
+project/project
+project/target
+sbt.staging
+target
+*.bak
+*.iml
+local.*
+*links.json
+gh-pages/
