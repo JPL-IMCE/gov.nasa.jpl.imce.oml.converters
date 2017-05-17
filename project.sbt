@@ -1,9 +1,9 @@
 
 sbtPlugin := false
 
-name := "gov.nasa.jpl.imce.oml2omf"
+name := "gov.nasa.jpl.imce.oml.converters"
 
-description := "Conversion from the EMF-based OML representation to the functional OMF representation"
+description := "Conversions among the three OML concrete syntaxes (textual, owl, tabular)"
 
 moduleName := name.value
 

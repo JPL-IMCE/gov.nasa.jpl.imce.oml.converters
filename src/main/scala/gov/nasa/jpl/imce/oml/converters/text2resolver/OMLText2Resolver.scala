@@ -1,3 +1,21 @@
+/*
+ * Copyright 2017 California Institute of Technology ("Caltech").
+ * U.S. Government sponsorship acknowledged.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * License Terms
+ */
+
 package gov.nasa.jpl.imce.oml.converters.text2resolver
 
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
@@ -116,14 +134,15 @@ object OMLText2Resolver {
       c24.tboxStatements.selectByKindOf { case s: ReifiedRelationship => s})
     c31 <- convertUnreifiedRelationships(c30,
       c30.tboxStatements.selectByKindOf { case s: UnreifiedRelationship => s})
-    c32 <- convertScalars(c31, c31.tboxStatements.selectByKindOf { case s: Scalar => s})
-    c33 <- convertRestrictedDataRanges(c32,
-      c32.tboxStatements.selectByKindOf { case s: RestrictedDataRange => s})
-    c34 <- convertScalarOneOfLiteralAxioms(c33,
-      c33.tboxStatements.selectByKindOf { case s: ScalarOneOfLiteralAxiom => s})
+    c32 <- convertStructures(c31, c31.tboxStatements.selectByKindOf { case s: Structure => s})
+    c33 <- convertScalars(c32, c32.tboxStatements.selectByKindOf { case s: Scalar => s})
+    c34 <- convertRestrictedDataRanges(c33,
+      c33.tboxStatements.selectByKindOf { case s: RestrictedDataRange => s})
+    c35 <- convertScalarOneOfLiteralAxioms(c34,
+      c34.tboxStatements.selectByKindOf { case s: ScalarOneOfLiteralAxiom => s})
 
-    c40 <- convertEntityScalarDataProperties(c34,
-      c34.tboxStatements.selectByKindOf { case s: EntityScalarDataProperty => s})
+    c40 <- convertEntityScalarDataProperties(c35,
+      c35.tboxStatements.selectByKindOf { case s: EntityScalarDataProperty => s})
     c41 <- convertEntityStructuredDataProperties(c40,
       c40.tboxStatements.selectByKindOf { case s: EntityStructuredDataProperty => s})
     c42 <- convertScalarDataProperties(c41,
@@ -386,9 +405,10 @@ object OMLText2Resolver {
   (o2r: OMLText2Resolver, rrs: Set[ReifiedRelationship])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
-  = rrs
-    .map { rr => Tuple3(rr, o2r.entityLookup(rr.getSource), o2r.entityLookup(rr.getTarget)) }
-    .find { t3 => t3._2.isDefined && t3._3.isDefined } match {
+  = if (rrs.nonEmpty) {
+    rrs
+      .map { rr => Tuple3(rr, o2r.entityLookup(rr.getSource), o2r.entityLookup(rr.getTarget)) }
+      .find { t3 => t3._2.isDefined && t3._3.isDefined } match {
       case Some((rri, Some(isource), Some(itarget))) =>
         val (extj, rrj) = f.createReifiedRelationship(
           extent = o2r.rextent,
@@ -418,41 +438,58 @@ object OMLText2Resolver {
           s"Cannot find any convertible ReifiedRelationship among ${rrs.size}: " +
             rrs.map(_.abbrevIRI()).mkString(", "))).left
     }
+  } else
+    o2r.right
 
   @scala.annotation.tailrec
   protected def convertUnreifiedRelationships
   (o2r: OMLText2Resolver, urs: Set[UnreifiedRelationship])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
-  = urs
-    .map { ur => Tuple3(ur, o2r.entityLookup(ur.getSource), o2r.entityLookup(ur.getTarget)) }
-    .find { t3 => t3._2.isDefined && t3._3.isDefined } match {
-    case Some((uri, Some(isource), Some(itarget))) =>
-      val (extj, urj) = f.createUnreifiedRelationship(
-        extent = o2r.rextent,
-        tbox = o2r.tboxes(uri.getTbox),
-        source = isource,
-        target = itarget,
-        isAsymmetric = uri.isIsAsymmetric,
-        isEssential = uri.isIsEssential,
-        isFunctional = uri.isIsFunctional,
-        isInverseEssential = uri.isIsInverseEssential,
-        isInverseFunctional = uri.isIsInverseFunctional,
-        isIrreflexive = uri.isIsIrreflexive,
-        isReflexive = uri.isIsReflexive,
-        isSymmetric = uri.isIsSymmetric,
-        isTransitive = uri.isIsTransitive,
-        name = uri.name())
-      val remaining = urs - uri
-      val updated = o2r.copy(rextent = extj, unreifiedRelationships = o2r.unreifiedRelationships + (uri -> urj))
-      if (remaining.isEmpty)
-        updated.right
-      else
-        convertUnreifiedRelationships(updated, remaining)
-    case _ =>
-      new EMFProblems(new java.lang.IllegalArgumentException(
-        s"Cannot find any convertible ReifiedRelationship among ${urs.size}: " +
-          urs.map(_.abbrevIRI()).mkString(", "))).left
+  = if (urs.nonEmpty) {
+    urs
+      .map { ur => Tuple3(ur, o2r.entityLookup(ur.getSource), o2r.entityLookup(ur.getTarget)) }
+      .find { t3 => t3._2.isDefined && t3._3.isDefined } match {
+      case Some((uri, Some(isource), Some(itarget))) =>
+        val (extj, urj) = f.createUnreifiedRelationship(
+          extent = o2r.rextent,
+          tbox = o2r.tboxes(uri.getTbox),
+          source = isource,
+          target = itarget,
+          isAsymmetric = uri.isIsAsymmetric,
+          isEssential = uri.isIsEssential,
+          isFunctional = uri.isIsFunctional,
+          isInverseEssential = uri.isIsInverseEssential,
+          isInverseFunctional = uri.isIsInverseFunctional,
+          isIrreflexive = uri.isIsIrreflexive,
+          isReflexive = uri.isIsReflexive,
+          isSymmetric = uri.isIsSymmetric,
+          isTransitive = uri.isIsTransitive,
+          name = uri.name())
+        val remaining = urs - uri
+        val updated = o2r.copy(rextent = extj, unreifiedRelationships = o2r.unreifiedRelationships + (uri -> urj))
+        if (remaining.isEmpty)
+          updated.right
+        else
+          convertUnreifiedRelationships(updated, remaining)
+      case _ =>
+        new EMFProblems(new java.lang.IllegalArgumentException(
+          s"Cannot find any convertible ReifiedRelationship among ${urs.size}: " +
+            urs.map(_.abbrevIRI()).mkString(", "))).left
+    }
+  } else
+    o2r.right
+
+  protected def convertStructures
+  (o2r: OMLText2Resolver, scs: Set[Structure])
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ OMLText2Resolver
+  = {
+    val result = scs.foldLeft[OMLText2Resolver](o2r) { case (ri, sci) =>
+      val (rj, scj) = f.createStructure(ri.rextent, ri.tboxes(sci.getTbox), sci.name())
+      ri.copy(rextent = rj, structures = ri.structures + (sci -> scj))
+    }
+    result.right
   }
 
   protected def convertScalars
@@ -472,95 +509,98 @@ object OMLText2Resolver {
   (o2r: OMLText2Resolver, rdrs: Set[RestrictedDataRange])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
-  = rdrs
-    .map { rdr => Tuple2(rdr, o2r.dataRanges.get(rdr.getRestrictedRange)) }
-    .find { t2 => t2._2.isDefined } match {
-    case Some((rdri, Some(rsi))) =>
-      val (extj, rdrj) = rdri match {
-        case rri: BinaryScalarRestriction =>
-          f.createBinaryScalarRestriction(
-            extent = o2r.rextent,
-            tbox = o2r.tboxes(rdri.getTbox),
-            restrictedRange = rsi,
-            length = Option.apply(rri.getLength),
-            minLength = Option.apply(rri.getMinLength),
-            maxLength = Option.apply(rri.getMaxLength),
-            name = rri.name)
-        case rri: IRIScalarRestriction =>
-          f.createIRIScalarRestriction(
-            extent = o2r.rextent,
-            tbox = o2r.tboxes(rdri.getTbox),
-            restrictedRange = rsi,
-            length = Option.apply(rri.getLength),
-            minLength = Option.apply(rri.getMinLength),
-            maxLength = Option.apply(rri.getMaxLength),
-            pattern = Option.apply(rri.getPattern),
-            name = rri.name)
-        case rri: NumericScalarRestriction =>
-          f.createNumericScalarRestriction(
-            extent = o2r.rextent,
-            tbox = o2r.tboxes(rdri.getTbox),
-            restrictedRange = rsi,
-            minExclusive = Option.apply(rri.getMinExclusive),
-            minInclusive = Option.apply(rri.getMinInclusive),
-            maxExclusive = Option.apply(rri.getMaxExclusive),
-            maxInclusive = Option.apply(rri.getMaxInclusive),
-            name = rri.name)
-        case rri: PlainLiteralScalarRestriction =>
-          f.createPlainLiteralScalarRestriction(
-            extent = o2r.rextent,
-            tbox = o2r.tboxes(rdri.getTbox),
-            restrictedRange = rsi,
-            length = Option.apply(rri.getLength),
-            minLength = Option.apply(rri.getMinLength),
-            maxLength = Option.apply(rri.getMaxLength),
-            pattern = Option.apply(rri.getPattern),
-            langRange = Option.apply(rri.getLangRange),
-            name = rri.name)
-        case rri: ScalarOneOfRestriction =>
-          f.createScalarOneOfRestriction(
-            extent = o2r.rextent,
-            tbox = o2r.tboxes(rdri.getTbox),
-            restrictedRange = rsi,
-            name = rri.name)
-        case rri: StringScalarRestriction =>
-          f.createStringScalarRestriction(
-            extent = o2r.rextent,
-            tbox = o2r.tboxes(rdri.getTbox),
-            restrictedRange = rsi,
-            length = Option.apply(rri.getLength),
-            minLength = Option.apply(rri.getMinLength),
-            maxLength = Option.apply(rri.getMaxLength),
-            pattern = Option.apply(rri.getPattern),
-            name = rri.name)
-        case rri: SynonymScalarRestriction =>
-          f.createSynonymScalarRestriction(
-            extent = o2r.rextent,
-            tbox = o2r.tboxes(rdri.getTbox),
-            restrictedRange = rsi,
-            name = rri.name)
-        case rri: TimeScalarRestriction =>
-          f.createTimeScalarRestriction(
-            extent = o2r.rextent,
-            tbox = o2r.tboxes(rdri.getTbox),
-            restrictedRange = rsi,
-            minExclusive = Option.apply(rri.getMinExclusive),
-            minInclusive = Option.apply(rri.getMinInclusive),
-            maxExclusive = Option.apply(rri.getMaxExclusive),
-            maxInclusive = Option.apply(rri.getMaxInclusive),
-            name = rri.name)
-      }
-      val remaining = rdrs - rdri
-      val updated = o2r.copy(rextent = extj, dataRanges = o2r.dataRanges + (rdri -> rdrj))
-      if (remaining.isEmpty)
-        updated.right
-      else
-        convertRestrictedDataRanges(updated, remaining)
-    case _ =>
-      new EMFProblems(new java.lang.IllegalArgumentException(
-        s"Cannot find any convertible RestrictedDataRange among ${rdrs.size}: " +
-          rdrs.map(_.abbrevIRI()).mkString(", "))).left
-  }
+  = if (rdrs.nonEmpty) {
+    rdrs
+      .map { rdr => Tuple2(rdr, o2r.dataRanges.get(rdr.getRestrictedRange)) }
+      .find { t2 => t2._2.isDefined } match {
+      case Some((rdri, Some(rsi))) =>
+        val (extj, rdrj) = rdri match {
+          case rri: BinaryScalarRestriction =>
+            f.createBinaryScalarRestriction(
+              extent = o2r.rextent,
+              tbox = o2r.tboxes(rdri.getTbox),
+              restrictedRange = rsi,
+              length = Option.apply(rri.getLength),
+              minLength = Option.apply(rri.getMinLength),
+              maxLength = Option.apply(rri.getMaxLength),
+              name = rri.name)
+          case rri: IRIScalarRestriction =>
+            f.createIRIScalarRestriction(
+              extent = o2r.rextent,
+              tbox = o2r.tboxes(rdri.getTbox),
+              restrictedRange = rsi,
+              length = Option.apply(rri.getLength),
+              minLength = Option.apply(rri.getMinLength),
+              maxLength = Option.apply(rri.getMaxLength),
+              pattern = Option.apply(rri.getPattern),
+              name = rri.name)
+          case rri: NumericScalarRestriction =>
+            f.createNumericScalarRestriction(
+              extent = o2r.rextent,
+              tbox = o2r.tboxes(rdri.getTbox),
+              restrictedRange = rsi,
+              minExclusive = Option.apply(rri.getMinExclusive),
+              minInclusive = Option.apply(rri.getMinInclusive),
+              maxExclusive = Option.apply(rri.getMaxExclusive),
+              maxInclusive = Option.apply(rri.getMaxInclusive),
+              name = rri.name)
+          case rri: PlainLiteralScalarRestriction =>
+            f.createPlainLiteralScalarRestriction(
+              extent = o2r.rextent,
+              tbox = o2r.tboxes(rdri.getTbox),
+              restrictedRange = rsi,
+              length = Option.apply(rri.getLength),
+              minLength = Option.apply(rri.getMinLength),
+              maxLength = Option.apply(rri.getMaxLength),
+              pattern = Option.apply(rri.getPattern),
+              langRange = Option.apply(rri.getLangRange),
+              name = rri.name)
+          case rri: ScalarOneOfRestriction =>
+            f.createScalarOneOfRestriction(
+              extent = o2r.rextent,
+              tbox = o2r.tboxes(rdri.getTbox),
+              restrictedRange = rsi,
+              name = rri.name)
+          case rri: StringScalarRestriction =>
+            f.createStringScalarRestriction(
+              extent = o2r.rextent,
+              tbox = o2r.tboxes(rdri.getTbox),
+              restrictedRange = rsi,
+              length = Option.apply(rri.getLength),
+              minLength = Option.apply(rri.getMinLength),
+              maxLength = Option.apply(rri.getMaxLength),
+              pattern = Option.apply(rri.getPattern),
+              name = rri.name)
+          case rri: SynonymScalarRestriction =>
+            f.createSynonymScalarRestriction(
+              extent = o2r.rextent,
+              tbox = o2r.tboxes(rdri.getTbox),
+              restrictedRange = rsi,
+              name = rri.name)
+          case rri: TimeScalarRestriction =>
+            f.createTimeScalarRestriction(
+              extent = o2r.rextent,
+              tbox = o2r.tboxes(rdri.getTbox),
+              restrictedRange = rsi,
+              minExclusive = Option.apply(rri.getMinExclusive),
+              minInclusive = Option.apply(rri.getMinInclusive),
+              maxExclusive = Option.apply(rri.getMaxExclusive),
+              maxInclusive = Option.apply(rri.getMaxInclusive),
+              name = rri.name)
+        }
+        val remaining = rdrs - rdri
+        val updated = o2r.copy(rextent = extj, dataRanges = o2r.dataRanges + (rdri -> rdrj))
+        if (remaining.isEmpty)
+          updated.right
+        else
+          convertRestrictedDataRanges(updated, remaining)
+      case _ =>
+        new EMFProblems(new java.lang.IllegalArgumentException(
+          s"Cannot find any convertible RestrictedDataRange among ${rdrs.size}: " +
+            rdrs.map(_.abbrevIRI()).mkString(", "))).left
+    }
+  } else
+    o2r.right
 
   @scala.annotation.tailrec
   def convertScalarOneOfLiteralAxioms
@@ -652,7 +692,7 @@ object OMLText2Resolver {
   else {
     val (dpi, remaining) = (dps.head, dps.tail)
     (o2r.structures.get(dpi.getDomain), o2r.dataRanges.get(dpi.getRange)) match {
-      case (Some(domain: api.Entity), Some(range: api.DataRange)) =>
+      case (Some(domain: api.Structure), Some(range: api.DataRange)) =>
         val (rj, dpj) = f.createScalarDataProperty(
           o2r.rextent,
           o2r.tboxes(dpi.getTbox),
@@ -677,7 +717,7 @@ object OMLText2Resolver {
   else {
     val (dpi, remaining) = (dps.head, dps.tail)
     (o2r.structures.get(dpi.getDomain), o2r.structures.get(dpi.getRange)) match {
-      case (Some(domain: api.Entity), Some(range: api.Structure)) =>
+      case (Some(domain: api.Structure), Some(range: api.Structure)) =>
         val (rj, dpj) = f.createStructuredDataProperty(
           o2r.rextent,
           o2r.tboxes(dpi.getTbox),

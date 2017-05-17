@@ -1,6 +1,7 @@
 
 import sbt.Keys._
 import sbt._
+import com.typesafe.sbt.packager.SettingsHelper._
 
 import java.lang.System
 import gov.nasa.jpl.imce.sbt._
@@ -29,14 +30,35 @@ def eclipsePlugin(name: String, version: String)
 lazy val core = Project("omlConverters", file("."))
   .enablePlugins(IMCEGitPlugin)
   .enablePlugins(JavaAppPackaging)
+  //.enablePlugins(UniversalDeployPlugin)
   .settings(IMCEPlugin.strictScalacFatalWarningsSettings)
   .settings(
     IMCEKeys.licenseYearOrRange := "2017",
     IMCEKeys.organizationInfo := IMCEPlugin.Organizations.omf,
 
-    mainClass in Compile := Some("gov.nasa.jpl.imce.oml2omf.OML2OMF"),
+    // 'omlConverter' will be a command-line script to run
+    // the single application, gov.nasa.jpl.imce.oml.converters.OMLConverter
+    executableScriptName := "omlConverter",
 
-    buildInfoPackage := "gov.nasa.jpl.imce.oml2omf",
+    packagedArtifacts in publish += {
+      val p = (packageBin in Universal).value
+      val n = (name in Universal).value
+      Artifact(n, "zip", "zip", Some("resource"), Seq(), None, Map()) -> p
+    },
+
+    packagedArtifacts in publishLocal += {
+      val p = (packageBin in Universal).value
+      val n = (name in Universal).value
+      Artifact(n, "zip", "zip", Some("resource"), Seq(), None, Map()) -> p
+    },
+
+    packagedArtifacts in publishM2 += {
+      val p = (packageBin in Universal).value
+      val n = (name in Universal).value
+      Artifact(n, "zip", "zip", Some("resource"), Seq(), None, Map()) -> p
+    },
+
+    buildInfoPackage := "gov.nasa.jpl.imce.oml.converters",
     buildInfoKeys ++= Seq[BuildInfoKey](BuildInfoKey.action("buildDateUTC") { buildUTCDate.value }),
 
     projectID := {
@@ -68,13 +90,7 @@ lazy val core = Project("omlConverters", file("."))
     scalacOptions += "-g:vars",
 
     libraryDependencies ++= Seq(
-      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.dsl" % Versions_oml_core.version exclude("org.apache", "org.apache.log4j"),
-
-      "gov.nasa.jpl.imce" %% "gov.nasa.jpl.imce.oml.resolver" % Versions_oml_resolver.version,
-
-      "gov.nasa.jpl.imce" %% "imce.third_party.other_scala_libraries"
-        % Versions_other_scala_libraries.version artifacts
-        Artifact("imce.third_party.other_scala_libraries", "zip", "zip", "resource"),
+      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.dsl" % Versions_oml_core.version withSources() exclude("org.apache", "org.apache.log4j"),
 
       "org.eclipse.xtext" % "org.eclipse.xtext" % "2.11.1-SNAPSHOT",
       eclipsePlugin("org.eclipse.emf.mwe2.runtime", "2.9.0.v201605261103"),
@@ -85,15 +101,14 @@ lazy val core = Project("omlConverters", file("."))
       eclipsePlugin("org.eclipse.uml2.uml.resources", "5.2.0.v20170227-0935")
     )
   )
-//  .dependsOnSourceProjectOrLibraryArtifacts(
-//    "jpl.omf.schema.resolver",
-//    "jpl.omf.schema.resolver",
-//    Seq(
-//      "gov.nasa.jpl.imce" %% "jpl.omf.schema.resolver"
-//        % Versions_omf_schema_resolver.version
-//        % "compile" artifacts(
-//        Artifact("jpl.omf.schema.resolver"),
-//        Artifact("jpl.omf.schema.resolver", "zip", "zip", "resource")
-//        )
-//    )
-//  )
+  .dependsOnSourceProjectOrLibraryArtifacts(
+    "omf-scala-binding-owlapi",
+    "gov.nasa.jpl.omf.scala.binding.owlapi",
+    Seq(
+      "gov.nasa.jpl.imce" %% "gov.nasa.jpl.omf.scala.binding.owlapi"
+        % Versions_omf_owlapi.version
+        % "compile" withSources() artifacts(
+        Artifact("gov.nasa.jpl.omf.scala.binding.owlapi"),
+        Artifact("gov.nasa.jpl.omf.scala.binding.owlapi", "zip", "zip", "resource"))
+    )
+  )

@@ -6,6 +6,8 @@ import de.heikoseeberger.sbtheader.HeaderPattern
 import de.heikoseeberger.sbtheader.license.CommentBlock
 import scala.util.matching.Regex
 
+// use `sbt createHeaders` to update source code headers.
+
 licenses in GlobalScope += "Apache-2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0.html")
 
 val license =
