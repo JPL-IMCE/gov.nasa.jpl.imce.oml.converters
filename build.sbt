@@ -12,25 +12,14 @@ updateOptions := updateOptions.value.withCachedResolution(true)
 import scala.io.Source
 import scala.util.control.Exception._
 
-resolvers += "Xtext-core 2.11 maintenance" at "http://services.typefox.io/open-source/jenkins/job/xtext-core/job/maintenance_2.11/lastSuccessfulBuild/artifact/build/maven-repository"
+lazy val omlProductDir = settingKey[File]("Location of the gov.nasa.jpl.imce.oml.runtime.platform.updatesite's plugin folder")
 
-resolvers += "Xtext-xtend 2.11 maintenance" at "http://services.typefox.io/open-source/jenkins/job/xtext-xtend/job/maintenance_2.11/lastSuccessfulBuild/artifact/build/maven-repository"
-
-resolvers += "Xtext-lib 2.11 maintenance" at "http://services.typefox.io/open-source/jenkins/job/xtext-lib/job/maintenance_2.11/lastSuccessfulBuild/artifact/build/maven-repository"
-
-resolvers += "Xtext-eclipse 2.11 maintenance" at "http://services.typefox.io/open-source/jenkins/job/xtext-eclipse/job/maintenance_2.11/lastSuccessfulBuild/artifact/build/maven-repository"
-
-val EclipseNeonRepo = "http://builds.gradle.org:8000/eclipse/update-site/mirror/releases-neon"
-
-def eclipsePlugin(name: String, version: String)
-: ModuleID
-= ModuleID(organization="plugins", name=name, revision=version)
-  .from(s"${EclipseNeonRepo}/plugins/${name}_${version}.jar")
+lazy val extractOMLProduct = taskKey[PathFinder]("Extract the OML platform update site to a folder")
 
 lazy val core = Project("omlConverters", file("."))
   .enablePlugins(IMCEGitPlugin)
   .enablePlugins(JavaAppPackaging)
-  //.enablePlugins(UniversalDeployPlugin)
+  .enablePlugins(UniversalDeployPlugin)
   .settings(IMCEPlugin.strictScalacFatalWarningsSettings)
   .settings(
     IMCEKeys.licenseYearOrRange := "2017",
@@ -70,16 +59,12 @@ lazy val core = Project("omlConverters", file("."))
 
     IMCEKeys.targetJDK := IMCEKeys.jdk18.value,
     git.baseVersion := Versions.version,
-    // include all test artifacts
-    publishArtifact in Test := true,
 
-    scalaSource in Test := baseDirectory.value / "test",
+    resolvers +=
+      "Artifactory" at "https://cae-artifactory.jpl.nasa.gov/artifactory/maven-libs-release-local/",
 
     resolvers += Resolver.bintrayRepo("jpl-imce", "gov.nasa.jpl.imce"),
     resolvers += Resolver.bintrayRepo("tiwg", "org.omg.tiwg"),
-
-    resolvers += MavenCache( "gradle mavenized eclipse target platform",
-      file(System.getenv("HOME")+"/.tooling/eclipse/targetPlatforms/46/mavenized-target-platform/")),
 
     resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases",
     scalacOptions in (Compile, compile) += s"-P:artima-supersafe:config-file:${baseDirectory.value}/project/supersafe.cfg",
@@ -90,16 +75,59 @@ lazy val core = Project("omlConverters", file("."))
     scalacOptions += "-g:vars",
 
     libraryDependencies ++= Seq(
-      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.dsl" % Versions_oml_core.version withSources() exclude("org.apache", "org.apache.log4j"),
+      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.dsl" % Versions_oml_core.version,
+      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.model" % Versions_oml_core.version,
+      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.runtime.platform.updatesite"
+        % "0.7.0.1" artifacts
+        Artifact("gov.nasa.jpl.imce.oml.runtime.platform.updatesite", "zip", "zip")
+    ),
 
-      "org.eclipse.xtext" % "org.eclipse.xtext" % "2.11.1-SNAPSHOT",
-      eclipsePlugin("org.eclipse.emf.mwe2.runtime", "2.9.0.v201605261103"),
-      eclipsePlugin("org.eclipse.uml2.uml", "5.2.3.v20170227-0935"),
-      eclipsePlugin("org.eclipse.uml2.common", "2.1.0.v20170227-0935"),
-      eclipsePlugin("org.eclipse.uml2.uml.profile.standard", "1.0.100.v20170227-0935"),
-      eclipsePlugin("org.eclipse.uml2.types", "2.0.0.v20170227-0935"),
-      eclipsePlugin("org.eclipse.uml2.uml.resources", "5.2.0.v20170227-0935")
-    )
+    // Avoid unresolvable dependencies from old versions of log4j
+    libraryDependencies ~= {
+      _ map {
+        case m if m.organization == "log4j" =>
+          m
+            .exclude("javax.jms", "jms")
+            .exclude("com.sun.jmx", "jmxri")
+            .exclude("com.sun.jdmk", "jmxtools")
+        case m => m
+      }
+    },
+
+    omlProductDir := baseDirectory.value / "target" / "omlProduct",
+
+    extractOMLProduct := {
+      val upd: File = omlProductDir.value
+      val s = streams.value
+
+      if (!upd.exists) {
+        s.log.warn("Looking for OML product...")
+        for {
+          c <- update.value.configurations
+          if c.configuration == "compile"
+          m <- c.modules
+          (artifact, archive) <- m.artifacts
+          if artifact.name.startsWith("gov.nasa.jpl.imce.oml.runtime.platform.updatesite")
+          if artifact.extension == "zip"
+        } yield {
+          s.log.warn("... found! Extracting.")
+          val files = IO.unzip(archive, upd)
+          require(files.nonEmpty)
+          s.log.warn(s"Extracted ${files.size} files from $archive")
+          ()
+        }
+      }
+
+      // @see https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.tycho/issues/15
+      IO.delete((upd / "plugins" / "org.eclipse.emf.cdo.ecore.retrofit*").get)
+
+      val jars = ( upd / "plugins" ) ** "*.jar"
+      jars
+    },
+
+    unmanagedJars in Compile := extractOMLProduct.value.classpath,
+
+    unmanagedJars in (Compile, doc) := extractOMLProduct.value.classpath
   )
   .dependsOnSourceProjectOrLibraryArtifacts(
     "omf-scala-binding-owlapi",

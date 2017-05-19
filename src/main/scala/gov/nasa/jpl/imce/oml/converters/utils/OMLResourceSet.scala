@@ -19,7 +19,7 @@
 package gov.nasa.jpl.imce.oml.converters.utils
 
 import gov.nasa.jpl.imce.oml.model.common.Extent
-import gov.nasa.jpl.imce.oml.dsl.OntologicalModelingLanguageStandaloneSetup
+import gov.nasa.jpl.imce.oml.dsl.OMLStandaloneSetup
 import org.eclipse.emf.common.util.URI
 import org.eclipse.emf.ecore.resource.Resource
 import org.eclipse.emf.ecore.util.EcoreUtil
@@ -35,7 +35,7 @@ object OMLResourceSet {
 
   def initializeResourceSet(): XtextResourceSet = {
     XcoreStandaloneSetup.doSetup()
-    OntologicalModelingLanguageStandaloneSetup.doSetup()
+    OMLStandaloneSetup.doSetup()
     new XtextResourceSet()
   }
 

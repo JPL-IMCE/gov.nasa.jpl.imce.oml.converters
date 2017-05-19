@@ -539,8 +539,8 @@ object OMLConverterFromTextualConcreteSyntax {
           _ <- tbox.boxStatements.foldLeft[\/[Set[java.lang.Throwable], Unit]](().right) {
             case (acc1, dr: api.EntityScalarDataProperty) =>
               acc1.flatMap { _ =>
-                ( ops.lookupEntity(mg, dr.source.iri, recursively = true),
-                  ops.lookupDataRange(mg, dr.target.iri, recursively = true)) match {
+                ( ops.lookupEntity(mg, dr.source().iri, recursively = true),
+                  ops.lookupDataRange(mg, dr.target().iri, recursively = true)) match {
                   case (Some(s), Some(t)) =>
                     ops
                       .addEntityScalarDataProperty(mg, s, t, LocalName(dr.name), dr.isIdentityCriteria)
@@ -558,8 +558,8 @@ object OMLConverterFromTextualConcreteSyntax {
               }
             case (acc1, dr: api.EntityStructuredDataProperty) =>
               acc1.flatMap { _ =>
-                ( ops.lookupEntity(mg, dr.source.iri, recursively = true),
-                  ops.lookupStructure(mg, dr.target.iri, recursively = true)) match {
+                ( ops.lookupEntity(mg, dr.source().iri, recursively = true),
+                  ops.lookupStructure(mg, dr.target().iri, recursively = true)) match {
                   case (Some(s), Some(t)) =>
                     ops
                       .addEntityStructuredDataProperty(mg, s, t, LocalName(dr.name), dr.isIdentityCriteria)
@@ -577,8 +577,8 @@ object OMLConverterFromTextualConcreteSyntax {
               }
             case (acc1, dr: api.ScalarDataProperty) =>
               acc1.flatMap { _ =>
-                ( ops.lookupStructure(mg, dr.source.iri, recursively = true),
-                  ops.lookupDataRange(mg, dr.target.iri, recursively = true)) match {
+                ( ops.lookupStructure(mg, dr.source().iri, recursively = true),
+                  ops.lookupDataRange(mg, dr.target().iri, recursively = true)) match {
                   case (Some(s), Some(t)) =>
                     ops
                       .addScalarDataProperty(mg, s, t, LocalName(dr.name))
@@ -596,8 +596,8 @@ object OMLConverterFromTextualConcreteSyntax {
               }
             case (acc1, dr: api.StructuredDataProperty) =>
               acc1.flatMap { _ =>
-                ( ops.lookupStructure(mg, dr.source.iri, recursively = true),
-                  ops.lookupStructure(mg, dr.target.iri, recursively = true)) match {
+                ( ops.lookupStructure(mg, dr.source().iri, recursively = true),
+                  ops.lookupStructure(mg, dr.target().iri, recursively = true)) match {
                   case (Some(s), Some(t)) =>
                     ops
                       .addStructuredDataProperty(mg, s, t, LocalName(dr.name))

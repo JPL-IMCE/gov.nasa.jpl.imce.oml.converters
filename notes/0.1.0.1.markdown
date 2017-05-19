@@ -1,0 +1,4 @@
+gov.nasa.jpl.imce.oml.converters 0.1.0.1 is a JPL internal release build for testing.
+
+In this version, the only supported conversion is from OML textual concrete syntax for OML TerminologyBox only.
+(i.e., converting OML DescriptionBox is not yet supported.)

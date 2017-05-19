@@ -51,6 +51,8 @@ object OMLConverter {
       System.out.println(usage())
     else {
       val args = argv.to[List]
+      System.out.println(s"# ${args.size} args")
+      args.foreach { arg => System.out.println(s"# $arg") }
 
       if (args.size > 2 &&
           args.head == "-out" &&
