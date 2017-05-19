@@ -60,9 +60,6 @@ lazy val core = Project("omlConverters", file("."))
     IMCEKeys.targetJDK := IMCEKeys.jdk18.value,
     git.baseVersion := Versions.version,
 
-    resolvers +=
-      "Artifactory" at "https://cae-artifactory.jpl.nasa.gov/artifactory/maven-libs-release-local/",
-
     resolvers += Resolver.bintrayRepo("jpl-imce", "gov.nasa.jpl.imce"),
     resolvers += Resolver.bintrayRepo("tiwg", "org.omg.tiwg"),
 
