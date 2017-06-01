@@ -1,5 +1,7 @@
 # Converters among the canonical representations of OML models
 
+[![Build Status](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters.svg?branch=master)](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters)
+
 OML supports three canonical representations:
 1) OML textual concrete syntax (`*.oml`)
 
@@ -44,24 +46,28 @@ OML supports three canonical representations:
     
 ### Convert from OML textual concrete Syntax
 
-- `omlConverter -out <*.oml.json.zip> <*.oml> ...`
+- `omlConverter -cat <oml.catalog.xml> <*.oml> ...`
     
-    The single `*.oml.json.zip` output file will contain the OML textual concrete syntax representation 
-    of all `*.oml` files provided which will be also converted to corresponding OML ontological representations. 
+    Use the `oml.catalog.xml` file to convert all `*.oml` files from the OML textual concrete syntax representation 
+    to corresponding OML ontological (`*.owl`) and tabular representations (`*.oml.json.zip`).
     
 ### Convert from OML normalilzed tabular relational schema
 
-- `omlConverter <*.oml.json.zip> ....`
+- `omlConverter -cat <oml.catalog.xml> <*.oml.json.zip> ....`
     
-    The aggregated content of all of `*.oml.json.zip` files will be converted to corresponding
-    OML textual concrete syntax and OML ontological representations.
+   Use the `oml.catalog.xml` file to convert all `*.oml.json.zip` files from the OML tabular representation 
+   to corresponding OML ontological (`*.owl`) and textual concrete syntax representations (`*.oml`).
+       
     
 ### Convert from OML ontologies
 
-- `omlConverter -out <*.oml.json.zip> -cat <oml.catalog.xml> <oml ontologies> ...`
+- `omlConverter -cat <oml.catalog.xml> <IRI> ...`
                      
-    `<oml.catalog.xml>` must be an OASIS XML catalog file named `oml.catalog.xml`.
-    The single `*.oml.json.zip` output will contain the representation of all `<oml ontologies> ` provided which
-    will be also converted to corresponding OML textual concrete syntax representations. 
-    Each of the `<oml ontologies>` must be an `iri` resolvable to an `*.owl` file
-    via the `<oml.catalog.xml>` catalog.
+  Use the `oml.catalog.xml` file to convert all OML ontological representations resolved from the `<IRI>` provided
+  to corresponding OML textual concrete syntax (`*.oml`) and tabular representations (`*.oml.json.zip`).
+      
+- `omlConverter -cat <oml.catalog.xml> <*.owl> ...`
+                     
+  Use the `oml.catalog.xml` file to convert all `*.owl` files from the OML ontological representation
+  to corresponding OML textual concrete syntax (`*.oml`) and tabular representations (`*.oml.json.zip`).
+      
