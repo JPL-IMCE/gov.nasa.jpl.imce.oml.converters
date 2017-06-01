@@ -16,19 +16,18 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.converters.text2resolver
+package gov.nasa.jpl.imce.oml.converters
 
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
+import gov.nasa.jpl.imce.oml.model.bundles._
 import gov.nasa.jpl.imce.oml.model.common._
+import gov.nasa.jpl.imce.oml.model.descriptions._
 import gov.nasa.jpl.imce.oml.model.graphs._
 import gov.nasa.jpl.imce.oml.model.terminologies._
-import gov.nasa.jpl.imce.oml.model.bundles._
-import gov.nasa.jpl.imce.oml.model.descriptions._
 import gov.nasa.jpl.imce.oml.resolver.api
 import gov.nasa.jpl.imce.oml.tables.{ClosedWorldDesignations, OpenWorldDefinitions, TerminologyKind => TTerminologyKind}
 import gov.nasa.jpl.imce.oml.tables.{Final, Partial, DescriptionKind => TDescriptionKind}
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
-import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 import org.eclipse.xtext.resource.XtextResourceSet
 
 import scala.collection.JavaConverters._
@@ -37,6 +36,9 @@ import scala.Predef.ArrowAssoc
 import scala.{None, Option, Some, StringContext, Tuple2, Tuple3}
 import scalaz._, Scalaz._
 
+/*
+ Manage 1 OML Extent => 1 OMLText2Resolver.
+ */
 case class OMLText2Resolver
 (rextent: api.Extent,
  tboxes: Map[TerminologyBox, api.TerminologyBox] = Map.empty,
@@ -101,90 +103,129 @@ case class OMLText2Resolver
 
 object OMLText2Resolver {
 
-  def convertOMLResources2Resolver
+  def convert
   (rs: XtextResourceSet)
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = for {
     extents <- OMLResourceSet.getOMLExtents(rs)
-    c00 = OMLText2Resolver(rextent = api.Extent())
-    c01 <- convertModules(c00, extents.flatMap(_.getModules.asScala))
-    c02 <- convertAnnotationProperties(c01,
-      extents.flatMap(_.getAnnotationProperties.asScala))
-    c03 <- convertTerminologyExtensions(c02,
-      c02.tboxAxioms.selectByKindOf { case ax: TerminologyExtensionAxiom => ax})
+    c00 = extents.map {
+      _ -> OMLText2Resolver(rextent = api.Extent())
+    }
 
-    c10 <- convertAspects(c03,
-      c03.tboxStatements.selectByKindOf { case s: Aspect => s})
-    c11 <- convertConcepts(c10,
-      c10.tboxStatements.selectByKindOf { case s: Concept => s})
+    // Modules
+    c01 <- c00.foldLeft {
+      Map.empty[Extent, OMLText2Resolver].right[EMFProblems]
+    } { case (acc, (e, omlt2r)) =>
+      for {
+        ci <- acc
+        updated <- convertModules(omlt2r, e.getModules.asScala.to[Set])
+      } yield ci + (e -> updated)
+    }
+  } yield c01
 
-    c20 <- convertConceptDesignationTerminologyAxioms(c11,
-      c11.tboxAxioms.selectByKindOf { case ax: ConceptDesignationTerminologyAxiom => ax})
-    c21 <- convertTerminologyNestingAxioms(c20,
-      c20.tboxAxioms.selectByKindOf { case ax: TerminologyNestingAxiom => ax})
-    c22 <- convertBundledTerminologyAxioms(c21,
-      c21.tboxAxioms.selectByKindOf { case ax: BundledTerminologyAxiom => ax})
-    c23 <- convertDescriptionBoxExtendsClosedWorldDefinitions(c22,
-      c22.dboxDefinitions)
-    c24 <- convertDescriptionBoxRefinements(c23,
-      c23.dboxRefinements)
+//    // AnnotationProperties
+//    c02 <- convertAnnotationProperties(c01,
+//      extents.flatMap(_.getAnnotationProperties.asScala))
+//
+//    // TerminologyExtensions
+//
+//    c03 <- convertTerminologyExtensions(c02,
+//      c02.tboxAxioms.selectByKindOf { case ax: TerminologyExtensionAxiom => ax})
+//
+//    // Atomic Entities
+//
+//    c10 <- convertAspects(c03,
+//      c03.tboxStatements.selectByKindOf { case s: Aspect => s})
+//    c11 <- convertConcepts(c10,
+//      c10.tboxStatements.selectByKindOf { case s: Concept => s})
+//
+//    // Other ModuleEdges
+//
+//    c20 <- convertConceptDesignationTerminologyAxioms(c11,
+//      c11.tboxAxioms.selectByKindOf { case ax: ConceptDesignationTerminologyAxiom => ax})
+//    c21 <- convertTerminologyNestingAxioms(c20,
+//      c20.tboxAxioms.selectByKindOf { case ax: TerminologyNestingAxiom => ax})
+//    c22 <- convertBundledTerminologyAxioms(c21,
+//      c21.tboxAxioms.selectByKindOf { case ax: BundledTerminologyAxiom => ax})
+//    c23 <- convertDescriptionBoxExtendsClosedWorldDefinitions(c22,
+//      c22.dboxDefinitions)
+//    c24 <- convertDescriptionBoxRefinements(c23,
+//      c23.dboxRefinements)
+//
+//    // Relationships
+//
+//    c30 <- convertReifiedRelationships(c24,
+//      c24.tboxStatements.selectByKindOf { case s: ReifiedRelationship => s})
+//    c31 <- convertUnreifiedRelationships(c30,
+//      c30.tboxStatements.selectByKindOf { case s: UnreifiedRelationship => s})
+//
+//    // DataTypes
+//
+//    c32 <- convertStructures(c31, c31.tboxStatements.selectByKindOf { case s: Structure => s})
+//    c33 <- convertScalars(c32, c32.tboxStatements.selectByKindOf { case s: Scalar => s})
+//    c34 <- convertRestrictedDataRanges(c33,
+//      c33.tboxStatements.selectByKindOf { case s: RestrictedDataRange => s})
+//    c35 <- convertScalarOneOfLiteralAxioms(c34,
+//      c34.tboxStatements.selectByKindOf { case s: ScalarOneOfLiteralAxiom => s})
+//
+//    // DataRelationships
+//
+//    c40 <- convertEntityScalarDataProperties(c35,
+//      c35.tboxStatements.selectByKindOf { case s: EntityScalarDataProperty => s})
+//    c41 <- convertEntityStructuredDataProperties(c40,
+//      c40.tboxStatements.selectByKindOf { case s: EntityStructuredDataProperty => s})
+//    c42 <- convertScalarDataProperties(c41,
+//      c41.tboxStatements.selectByKindOf { case s: ScalarDataProperty => s})
+//    c43 <- convertStructuredDataProperties(c42,
+//      c42.tboxStatements.selectByKindOf { case s: StructuredDataProperty => s})
+//
+//    // Restrictions
+//
+//    c50 <- convertEntityRestrictionAxioms(c43,
+//      c43.tboxStatements.selectByKindOf { case ax: EntityRestrictionAxiom => ax})
+//    c51 <- convertEntityScalarDataPropertyRestrictionAxioms(c50,
+//      c50.tboxStatements.selectByKindOf { case ax: EntityScalarDataPropertyRestrictionAxiom => ax })
+//
+//    // Specializations
+//
+//    c52 <- convertSpecializationAxioms(c51,
+//      c51.tboxStatements.selectByKindOf { case ax: SpecializationAxiom => ax })
+//
+//    // Disjunctions
+//
+//    c60 <- convertRootConceptTaxonomyAxioms(c52,
+//      c52.bundleStatements.selectByKindOf { case ax: RootConceptTaxonomyAxiom => ax})
+//
+//    // ConceptualEntityInstances
+//
+//    c70 <- convertConceptInstances(c60,
+//      c60.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getConceptInstances.asScala.to[List])}.to[List])
+//    c71 <- convertReifiedRelationshipInstances(c70,
+//      c70.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getReifiedRelationshipInstances.asScala.to[List])}.to[List])
+//    c72 <- convertReifiedRelationshipInstanceDomains(c71,
+//      c71.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getReifiedRelationshipInstanceDomains.asScala.to[List])}.to[List])
+//    c73 <- convertReifiedRelationshipInstanceRanges(c72,
+//      c72.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getReifiedRelationshipInstanceRanges.asScala.to[List])}.to[List])
+//    c74 <- convertUnreifiedRelationshipInstances(c73,
+//      c73.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getUnreifiedRelationshipInstanceTuples.asScala.to[List])}.to[List])
+//
+//    // Data Property Values
+//
+//    c80 <- convertSingletonScalarDataPropertyValues(c74,
+//      c74.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getSingletonScalarDataPropertyValues.asScala.to[List])}.to[List])
+//    c81 <- convertSingletonStructuredDataPropertyValues(c80,
+//      c80.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getSingletonStructuredDataPropertyValues.asScala.to[List])}.to[List])
+//  } yield c81
 
-    c30 <- convertReifiedRelationships(c24,
-      c24.tboxStatements.selectByKindOf { case s: ReifiedRelationship => s})
-    c31 <- convertUnreifiedRelationships(c30,
-      c30.tboxStatements.selectByKindOf { case s: UnreifiedRelationship => s})
-    c32 <- convertStructures(c31, c31.tboxStatements.selectByKindOf { case s: Structure => s})
-    c33 <- convertScalars(c32, c32.tboxStatements.selectByKindOf { case s: Scalar => s})
-    c34 <- convertRestrictedDataRanges(c33,
-      c33.tboxStatements.selectByKindOf { case s: RestrictedDataRange => s})
-    c35 <- convertScalarOneOfLiteralAxioms(c34,
-      c34.tboxStatements.selectByKindOf { case s: ScalarOneOfLiteralAxiom => s})
-
-    c40 <- convertEntityScalarDataProperties(c35,
-      c35.tboxStatements.selectByKindOf { case s: EntityScalarDataProperty => s})
-    c41 <- convertEntityStructuredDataProperties(c40,
-      c40.tboxStatements.selectByKindOf { case s: EntityStructuredDataProperty => s})
-    c42 <- convertScalarDataProperties(c41,
-      c41.tboxStatements.selectByKindOf { case s: ScalarDataProperty => s})
-    c43 <- convertStructuredDataProperties(c42,
-      c42.tboxStatements.selectByKindOf { case s: StructuredDataProperty => s})
-
-    c50 <- convertEntityRestrictionAxioms(c43,
-      c43.tboxStatements.selectByKindOf { case ax: EntityRestrictionAxiom => ax})
-    c51 <- convertEntityScalarDataPropertyRestrictionAxioms(c50,
-      c50.tboxStatements.selectByKindOf { case ax: EntityScalarDataPropertyRestrictionAxiom => ax })
-    c52 <- convertSpecializationAxioms(c51,
-      c51.tboxStatements.selectByKindOf { case ax: SpecializationAxiom => ax })
-
-    c60 <- convertRootConceptTaxonomyAxioms(c52,
-      c52.bundleStatements.selectByKindOf { case ax: RootConceptTaxonomyAxiom => ax})
-
-    c70 <- convertConceptInstances(c60,
-      c60.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getConceptInstances.asScala.to[List])}.to[List])
-    c71 <- convertReifiedRelationshipInstances(c70,
-      c70.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getReifiedRelationshipInstances.asScala.to[List])}.to[List])
-    c72 <- convertReifiedRelationshipInstanceDomains(c71,
-      c71.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getReifiedRelationshipInstanceDomains.asScala.to[List])}.to[List])
-    c73 <- convertReifiedRelationshipInstanceRanges(c72,
-      c72.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getReifiedRelationshipInstanceRanges.asScala.to[List])}.to[List])
-    c74 <- convertUnreifiedRelationshipInstances(c73,
-      c73.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getUnreifiedRelationshipInstanceTuples.asScala.to[List])}.to[List])
-
-    c80 <- convertSingletonScalarDataPropertyValues(c74,
-      c74.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getSingletonScalarDataPropertyValues.asScala.to[List])}.to[List])
-    c81 <- convertSingletonStructuredDataPropertyValues(c80,
-      c80.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getSingletonStructuredDataPropertyValues.asScala.to[List])}.to[List])
-  } yield c81
-
-  def convertTerminologyGraphKind(k: TerminologyKind): TTerminologyKind = k match {
+  protected def convertTerminologyGraphKind(k: TerminologyKind): TTerminologyKind = k match {
     case TerminologyKind.OPEN_WORLD_DEFINITIONS =>
       OpenWorldDefinitions
     case TerminologyKind.CLOSED_WORLD_DESIGNATIONS =>
       ClosedWorldDesignations
   }
 
-  def convertDescriptionKind(k: DescriptionKind): TDescriptionKind = k match {
+  protected def convertDescriptionKind(k: DescriptionKind): TDescriptionKind = k match {
     case DescriptionKind.FINAL =>
       Final
     case DescriptionKind.PARTIAL =>
@@ -603,7 +644,7 @@ object OMLText2Resolver {
     o2r.right
 
   @scala.annotation.tailrec
-  def convertScalarOneOfLiteralAxioms
+  protected def convertScalarOneOfLiteralAxioms
   (o2r: OMLText2Resolver, lits: Set[ScalarOneOfLiteralAxiom])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -631,7 +672,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertEntityScalarDataProperties
+  protected def convertEntityScalarDataProperties
   (o2r: OMLText2Resolver, dps: Set[EntityScalarDataProperty])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -657,7 +698,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertEntityStructuredDataProperties
+  protected def convertEntityStructuredDataProperties
   (o2r: OMLText2Resolver, dps: Set[EntityStructuredDataProperty])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -683,7 +724,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertScalarDataProperties
+  protected def convertScalarDataProperties
   (o2r: OMLText2Resolver, dps: Set[ScalarDataProperty])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -708,7 +749,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertStructuredDataProperties
+  protected def convertStructuredDataProperties
   (o2r: OMLText2Resolver, dps: Set[StructuredDataProperty])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -733,7 +774,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertEntityRestrictionAxioms
+  protected def convertEntityRestrictionAxioms
   (o2r: OMLText2Resolver, axs: Set[EntityRestrictionAxiom])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -764,7 +805,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertEntityScalarDataPropertyRestrictionAxioms
+  protected def convertEntityScalarDataPropertyRestrictionAxioms
   (o2r: OMLText2Resolver, axs: Set[EntityScalarDataPropertyRestrictionAxiom])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -822,7 +863,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertSpecializationAxioms
+  protected def convertSpecializationAxioms
   (o2r: OMLText2Resolver, axs: Set[SpecializationAxiom])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -862,7 +903,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertRootConceptTaxonomyAxioms
+  protected def convertRootConceptTaxonomyAxioms
   (o2r: OMLText2Resolver, axs: Set[RootConceptTaxonomyAxiom])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -878,7 +919,7 @@ object OMLText2Resolver {
     }
   }
 
-  def convertConceptTreeDisjunction
+  protected def convertConceptTreeDisjunction
   (o2r: OMLText2Resolver, ax: ConceptTreeDisjunction)
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -916,7 +957,7 @@ object OMLText2Resolver {
     }
 
   @scala.annotation.tailrec
-  def convertDisjointUnionOfConceptAxioms
+  protected def convertDisjointUnionOfConceptAxioms
   (o2r: OMLText2Resolver, dxs: Set[(DisjointUnionOfConceptsAxiom, api.ConceptTreeDisjunction)])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -951,7 +992,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertConceptInstances
+  protected def convertConceptInstances
   (o2r: OMLText2Resolver, cxs: List[(DescriptionBox, api.DescriptionBox, List[ConceptInstance])])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -980,7 +1021,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertReifiedRelationshipInstances
+  protected def convertReifiedRelationshipInstances
   (o2r: OMLText2Resolver, rrxs: List[(DescriptionBox, api.DescriptionBox, List[ReifiedRelationshipInstance])])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -1009,7 +1050,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertReifiedRelationshipInstanceDomains
+  protected def convertReifiedRelationshipInstanceDomains
   (o2r: OMLText2Resolver, rrxs: List[(DescriptionBox, api.DescriptionBox, List[ReifiedRelationshipInstanceDomain])])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -1038,7 +1079,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertReifiedRelationshipInstanceRanges
+  protected def convertReifiedRelationshipInstanceRanges
   (o2r: OMLText2Resolver, rrxs: List[(DescriptionBox, api.DescriptionBox, List[ReifiedRelationshipInstanceRange])])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -1067,7 +1108,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertUnreifiedRelationshipInstances
+  protected def convertUnreifiedRelationshipInstances
   (o2r: OMLText2Resolver, urxs: List[(DescriptionBox, api.DescriptionBox, List[UnreifiedRelationshipInstanceTuple])])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -1098,7 +1139,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertSingletonScalarDataPropertyValues
+  protected def convertSingletonScalarDataPropertyValues
   (o2r: OMLText2Resolver, vs: List[(DescriptionBox, api.DescriptionBox, List[SingletonInstanceScalarDataPropertyValue])])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -1127,7 +1168,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertSingletonStructuredDataPropertyValues
+  protected def convertSingletonStructuredDataPropertyValues
   (o2r: OMLText2Resolver, vs: List[(DescriptionBox, api.DescriptionBox, List[SingletonInstanceStructuredDataPropertyValue])])
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
@@ -1163,7 +1204,7 @@ object OMLText2Resolver {
   }
 
   @scala.annotation.tailrec
-  def convertSingletonInstanceStructuredDataPropertyContext
+  protected def convertSingletonInstanceStructuredDataPropertyContext
   (o2r: OMLText2Resolver,
    scs: Seq[(api.SingletonInstanceStructuredDataPropertyContext, ScalarDataPropertyValue)],
    sts: Seq[(api.SingletonInstanceStructuredDataPropertyContext, StructuredDataPropertyTuple)])

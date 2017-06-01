@@ -1,0 +1,8 @@
+gov.nasa.jpl.imce.oml.converters 0.1.0.2 is a public release 
+to support the development of OML processing workflows.
+
+### Work In Progress
+
+- [#1 Refactor the conversion logic for parity across oml, owl & tablular representations](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/1)
+
+  Initial refactoring.

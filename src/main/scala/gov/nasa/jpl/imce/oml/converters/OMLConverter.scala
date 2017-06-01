@@ -22,7 +22,7 @@ import java.lang.System
 
 import scala.collection.immutable._
 import scala.{Array, StringContext, Unit}
-import scala.Predef.{augmentString,refArrayOps,String}
+import scala.Predef.{augmentString, refArrayOps, String}
 
 object OMLConverter {
 
@@ -31,19 +31,19 @@ object OMLConverter {
        |Usage:
        |
        |1) Convert OML textual concrete syntax files
-       |omlConvert -out <OML Tabular file> <OML Textual files>
+       |omlConvert -cat <oml.catalog.xml> <OML Textual files>
        |
        |2) OWL2-DL ontology syntax: *.owl
-       |omlConvert -out <OML Tabular file> <OML Ontology files>
+       |omlConvert -cat <oml.catalog.xml> <OML Ontology files>
        |
        |3) normalized tabular syntax: *.oml.json.zip
-       |omlConvert -out <OML Catalog file> <OML Tabular files>
+       |omlConvert -cat <oml.catalog.xml> <OML Tabular files>
        |
        |where:
-       |<OML Tabular file> is a file ending in '.oml.json.zip'
-       |<OML Tabular files> is a space-separated list of <OML Tabular file>
+       |<oml.catalog.xml> is an OASIS XML catalog file named 'oml.catalog.xml' for resolving OML IRIs to OML files
+       |<OML Tabular files> is a space-separated list of files, each ending in '.oml.json.zip'
        |<OML Textual files> is a space-separated list of files, each ending in '.oml'
-       |<OML Ontology files> is a space-separated list of files, each ending in '.owl'
+       |<OML Ontologies> is a space-separated list of `iri` resolvable to `*.owl` files via the <oml.catalog.xml>
      """.stripMargin
 
   def main(argv: Array[String]): Unit = {
@@ -52,19 +52,29 @@ object OMLConverter {
     else {
       val args = argv.to[List]
       System.out.println(s"# ${args.size} args")
-      args.foreach { arg => System.out.println(s"# $arg") }
+      args.foreach { arg =>
+        System.out.println(s"# $arg")
+      }
 
       if (args.size > 2 &&
-          args.head == "-out" &&
-          args.tail.head.endsWith(".oml.json.zip") &&
+          args.head == "-cat" &&
+          args.tail.head.endsWith("oml.catalog.xml") &&
           args.tail.tail.forall(_.endsWith(".oml")))
-        OMLConverterFromTextualConcreteSyntax.convert(args.tail.head, args.tail.tail)
-      else if (argv.forall(_.endsWith(".owl")))
-        OMLConverterFromOntologySyntax.convert(argv)
-      else if (argv.forall(_.endsWith(".oml.json.zip")))
-        OMLConverterFromNormalizedTabularSyntax.convert(argv)
+        OMLConverterFromTextualConcreteSyntax.convert(args.tail.head,
+                                                      args.tail.tail)
+      else if (args.size > 2 &&
+               args.head == "-cat" &&
+               args.tail.head.endsWith("oml.catalog.xml") &&
+               args.tail.tail.forall(_.startsWith("http")))
+        OMLConverterFromOntologySyntax.convert(args.tail.head, args.tail.tail)
+      else if (args.size > 2 &&
+               args.head == "-cat" &&
+               args.tail.head.endsWith(".oml.json.zip"))
+        OMLConverterFromNormalizedTabularSyntax.convert(args.tail.head,
+                                                        args.tail.tail)
       else {
-        System.err.println(s"All supplied arguments must be OML files in the same OML format.")
+        System.err.println(
+          s"All supplied arguments must be OML files in the same OML format.")
         System.err.println()
         System.err.println(usage())
         System.exit(-1)
@@ -72,7 +82,5 @@ object OMLConverter {
 
     }
   }
-
-
 
 }

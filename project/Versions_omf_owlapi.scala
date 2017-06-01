@@ -1,4 +1,4 @@
 object Versions_omf_owlapi {
 
-  val version = "5.12.0"
+  val version = "6.0.+"
 }

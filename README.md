@@ -58,7 +58,10 @@ OML supports three canonical representations:
     
 ### Convert from OML ontologies
 
-- `omlConverter -out <*.oml.json.zip> <*.oml> ...`
-                      
-    The single `*.oml.json.zip` output will contain the representation of all `*.oml` files provided which
+- `omlConverter -out <*.oml.json.zip> -cat <oml.catalog.xml> <oml ontologies> ...`
+                     
+    `<oml.catalog.xml>` must be an OASIS XML catalog file named `oml.catalog.xml`.
+    The single `*.oml.json.zip` output will contain the representation of all `<oml ontologies> ` provided which
     will be also converted to corresponding OML textual concrete syntax representations. 
+    Each of the `<oml ontologies>` must be an `iri` resolvable to an `*.owl` file
+    via the `<oml.catalog.xml>` catalog.
