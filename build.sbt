@@ -114,7 +114,7 @@ lazy val core = Project("omlConverters", file("."))
           m <- c.modules
           (artifact, archive) <- m.artifacts
           if artifact.name.startsWith(
-            "gov.nasa.jpl.imce.oml.runtime.platform.updatesite")
+            "gov.nasa.jpl.imce.oml.platform.updatesite")
           if artifact.extension == "zip"
         } yield {
           s.log.warn("... found! Extracting.")
