@@ -74,11 +74,8 @@ lazy val core = Project("omlConverters", file("."))
     libraryDependencies ++= Seq(
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.dsl" % Versions_oml_core.version,
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.model" % Versions_oml_core.version,
-      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.runtime.platform.updatesite"
-        % "0.7.0.1" artifacts
-        Artifact("gov.nasa.jpl.imce.oml.runtime.platform.updatesite",
-                 "zip",
-                 "zip"),
+      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.platform.updatesite" % Versions_oml_core.version
+        artifacts Artifact("gov.nasa.jpl.imce.oml.platform.updatesite", "zip", "zip"),
       "org.eclipse.platform" % "org.eclipse.core.runtime" % "3.12.0",
       "org.eclipse.platform" % "org.eclipse.core.resources" % "3.11.1",
       "org.eclipse.emf" % "org.eclipse.emf.codegen.ecore" % "2.12.0",
@@ -96,6 +93,12 @@ lazy val core = Project("omlConverters", file("."))
             .exclude("com.sun.jmx", "jmxri")
             .exclude("com.sun.jdmk", "jmxtools")
         case m => m
+      }
+    },
+    mappings in Universal := {
+      val prev = (mappings in Universal).value
+      prev.filter { case (file, name) =>
+        !(file.name.endsWith("log4j-1.2.17.zip") && name == "lib/log4j.log4j-1.2.17.jar")
       }
     },
     omlProductDir := baseDirectory.value / "target" / "omlProduct",

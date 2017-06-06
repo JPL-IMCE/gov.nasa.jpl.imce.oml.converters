@@ -36,27 +36,27 @@ import gov.nasa.jpl.omf.scala.core.tables.OMFTabularExport
 import org.apache.xml.resolver.tools.CatalogResolver
 import org.eclipse.xtext.resource.XtextResourceSet
 import org.semanticweb.owlapi.apibinding.OWLManager
-import org.semanticweb.owlapi.model.IRI
+import org.semanticweb.owlapi.model.{IRI, OWLOntologyAlreadyExistsException, OWLOntologyLoaderListener}
 
 import scala.collection.immutable._
 import scala.util.control.Exception._
-import scala.{Option, Some, StringContext, Unit}
+import scala.{None, Option, Some, StringContext, Unit}
 import scala.Predef.String
 import scalaz._
 import Scalaz._
 
 object OMLConverterFromOntologySyntax {
 
-  def convert(omlCatalog: String,
-              omlIRIs: List[String]): Unit = {
+  def convertIRIs(omlCatalog: String,
+                  omlIRIs: List[String]): Unit = {
     val rs = OMLResourceSet.initializeResourceSet()
 
     (Option.apply(OMLExtensions.getOrCreateCatalogManager(rs)),
-     Option.apply(OMLExtensions.getOrCreateCatalogResolver(rs)),
-     Option.apply(OMLExtensions.getCatalog(rs))) match {
+      Option.apply(OMLExtensions.getOrCreateCatalogResolver(rs)),
+      Option.apply(OMLExtensions.getCatalog(rs))) match {
       case (Some(cm: OMLCatalogManager),
-            Some(cr: CatalogResolver),
-            Some(cat: OMLCatalog)) =>
+      Some(cr: CatalogResolver),
+      Some(cat: OMLCatalog)) =>
         nonFatalCatch[Unit]
           .withApply { (t: java.lang.Throwable) =>
             System.err.println(
@@ -112,13 +112,16 @@ object OMLConverterFromOntologySyntax {
     }
   }
 
-  def convert(rs: XtextResourceSet, omlIRIs: List[IRI])(
+
+  def convert(rs: XtextResourceSet, omlIRIs: Seq[IRI])(
       implicit omfStore: OWLAPIOMFGraphStore)
     : OMFError.Throwables \/ Unit = {
     implicit val ops = omfStore.ops
 
+    val convertibleIRIs = omlIRIs.filterNot(omfStore.isBuiltInIRI)
     for {
-      m2i <- omlIRIs
+      m2i <-
+      convertibleIRIs
         .foldLeft {
           emptyMutable2ImmutableModuleMap.right[OMFError.Throwables]
         } { case (acc, omlIRI) =>
@@ -169,7 +172,7 @@ object OMLConverterFromOntologySyntax {
 
           _ <- if (!resolver.queue.isEmpty)
             Set[java.lang.Throwable](OMFError.omfError(
-              s"Conversion of ${im.iri} incomplete"
+              s"Conversion of ${im.iri} incomplete:\n"+resolver.queue.show
             )).left[Unit]
           else
             ().right[OMFError.Throwables]
@@ -216,5 +219,125 @@ object OMLConverterFromOntologySyntax {
 
     } yield ()
 
+  }
+
+  def convertFiles(omlCatalog: String,
+                   owlFiles: List[String]): Unit = {
+    val rs = OMLResourceSet.initializeResourceSet()
+
+    (Option.apply(OMLExtensions.getOrCreateCatalogManager(rs)),
+      Option.apply(OMLExtensions.getOrCreateCatalogResolver(rs)),
+      Option.apply(OMLExtensions.getCatalog(rs))) match {
+      case (Some(cm: OMLCatalogManager),
+      Some(cr: CatalogResolver),
+      Some(cat: OMLCatalog)) =>
+        nonFatalCatch[Unit]
+          .withApply { (t: java.lang.Throwable) =>
+            System.err.println(
+              s"OMLConverterFromOntologySyntax: ${t.getMessage}")
+            t.printStackTrace(System.err)
+            System.exit(-1)
+          }
+          .apply {
+            val omlCatalogFile = new File(omlCatalog)
+
+            implicit val omfStore = OWLAPIOMFGraphStore.initGraphStore(
+              OWLAPIOMFModule
+                .owlAPIOMFModule(cm, withOMFMetadata = false)
+                .valueOr { (errors: Set[java.lang.Throwable]) =>
+                  val message = s"${errors.size} errors" + errors
+                    .map(_.getMessage)
+                    .toList
+                    .mkString("\n => ", "\n => ", "\n")
+                  throw new scala.IllegalArgumentException(message)
+                },
+              OWLManager.createOWLOntologyManager(),
+              cr,
+              cat
+            )
+
+            omfStore.catalogIRIMapper
+              .parseCatalog(omlCatalogFile.toURI)
+              .valueOr { (errors: Set[java.lang.Throwable]) =>
+                val message = s"${errors.size} errors" + errors
+                  .map(_.getMessage)
+                  .toList
+                  .mkString("\n => ", "\n => ", "\n")
+                throw new scala.IllegalArgumentException(message)
+              }
+
+            val owlLoaderListener = new OWLOntologyLoaderListener() {
+              override def finishedLoadingOntology(event: OWLOntologyLoaderListener.LoadingFinishedEvent)
+              : Unit
+              = System.out.println(s"\n => Loaded ${event.getDocumentIRI}")
+
+              override def startedLoadingOntology(event: OWLOntologyLoaderListener.LoadingStartedEvent)
+              : Unit
+              = System.out.println(s"\n => Loading ${event.getDocumentIRI} ...")
+            }
+            omfStore.ontManager.addOntologyLoaderListener(owlLoaderListener)
+
+            val owlIRIs: Seq[IRI]
+            = owlFiles.foldLeft {
+              Seq.empty[IRI]
+            } { case (acc, owlFile) =>
+              val f = new File(owlFile)
+              if (!f.exists() || !f.canRead)
+                throw new java.lang.IllegalArgumentException(
+                  s"omlConverter: cannot read owl file: $owlFile"
+                )
+
+              import scala.compat.java8.FunctionConverters.asJavaSupplier
+              val fSupplier = asJavaSupplier[java.lang.Throwable](() =>
+                throw new java.lang.IllegalArgumentException(
+                  s"omlConverter: $f results in an anonymous ontology"
+                ))
+
+              val owlIRI = nonFatalCatch[Option[IRI]]
+                .withApply {
+                  case _: OWLOntologyAlreadyExistsException =>
+                    System.out.println(s"\n => Already loaded: $f")
+                    None
+                  case (t: java.lang.Throwable) =>
+                    System.err.println(
+                      s"OMLConverterFromOntologySyntax: ${t.getMessage}")
+                    t.printStackTrace(System.err)
+                    System.exit(-1)
+                    None
+                }
+                .apply {
+                  val ont = omfStore.ontManager.loadOntologyFromOntologyDocument(f)
+                  val iri = ont.getOntologyID.getOntologyIRI.orElseThrow(fSupplier)
+                  if (omfStore.isBuiltInIRI(iri))
+                    None
+                  else
+                    Some(iri)
+                }
+              owlIRI match {
+                case Some(iri) =>
+                  acc :+ iri
+                case None =>
+                  acc
+              }
+            }
+
+            convert(rs, owlIRIs) match {
+              case -\/(errors) =>
+                System.err.println(s"${errors.size} errors:")
+                errors.foreach { e =>
+                  System.err.println(e.getMessage)
+                  e.printStackTrace(System.err)
+                  System.err.println()
+                }
+                throw errors.head
+              case _ =>
+                ()
+            }
+          }
+      case _ =>
+        System.err.println(
+          s"There should have been a catalog on the resource set!")
+        System.exit(-1)
+    }
   }
 }

@@ -43,7 +43,10 @@ object OMLConverter {
        |<oml.catalog.xml> is an OASIS XML catalog file named 'oml.catalog.xml' for resolving OML IRIs to OML files
        |<OML Tabular files> is a space-separated list of files, each ending in '.oml.json.zip'
        |<OML Textual files> is a space-separated list of files, each ending in '.oml'
-       |<OML Ontologies> is a space-separated list of `iri` resolvable to `*.owl` files via the <oml.catalog.xml>
+       |<OML Ontologies> can be either:
+       | - a space-separated list of `iri` resolvable to `*.owl` files via the <oml.catalog.xml>
+       | - a space-separated list of '*.owl' files
+       |
      """.stripMargin
 
   def main(argv: Array[String]): Unit = {
@@ -66,7 +69,12 @@ object OMLConverter {
                args.head == "-cat" &&
                args.tail.head.endsWith("oml.catalog.xml") &&
                args.tail.tail.forall(_.startsWith("http")))
-        OMLConverterFromOntologySyntax.convert(args.tail.head, args.tail.tail)
+        OMLConverterFromOntologySyntax.convertIRIs(args.tail.head, args.tail.tail)
+      else if (args.size > 2 &&
+        args.head == "-cat" &&
+        args.tail.head.endsWith("oml.catalog.xml") &&
+        args.tail.tail.forall(a => a.endsWith(".owl") && !a.startsWith("http")))
+        OMLConverterFromOntologySyntax.convertFiles(args.tail.head, args.tail.tail)
       else if (args.size > 2 &&
                args.head == "-cat" &&
                args.tail.head.endsWith(".oml.json.zip"))
