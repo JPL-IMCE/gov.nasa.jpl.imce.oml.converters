@@ -1,0 +1,14 @@
+gov.nasa.jpl.imce.oml.converters 0.1.0.3 is a public release 
+to support the development of OML processing workflows.
+
+### Bug Fixes
+
+- [#3 Missing Dependency in Binary Build](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/3)
+
+  Filtered out including the `log4j.zip` whose contents, a source/doc `log4j.jar` library, overwrote the implementation.
+   
+### Work In Progress
+
+- [#1 Refactor the conversion logic for parity across oml, owl & tablular representations](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/1)
+
+  OWL (TBox) => OML (TBox tables) except for annotation properties & annotations.
