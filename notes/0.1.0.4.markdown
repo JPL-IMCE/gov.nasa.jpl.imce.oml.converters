@@ -1,0 +1,7 @@
+gov.nasa.jpl.imce.oml.converters 0.1.0.4 addresses issues found in 0.1.0.3
+
+## Issues Resolved
+
+- [#4 The same OML text resource is loaded multiple times](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/4)
+
+- [#1 Refactor the conversion logic for parity across oml, owl & tablular representations](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/1)

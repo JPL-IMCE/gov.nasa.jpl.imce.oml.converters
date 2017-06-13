@@ -97,8 +97,10 @@ lazy val core = Project("omlConverters", file("."))
     },
     mappings in Universal := {
       val prev = (mappings in Universal).value
-      prev.filter { case (file, name) =>
-        !(file.name.endsWith("log4j-1.2.17.zip") && name == "lib/log4j.log4j-1.2.17.jar")
+      prev.filterNot { case (f, n) =>
+        (f.name.endsWith("log4j-1.2.17.zip") && n == "lib/log4j.log4j-1.2.17.jar") ||
+          n == "lib/ch.qos.logback.logback-classic-1.0.7.jar" ||
+          n == "lib/ch.qos.logback.logback-core-1.0.7.jar"
       }
     },
     omlProductDir := baseDirectory.value / "target" / "omlProduct",
@@ -150,4 +152,7 @@ lazy val core = Project("omlConverters", file("."))
       "gov.nasa.jpl.imce" %% "gov.nasa.jpl.omf.scala.binding.owlapi"
         % Versions_omf_owlapi.version
         % "compile" withSources)
+  )
+  .dependsOn(
+    ProjectRef(uri("https://github.com/NicolasRouquette/scala-graph.git#5a9d477"), "Graph-misc")
   )
