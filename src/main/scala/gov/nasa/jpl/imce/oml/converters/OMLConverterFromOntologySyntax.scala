@@ -47,7 +47,7 @@ import Scalaz._
 
 object OMLConverterFromOntologySyntax {
 
-  def convertIRIs(omlCatalog: String,
+  def convertIRIs(omlCatalogFile: File,
                   omlIRIs: List[String]): Unit = {
     val rs = OMLResourceSet.initializeResourceSet()
 
@@ -65,8 +65,6 @@ object OMLConverterFromOntologySyntax {
             System.exit(-1)
           }
           .apply {
-            val omlCatalogFile = new File(omlCatalog)
-
             implicit val omfStore = OWLAPIOMFGraphStore.initGraphStore(
               OWLAPIOMFModule
                 .owlAPIOMFModule(cm, withOMFMetadata = false)
@@ -221,7 +219,7 @@ object OMLConverterFromOntologySyntax {
 
   }
 
-  def convertFiles(omlCatalog: String,
+  def convertFiles(omlCatalogFile: File,
                    owlFiles: List[String]): Unit = {
     val rs = OMLResourceSet.initializeResourceSet()
 
@@ -239,7 +237,6 @@ object OMLConverterFromOntologySyntax {
             System.exit(-1)
           }
           .apply {
-            val omlCatalogFile = new File(omlCatalog)
 
             implicit val omfStore = OWLAPIOMFGraphStore.initGraphStore(
               OWLAPIOMFModule

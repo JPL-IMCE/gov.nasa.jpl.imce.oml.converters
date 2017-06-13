@@ -18,6 +18,7 @@
 
 package gov.nasa.jpl.imce.oml.converters
 
+import java.io.File
 import java.lang.System
 
 import scala.collection.immutable._
@@ -61,33 +62,40 @@ object OMLConverter {
 
       if (args.size > 2 &&
           args.head == "-cat" &&
-          args.tail.head.endsWith("oml.catalog.xml") &&
-          args.tail.tail.forall(_.endsWith(".oml")))
-        OMLConverterFromTextualConcreteSyntax.convert(args.tail.head,
-                                                      args.tail.tail)
-      else if (args.size > 2 &&
-               args.head == "-cat" &&
-               args.tail.head.endsWith("oml.catalog.xml") &&
-               args.tail.tail.forall(_.startsWith("http")))
-        OMLConverterFromOntologySyntax.convertIRIs(args.tail.head, args.tail.tail)
-      else if (args.size > 2 &&
-        args.head == "-cat" &&
-        args.tail.head.endsWith("oml.catalog.xml") &&
-        args.tail.tail.forall(a => a.endsWith(".owl") && !a.startsWith("http")))
-        OMLConverterFromOntologySyntax.convertFiles(args.tail.head, args.tail.tail)
-      else if (args.size > 2 &&
-               args.head == "-cat" &&
-               args.tail.head.endsWith(".oml.json.zip"))
-        OMLConverterFromNormalizedTabularSyntax.convert(args.tail.head,
-                                                        args.tail.tail)
-      else {
-        System.err.println(
-          s"All supplied arguments must be OML files in the same OML format.")
+          args.tail.head.endsWith("oml.catalog.xml")) {
+
+        val catalogFile = new File(args.tail.head)
+        if (catalogFile.exists() && catalogFile.canRead) {
+          val inputs = args.tail.tail
+
+
+          if (inputs.forall(_.endsWith(".oml")))
+            OMLConverterFromTextualConcreteSyntax.convert(catalogFile, inputs)
+          else if (inputs.forall(_.startsWith("http")))
+            OMLConverterFromOntologySyntax.convertIRIs(catalogFile, inputs)
+          else if (inputs.forall(a => a.endsWith(".owl") && !a.startsWith("http")))
+            OMLConverterFromOntologySyntax.convertFiles(catalogFile, inputs)
+          else if (inputs.forall(_.endsWith(".oml.json.zip")))
+            OMLConverterFromNormalizedTabularSyntax.convert(catalogFile, inputs)
+          else {
+            System.err.println(
+              s"All supplied arguments must be OML files in the same OML format.")
+            System.err.println()
+            System.err.println(usage())
+            System.exit(-1)
+          }
+        } else {
+          System.err.println(
+            s"The catalog file must be readable: $catalogFile")
+          System.err.println()
+          System.err.println(usage())
+          System.exit(-1)
+        }
+      } else {
         System.err.println()
         System.err.println(usage())
         System.exit(-1)
       }
-
     }
   }
 

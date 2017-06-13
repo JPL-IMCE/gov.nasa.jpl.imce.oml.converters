@@ -18,7 +18,9 @@
 
 package gov.nasa.jpl.imce.oml.converters
 
-import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
+import java.io.File
+
+import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model.bundles._
 import gov.nasa.jpl.imce.oml.model.common._
 import gov.nasa.jpl.imce.oml.model.descriptions._
@@ -27,20 +29,17 @@ import gov.nasa.jpl.imce.oml.model.terminologies._
 import gov.nasa.jpl.imce.oml.resolver.api
 import gov.nasa.jpl.imce.oml.tables.{ClosedWorldDesignations, OpenWorldDefinitions, TerminologyKind => TTerminologyKind}
 import gov.nasa.jpl.imce.oml.tables.{Final, Partial, DescriptionKind => TDescriptionKind}
-import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
-import org.eclipse.xtext.resource.XtextResourceSet
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable._
-import scala.Predef.ArrowAssoc
-import scala.{None, Option, Some, StringContext, Tuple2, Tuple3}
-import scalaz._, Scalaz._
+import scala.Predef.{ArrowAssoc, augmentString}
+import scala.{None, Option, Some, StringContext}
+import scalaz._
+import Scalaz._
 
-/*
- Manage 1 OML Extent => 1 OMLText2Resolver.
- */
 case class OMLText2Resolver
-(rextent: api.Extent,
+(omlFile: File,
+ rextent: api.Extent,
  tboxes: Map[TerminologyBox, api.TerminologyBox] = Map.empty,
  tboxAxioms: Set[TerminologyBoxAxiom] = Set.empty,
  tboxStatements: Set[TerminologyBoxStatement] = Set.empty,
@@ -67,11 +66,61 @@ case class OMLText2Resolver
  structuredDataProperties: Map[StructuredDataProperty, api.StructuredDataProperty] = Map.empty,
 
  moduleEdges: Map[ModuleEdge, api.ModuleEdge] = Map.empty,
- terminologyAxioms: Map[TerminologyAxiom, api.TerminologyAxiom] = Map.empty,
  termAxioms: Map[TermAxiom, api.TermAxiom] = Map.empty,
  conceptTreeDisjunctions: Map[ConceptTreeDisjunction, api.ConceptTreeDisjunction] = Map.empty,
  disjointUnionOfConceptAxioms: Map[DisjointUnionOfConceptsAxiom, api.DisjointUnionOfConceptsAxiom] = Map.empty,
  conceptualEntitySingletonInstances: Map[ConceptualEntitySingletonInstance, api.ConceptualEntitySingletonInstance] = Map.empty) {
+
+  def toOMLTablesFile: File = new File(omlFile.getPath.stripSuffix(".oml")+".oml.json.zip")
+
+  def allAccessibleModules: Map[Module, api.Module] =
+    tboxes ++ dboxes
+
+  def moduleLookup(m: Module): Option[api.Module] = m match {
+    case t: TerminologyBox =>
+      tboxes.get(t)
+    case d: DescriptionBox =>
+      dboxes.get(d)
+  }
+
+  def elementLookup(e: Element): Option[api.Element] = e match {
+    case x: TerminologyBox =>
+      tboxes.get(x)
+    case x: DescriptionBox =>
+      dboxes.get(x)
+    case x: Aspect =>
+      aspects.get(x)
+    case x: Concept =>
+      concepts.get(x)
+    case x: ReifiedRelationship =>
+      reifiedRelationships.get(x)
+    case x: UnreifiedRelationship =>
+      unreifiedRelationships.get(x)
+    case x: DataRange =>
+      dataRanges.get(x)
+    case x: Structure =>
+      structures.get(x)
+    case x: ScalarOneOfLiteralAxiom =>
+      scalarOneOfLiterals.get(x)
+    case x: EntityScalarDataProperty =>
+      entityScalarDataProperties.get(x)
+    case x: EntityStructuredDataProperty =>
+      entityStructuredDataProperties.get(x)
+    case x: ScalarDataProperty =>
+      scalarDataProperties.get(x)
+    case x: StructuredDataProperty =>
+      structuredDataProperties.get(x)
+    case x: ModuleEdge =>
+      moduleEdges.get(x)
+    case x: TermAxiom =>
+      termAxioms.get(x)
+    case x: ConceptTreeDisjunction =>
+      conceptTreeDisjunctions.get(x)
+    case x: DisjointUnionOfConceptsAxiom =>
+      disjointUnionOfConceptAxioms.get(x)
+    case x: ConceptualEntitySingletonInstance =>
+      conceptualEntitySingletonInstances.get(x)
+  }
 
   def entityLookup(e: Entity): Option[api.Entity] = e match {
     case a: Aspect => aspects.get(a)
@@ -103,120 +152,6 @@ case class OMLText2Resolver
 
 object OMLText2Resolver {
 
-  def convert
-  (rs: XtextResourceSet)
-  (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ Map[Extent, OMLText2Resolver]
-  = for {
-    extents <- OMLResourceSet.getOMLExtents(rs)
-    c00 = extents.map {
-      _ -> OMLText2Resolver(rextent = api.Extent())
-    }
-
-    // Modules
-    c01 <- c00.foldLeft {
-      Map.empty[Extent, OMLText2Resolver].right[EMFProblems]
-    } { case (acc, (e, omlt2r)) =>
-      for {
-        ci <- acc
-        updated <- convertModules(omlt2r, e.getModules.asScala.to[Set])
-      } yield ci + (e -> updated)
-    }
-  } yield c01
-
-//    // AnnotationProperties
-//    c02 <- convertAnnotationProperties(c01,
-//      extents.flatMap(_.getAnnotationProperties.asScala))
-//
-//    // TerminologyExtensions
-//
-//    c03 <- convertTerminologyExtensions(c02,
-//      c02.tboxAxioms.selectByKindOf { case ax: TerminologyExtensionAxiom => ax})
-//
-//    // Atomic Entities
-//
-//    c10 <- convertAspects(c03,
-//      c03.tboxStatements.selectByKindOf { case s: Aspect => s})
-//    c11 <- convertConcepts(c10,
-//      c10.tboxStatements.selectByKindOf { case s: Concept => s})
-//
-//    // Other ModuleEdges
-//
-//    c20 <- convertConceptDesignationTerminologyAxioms(c11,
-//      c11.tboxAxioms.selectByKindOf { case ax: ConceptDesignationTerminologyAxiom => ax})
-//    c21 <- convertTerminologyNestingAxioms(c20,
-//      c20.tboxAxioms.selectByKindOf { case ax: TerminologyNestingAxiom => ax})
-//    c22 <- convertBundledTerminologyAxioms(c21,
-//      c21.tboxAxioms.selectByKindOf { case ax: BundledTerminologyAxiom => ax})
-//    c23 <- convertDescriptionBoxExtendsClosedWorldDefinitions(c22,
-//      c22.dboxDefinitions)
-//    c24 <- convertDescriptionBoxRefinements(c23,
-//      c23.dboxRefinements)
-//
-//    // Relationships
-//
-//    c30 <- convertReifiedRelationships(c24,
-//      c24.tboxStatements.selectByKindOf { case s: ReifiedRelationship => s})
-//    c31 <- convertUnreifiedRelationships(c30,
-//      c30.tboxStatements.selectByKindOf { case s: UnreifiedRelationship => s})
-//
-//    // DataTypes
-//
-//    c32 <- convertStructures(c31, c31.tboxStatements.selectByKindOf { case s: Structure => s})
-//    c33 <- convertScalars(c32, c32.tboxStatements.selectByKindOf { case s: Scalar => s})
-//    c34 <- convertRestrictedDataRanges(c33,
-//      c33.tboxStatements.selectByKindOf { case s: RestrictedDataRange => s})
-//    c35 <- convertScalarOneOfLiteralAxioms(c34,
-//      c34.tboxStatements.selectByKindOf { case s: ScalarOneOfLiteralAxiom => s})
-//
-//    // DataRelationships
-//
-//    c40 <- convertEntityScalarDataProperties(c35,
-//      c35.tboxStatements.selectByKindOf { case s: EntityScalarDataProperty => s})
-//    c41 <- convertEntityStructuredDataProperties(c40,
-//      c40.tboxStatements.selectByKindOf { case s: EntityStructuredDataProperty => s})
-//    c42 <- convertScalarDataProperties(c41,
-//      c41.tboxStatements.selectByKindOf { case s: ScalarDataProperty => s})
-//    c43 <- convertStructuredDataProperties(c42,
-//      c42.tboxStatements.selectByKindOf { case s: StructuredDataProperty => s})
-//
-//    // Restrictions
-//
-//    c50 <- convertEntityRestrictionAxioms(c43,
-//      c43.tboxStatements.selectByKindOf { case ax: EntityRestrictionAxiom => ax})
-//    c51 <- convertEntityScalarDataPropertyRestrictionAxioms(c50,
-//      c50.tboxStatements.selectByKindOf { case ax: EntityScalarDataPropertyRestrictionAxiom => ax })
-//
-//    // Specializations
-//
-//    c52 <- convertSpecializationAxioms(c51,
-//      c51.tboxStatements.selectByKindOf { case ax: SpecializationAxiom => ax })
-//
-//    // Disjunctions
-//
-//    c60 <- convertRootConceptTaxonomyAxioms(c52,
-//      c52.bundleStatements.selectByKindOf { case ax: RootConceptTaxonomyAxiom => ax})
-//
-//    // ConceptualEntityInstances
-//
-//    c70 <- convertConceptInstances(c60,
-//      c60.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getConceptInstances.asScala.to[List])}.to[List])
-//    c71 <- convertReifiedRelationshipInstances(c70,
-//      c70.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getReifiedRelationshipInstances.asScala.to[List])}.to[List])
-//    c72 <- convertReifiedRelationshipInstanceDomains(c71,
-//      c71.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getReifiedRelationshipInstanceDomains.asScala.to[List])}.to[List])
-//    c73 <- convertReifiedRelationshipInstanceRanges(c72,
-//      c72.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getReifiedRelationshipInstanceRanges.asScala.to[List])}.to[List])
-//    c74 <- convertUnreifiedRelationshipInstances(c73,
-//      c73.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getUnreifiedRelationshipInstanceTuples.asScala.to[List])}.to[List])
-//
-//    // Data Property Values
-//
-//    c80 <- convertSingletonScalarDataPropertyValues(c74,
-//      c74.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getSingletonScalarDataPropertyValues.asScala.to[List])}.to[List])
-//    c81 <- convertSingletonStructuredDataPropertyValues(c80,
-//      c80.dboxes.map { case (dboxi, dboxj) => (dboxi, dboxj, dboxi.getSingletonStructuredDataPropertyValues.asScala.to[List])}.to[List])
-//  } yield c81
 
   protected def convertTerminologyGraphKind(k: TerminologyKind): TTerminologyKind = k match {
     case TerminologyKind.OPEN_WORLD_DEFINITIONS =>
@@ -233,689 +168,997 @@ object OMLText2Resolver {
   }
 
   protected def convertModules
-  (o2r: OMLText2Resolver, modules: Set[Module])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    val result: OMLText2Resolver = modules.foldLeft[OMLText2Resolver](o2r) { case (ri, mi) =>
-      mi match {
-        case gi: TerminologyGraph =>
-          val (rj, gj) = f.createTerminologyGraph(ri.rextent, convertTerminologyGraphKind(gi.getKind), gi.iri())
-          ri.copy(
-            rextent = rj,
-            tboxes = ri.tboxes + (gi -> gj),
-            tboxAxioms = ri.tboxAxioms ++ gi.getBoxAxioms.asScala.to[Set],
-            tboxStatements = ri.tboxStatements ++ gi.getBoxStatements.asScala.to[Set])
-        case bi: Bundle =>
-          val (rj, bj) = f.createBundle(ri.rextent, convertTerminologyGraphKind(bi.getKind), bi.iri())
-          ri.copy(
-            rextent = rj,
-            tboxes = ri.tboxes + (bi -> bj),
-            tboxAxioms = ri.tboxAxioms ++ bi.getBoxAxioms.asScala.to[Set],
-            tboxStatements = ri.tboxStatements ++ bi.getBoxStatements.asScala.to[Set],
-            bundleAxioms = ri.bundleAxioms ++ bi.getBundleAxioms.asScala.to[Set],
-            bundleStatements = ri.bundleStatements ++ bi.getBundleStatements.asScala.to[Set])
-        case di: DescriptionBox =>
-          val (rj, dj) = f.createDescriptionBox(ri.rextent, convertDescriptionKind(di.getKind), di.iri())
-          ri.copy(
-            rextent = rj,
-            dboxes = ri.dboxes + (di -> dj),
-            dboxDefinitions = ri.dboxDefinitions ++ di.getClosedWorldDefinitions.asScala.to[Set],
-            dboxRefinements = ri.dboxRefinements ++ di.getDescriptionBoxRefinements.asScala.to[Set])
-      }
+    val (e, _) = entry
+    e.getModules.asScala.to[Set].foldLeft(state) { case (acc, mi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        o2rj = mi match {
+          case gi: TerminologyGraph =>
+            val (rj, gj) = f.createTerminologyGraph(o2ri.rextent, convertTerminologyGraphKind(gi.getKind), gi.iri())
+            o2ri.copy(
+              rextent = rj,
+              tboxes = o2ri.tboxes + (gi -> gj),
+              tboxAxioms = o2ri.tboxAxioms ++ gi.getBoxAxioms.asScala.to[Set],
+              tboxStatements = o2ri.tboxStatements ++ gi.getBoxStatements.asScala.to[Set])
+          case bi: Bundle =>
+            val (rj, bj) = f.createBundle(o2ri.rextent, convertTerminologyGraphKind(bi.getKind), bi.iri())
+            o2ri.copy(
+              rextent = rj,
+              tboxes = o2ri.tboxes + (bi -> bj),
+              tboxAxioms = o2ri.tboxAxioms ++ bi.getBoxAxioms.asScala.to[Set],
+              tboxStatements = o2ri.tboxStatements ++ bi.getBoxStatements.asScala.to[Set],
+              bundleAxioms = o2ri.bundleAxioms ++ bi.getBundleAxioms.asScala.to[Set],
+              bundleStatements = o2ri.bundleStatements ++ bi.getBundleStatements.asScala.to[Set])
+          case di: DescriptionBox =>
+            val (rj, dj) = f.createDescriptionBox(o2ri.rextent, convertDescriptionKind(di.getKind), di.iri())
+            o2ri.copy(
+              rextent = rj,
+              dboxes = o2ri.dboxes + (di -> dj),
+              dboxDefinitions = o2ri.dboxDefinitions ++ di.getClosedWorldDefinitions.asScala.to[Set],
+              dboxRefinements = o2ri.dboxRefinements ++ di.getDescriptionBoxRefinements.asScala.to[Set])
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
-    result.right
   }
 
   protected def convertAnnotationProperties
-  (o2r: OMLText2Resolver, aps: Set[AnnotationProperty])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    val result = aps.foldLeft[OMLText2Resolver](o2r) { case (ri, pi) =>
-      val (rj, pj) = f.createAnnotationProperty(ri.rextent, pi.getIri, pi.getAbbrevIRI)
-      ri.copy(rextent = rj, aps = ri.aps + (pi -> pj))
+    val (e, _) = entry
+    e.getAnnotationProperties.asScala.to[Set].foldLeft(state) { case (acc, pi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        (rj, pj) = f.createAnnotationProperty(o2ri.rextent, pi.getIri, pi.getAbbrevIRI)
+        o2rj = o2ri.copy(rextent = rj, aps = o2ri.aps + (pi -> pj))
+        next = prev.updated(e, o2rj)
+      } yield next
     }
-    result.right
   }
 
-  @scala.annotation.tailrec
   protected def convertTerminologyExtensions
-  (o2r: OMLText2Resolver, axs: Iterable[TerminologyExtensionAxiom])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    (o2r.tboxes.get(axi.extendingTerminology()), o2r.tboxes.get(axi.getExtendedTerminology)) match {
-      case ((Some(extending), Some(extended))) =>
-        val (rj, axj) = f.createTerminologyExtensionAxiom(o2r.rextent, extending, extended)
-        val updated = o2r.copy(rextent = rj, moduleEdges = o2r.moduleEdges + (axi -> axj))
-        convertTerminologyExtensions(updated, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertTerminologyExtensions: Failed to resolve extending: ${axi.extendingTerminology().abbrevIRI()} / extended: ${axi.getExtendedTerminology.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val axs = tboxes.flatMap(_.getBoxAxioms.selectByKindOf { case ax: TerminologyExtensionAxiom => ax })
+    axs.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        extendingi = axi.extendingTerminology()
+        extendedi = axi.getExtendedTerminology
+        o2rj <-
+        ( prev.get(extendingi.getExtent).flatMap(_.tboxes.get(extendingi)),
+          prev.get(extendedi.getExtent).flatMap(_.tboxes.get(extendedi)) ) match {
+          case ((Some(extendingj), Some(extendedj))) =>
+            val (rj, axj) = f.createTerminologyExtensionAxiom(o2ri.rextent, extendingj, extendedj)
+            o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
+          case ((Some(_), None)) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertTerminologyExtensions: Failed to resolve extended: " + extendedi.getIri
+            )).left
+          case ((None, Some(_))) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertTerminologyExtensions: Failed to resolve extending: " + extendingi.getIri
+            )).left
+          case ((None, None)) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertTerminologyExtensions: Failed to resolve extending: " +
+                extendingi.getIri +
+                " and extended " +
+                extendedi.getIri
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertConceptDesignationTerminologyAxioms
-  (o2r: OMLText2Resolver, axs: Iterable[ConceptDesignationTerminologyAxiom])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    (o2r.tboxes.get(axi.designationTerminologyGraph()), o2r.tboxes.get(axi.getDesignatedTerminology), o2r.concepts.get(axi.getDesignatedConcept)) match {
-      case (Some(designationG), Some(designatedT), Some(designatedC)) =>
-        val (rj, axj) = f.createConceptDesignationTerminologyAxiom(o2r.rextent, designationG, designatedC, designatedT)
-        val updated = o2r.copy(rextent = rj, moduleEdges = o2r.moduleEdges + (axi -> axj))
-        convertConceptDesignationTerminologyAxioms(updated, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertConceptDesignationTerminologyAxioms: Failed to resolve "+
-            s"designationG: ${axi.designationTerminologyGraph().abbrevIRI()}; "+
-            s"designatedT: ${axi.getDesignatedTerminology.abbrevIRI()}; "+
-            s"designatedC: ${axi.getDesignatedConcept.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val axs = tboxes.flatMap(_.getBoxAxioms.selectByKindOf { case ax: ConceptDesignationTerminologyAxiom => ax })
+    axs.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        designationi = axi.designationTerminologyGraph()
+        designatedi = axi.getDesignatedTerminology
+        designatedci = axi.getDesignatedConcept
+        o2rj <- (prev.get(designationi.getExtent).flatMap(_.tboxes.get(designationi)),
+          prev.get(designatedi.getExtent).flatMap(_.tboxes.get(designatedi)),
+          prev.get(designatedci.getTbox.getExtent).flatMap(_.concepts.get(designatedci))) match {
+          case (Some(designationG), Some(designatedT), Some(designatedC)) =>
+            val (rj, axj) = f.createConceptDesignationTerminologyAxiom(o2ri.rextent, designationG, designatedC, designatedT)
+            o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertConceptDesignationTerminologyAxioms: Failed to resolve " +
+                s"designationG: ${axi.designationTerminologyGraph().abbrevIRI()}; " +
+                s"designatedT: ${axi.getDesignatedTerminology.abbrevIRI()}; " +
+                s"designatedC: ${axi.getDesignatedConcept.abbrevIRI()}"
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertTerminologyNestingAxioms
-  (o2r: OMLText2Resolver, axs: Iterable[TerminologyNestingAxiom])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    (o2r.tboxes.get(axi.nestedTerminology()), o2r.tboxes.get(axi.getNestingTerminology), o2r.concepts.get(axi.getNestingContext)) match {
-      case (Some(nestedG: api.TerminologyGraph), Some(nestingT), Some(nestingC)) =>
-        val (rj, axj) = f.createTerminologyNestingAxiom(o2r.rextent, nestedG, nestingT, nestingC)
-        val updated = o2r.copy(rextent = rj, moduleEdges = o2r.moduleEdges + (axi -> axj))
-        convertTerminologyNestingAxioms(updated, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertTerminologyNestingAxioms: Failed to resolve "+
-            s"nested G: ${axi.nestedTerminology.abbrevIRI()}; "+
-            s"nestingT: ${axi.getNestingTerminology.abbrevIRI()}; "+
-            s"nestingC: ${axi.getNestingContext.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val axs = tboxes.flatMap(_.getBoxAxioms.selectByKindOf { case ax: TerminologyNestingAxiom => ax })
+    axs.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        nestedi = axi.nestedTerminology()
+        nestingi = axi.getNestingTerminology
+        nestingci = axi.getNestingContext
+        o2rj <-
+        (prev.get(nestedi.getExtent).flatMap(_.tboxes.get(nestedi)),
+          prev.get(nestingi.getExtent).flatMap(_.tboxes.get(nestingi)),
+          prev.get(nestingci.getTbox.getExtent).flatMap(_.concepts.get(nestingci))) match {
+          case (Some(nestedG: api.TerminologyGraph), Some(nestingT), Some(nestingC)) =>
+            val (rj, axj) = f.createTerminologyNestingAxiom(o2ri.rextent, nestedG, nestingT, nestingC)
+            o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertTerminologyNestingAxioms: Failed to resolve " +
+                s"nested G: ${axi.nestedTerminology.abbrevIRI()}; " +
+                s"nestingT: ${axi.getNestingTerminology.abbrevIRI()}; " +
+                s"nestingC: ${axi.getNestingContext.abbrevIRI()}"
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertBundledTerminologyAxioms
-  (o2r: OMLText2Resolver, axs: Iterable[BundledTerminologyAxiom])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    (o2r.tboxes.get(axi.getBundle), o2r.tboxes.get(axi.getBundledTerminology)) match {
-      case (Some(bundle: api.Bundle), Some(bundled: api.TerminologyBox)) =>
-        val (rj, axj) = f.createBundledTerminologyAxiom(o2r.rextent, bundled, bundle)
-        val updated = o2r.copy(rextent = rj, moduleEdges = o2r.moduleEdges + (axi -> axj))
-        convertBundledTerminologyAxioms(updated, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertBundledTerminologyAxioms: Failed to resolve "+
-            s"bundle: ${axi.getBundle.abbrevIRI()}; "+
-            s"bundled: ${axi.getBundledTerminology.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val bundles = e.getModules.selectByKindOf { case b: Bundle => b }
+    val axs = bundles.flatMap(_.getBundleAxioms.selectByKindOf { case ax: BundledTerminologyAxiom => ax })
+    axs.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        bundlei = axi.getBundle
+        bundledi = axi.getBundledTerminology
+        o2rj <-
+        (prev.get(bundlei.getExtent).flatMap(_.tboxes.get(bundlei)),
+         prev.get(bundledi.getExtent).flatMap(_.tboxes.get(bundledi))) match {
+          case (Some(bundle: api.Bundle), Some(bundled: api.TerminologyBox)) =>
+            val (rj, axj) = f.createBundledTerminologyAxiom(o2ri.rextent, bundled, bundle)
+            o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertBundledTerminologyAxioms: Failed to resolve " +
+                s"bundle: ${axi.getBundle.abbrevIRI()}; " +
+                s"bundled: ${axi.getBundledTerminology.abbrevIRI()}"
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertDescriptionBoxExtendsClosedWorldDefinitions
-  (o2r: OMLText2Resolver, axs: Iterable[DescriptionBoxExtendsClosedWorldDefinitions])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    (o2r.dboxes.get(axi.getDescriptionBox), o2r.tboxes.get(axi.getClosedWorldDefinitions)) match {
-      case (Some(dbox), Some(definitions)) =>
-        val (rj, axj) = f.createDescriptionBoxExtendsClosedWorldDefinitions(o2r.rextent, dbox, definitions)
-        val updated = o2r.copy(rextent = rj, moduleEdges = o2r.moduleEdges + (axi -> axj))
-        convertDescriptionBoxExtendsClosedWorldDefinitions(updated, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertDescriptionBoxExtendsClosedWorldDefinitions: Failed to resolve "+
-            s"dbox: ${axi.getDescriptionBox.abbrevIRI()}; "+
-            s"definitions tbox: ${axi.getClosedWorldDefinitions.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
+    val axs = dboxes.flatMap(_.getClosedWorldDefinitions.asScala.to[Set])
+    axs.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        dboxi = axi.getDescriptionBox
+        definitionsi = axi.getClosedWorldDefinitions
+        o2rj <-
+        (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
+          prev.get(definitionsi.getExtent).flatMap(_.tboxes.get(definitionsi))) match {
+          case (Some(dbox), Some(definitions)) =>
+            val (rj, axj) = f.createDescriptionBoxExtendsClosedWorldDefinitions(o2ri.rextent, dbox, definitions)
+            o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertDescriptionBoxExtendsClosedWorldDefinitions: Failed to resolve " +
+                s"dbox: ${axi.getDescriptionBox.abbrevIRI()}; " +
+                s"definitions tbox: ${axi.getClosedWorldDefinitions.abbrevIRI()}"
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertDescriptionBoxRefinements
-  (o2r: OMLText2Resolver, axs: Iterable[DescriptionBoxRefinement])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    (o2r.dboxes.get(axi.getRefiningDescriptionBox), o2r.dboxes.get(axi.getRefinedDescriptionBox)) match {
-      case (Some(refining), Some(refined)) =>
-        val (rj, axj) = f.createDescriptionBoxRefinement(o2r.rextent, refining, refined)
-        val updated = o2r.copy(rextent = rj, moduleEdges = o2r.moduleEdges + (axi -> axj))
-        convertDescriptionBoxRefinements(updated, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertDescriptionBoxRefinements: Failed to resolve "+
-            s"refining: ${axi.getRefiningDescriptionBox.abbrevIRI()}; "+
-            s"refined: ${axi.getRefinedDescriptionBox.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
+    val axs = dboxes.flatMap(_.getDescriptionBoxRefinements.asScala.to[Set])
+    axs.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        refiningi = axi.getRefiningDescriptionBox
+        refinedi = axi.getRefinedDescriptionBox
+        o2rj <-
+        (prev.get(refiningi.getExtent).flatMap(_.dboxes.get(refiningi)),
+          prev.get(refinedi.getExtent).flatMap(_.dboxes.get(refinedi))) match {
+          case (Some(refining), Some(refined)) =>
+            val (rj, axj) = f.createDescriptionBoxRefinement(o2ri.rextent, refining, refined)
+            o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertDescriptionBoxRefinements: Failed to resolve " +
+                s"refining: ${axi.getRefiningDescriptionBox.abbrevIRI()}; " +
+                s"refined: ${axi.getRefinedDescriptionBox.abbrevIRI()}"
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
   protected def convertAspects
-  (o2r: OMLText2Resolver, as: Set[Aspect])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    val result = as.foldLeft[OMLText2Resolver](o2r) { case (ri, ai) =>
-      val (rj, aj) = f.createAspect(ri.rextent, ri.tboxes(ai.getTbox), ai.name())
-      ri.copy(rextent = rj, aspects = ri.aspects + (ai -> aj))
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: Aspect => s })
+    ss.foldLeft(state) { case (acc, ai) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        (rj, aj) = f.createAspect(o2ri.rextent, o2ri.tboxes(ai.getTbox), ai.name())
+        o2rj = o2ri.copy(rextent = rj, aspects = o2ri.aspects + (ai -> aj))
+        next = prev.updated(e, o2rj)
+      } yield next
     }
-    result.right
   }
 
   protected def convertConcepts
-  (o2r: OMLText2Resolver, cs: Set[Concept])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    val result = cs.foldLeft[OMLText2Resolver](o2r) { case (ri, ci) =>
-      val (rj, cj) = f.createConcept(ri.rextent, ri.tboxes(ci.getTbox), ci.name())
-      ri.copy(rextent = rj, concepts = ri.concepts + (ci -> cj))
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: Concept => s })
+    ss.foldLeft(state) { case (acc, ci) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        (rj, cj) = f.createConcept(o2ri.rextent, o2ri.tboxes(ci.getTbox), ci.name())
+        o2rj = o2ri.copy(rextent = rj, concepts = o2ri.concepts + (ci -> cj))
+        next = prev.updated(e, o2rj)
+      } yield next
     }
-    result.right
   }
 
-  @scala.annotation.tailrec
   protected def convertReifiedRelationships
-  (o2r: OMLText2Resolver, rrs: Set[ReifiedRelationship])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (rrs.nonEmpty) {
-    rrs
-      .map { rr => Tuple3(rr, o2r.entityLookup(rr.getSource), o2r.entityLookup(rr.getTarget)) }
-      .find { t3 => t3._2.isDefined && t3._3.isDefined } match {
-      case Some((rri, Some(isource), Some(itarget))) =>
-        val (extj, rrj) = f.createReifiedRelationship(
-          extent = o2r.rextent,
-          tbox = o2r.tboxes(rri.getTbox),
-          source = isource,
-          target = itarget,
-          isAsymmetric = rri.isIsAsymmetric,
-          isEssential = rri.isIsEssential,
-          isFunctional = rri.isIsFunctional,
-          isInverseEssential = rri.isIsInverseEssential,
-          isInverseFunctional = rri.isIsInverseFunctional,
-          isIrreflexive = rri.isIsIrreflexive,
-          isReflexive = rri.isIsReflexive,
-          isSymmetric = rri.isIsSymmetric,
-          isTransitive = rri.isIsTransitive,
-          name = rri.name(),
-          unreifiedPropertyName = rri.getUnreifiedPropertyName,
-          unreifiedInversePropertyName = Option.apply(rri.getUnreifiedInversePropertyName))
-        val remaining = rrs - rri
-        val updated = o2r.copy(rextent = extj, reifiedRelationships = o2r.reifiedRelationships + (rri -> rrj))
-        if (remaining.isEmpty)
-          updated.right
-        else
-          convertReifiedRelationships(updated, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"Cannot find any convertible ReifiedRelationship among ${rrs.size}: " +
-            rrs.map(_.abbrevIRI()).mkString(", "))).left
-    }
-  } else
-    o2r.right
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
-  @scala.annotation.tailrec
-  protected def convertUnreifiedRelationships
-  (o2r: OMLText2Resolver, urs: Set[UnreifiedRelationship])
-  (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (urs.nonEmpty) {
-    urs
-      .map { ur => Tuple3(ur, o2r.entityLookup(ur.getSource), o2r.entityLookup(ur.getTarget)) }
-      .find { t3 => t3._2.isDefined && t3._3.isDefined } match {
-      case Some((uri, Some(isource), Some(itarget))) =>
-        val (extj, urj) = f.createUnreifiedRelationship(
-          extent = o2r.rextent,
-          tbox = o2r.tboxes(uri.getTbox),
-          source = isource,
-          target = itarget,
-          isAsymmetric = uri.isIsAsymmetric,
-          isEssential = uri.isIsEssential,
-          isFunctional = uri.isIsFunctional,
-          isInverseEssential = uri.isIsInverseEssential,
-          isInverseFunctional = uri.isIsInverseFunctional,
-          isIrreflexive = uri.isIsIrreflexive,
-          isReflexive = uri.isIsReflexive,
-          isSymmetric = uri.isIsSymmetric,
-          isTransitive = uri.isIsTransitive,
-          name = uri.name())
-        val remaining = urs - uri
-        val updated = o2r.copy(rextent = extj, unreifiedRelationships = o2r.unreifiedRelationships + (uri -> urj))
-        if (remaining.isEmpty)
-          updated.right
-        else
-          convertUnreifiedRelationships(updated, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"Cannot find any convertible ReifiedRelationship among ${urs.size}: " +
-            urs.map(_.abbrevIRI()).mkString(", "))).left
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: ReifiedRelationship => s }).to[Set]
+    ss.foldLeft(state) { case (acc, rri) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        sourcei = rri.getSource
+        targeti = rri.getTarget
+        tboxi = rri.getTbox
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(sourcei.getTbox.getExtent).flatMap(_.entityLookup(sourcei)),
+          prev.get(targeti.getTbox.getExtent).flatMap(_.entityLookup(targeti))) match {
+          case (Some(tboxj), Some(sourcej), Some(targetj)) =>
+            val (rj, rrj) = f.createReifiedRelationship(
+              extent = o2ri.rextent,
+              tbox = tboxj,
+              source = sourcej,
+              target = targetj,
+              isAsymmetric = rri.isIsAsymmetric,
+              isEssential = rri.isIsEssential,
+              isFunctional = rri.isIsFunctional,
+              isInverseEssential = rri.isIsInverseEssential,
+              isInverseFunctional = rri.isIsInverseFunctional,
+              isIrreflexive = rri.isIsIrreflexive,
+              isReflexive = rri.isIsReflexive,
+              isSymmetric = rri.isIsSymmetric,
+              isTransitive = rri.isIsTransitive,
+              name = rri.name(),
+              unreifiedPropertyName = rri.getUnreifiedPropertyName,
+              unreifiedInversePropertyName = Option.apply(rri.getUnreifiedInversePropertyName))
+            o2ri.copy(rextent = rj, reifiedRelationships = o2ri.reifiedRelationships + (rri -> rrj)).right
+          case (tboxj, sourcej, targetj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertReifiedRelationship: Failed to resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                sourcej.fold(s" source: ${sourcei.getName}")(_ => "") +
+                targetj.fold(s" target: ${targeti.getName}")(_ => "")
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
-  } else
-    o2r.right
+  }
+
+  protected def convertUnreifiedRelationships
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: UnreifiedRelationship => s }).to[Set]
+    ss.foldLeft(state) { case (acc, uri) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        sourcei = uri.getSource
+        targeti = uri.getTarget
+        tboxi = uri.getTbox
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(sourcei.getTbox.getExtent).flatMap(_.entityLookup(sourcei)),
+          prev.get(targeti.getTbox.getExtent).flatMap(_.entityLookup(targeti))) match {
+          case (Some(tboxj), Some(sourcej), Some(targetj)) =>
+            val (rj, urj) = f.createUnreifiedRelationship(
+              extent = o2ri.rextent,
+              tbox = tboxj,
+              source = sourcej,
+              target = targetj,
+              isAsymmetric = uri.isIsAsymmetric,
+              isEssential = uri.isIsEssential,
+              isFunctional = uri.isIsFunctional,
+              isInverseEssential = uri.isIsInverseEssential,
+              isInverseFunctional = uri.isIsInverseFunctional,
+              isIrreflexive = uri.isIsIrreflexive,
+              isReflexive = uri.isIsReflexive,
+              isSymmetric = uri.isIsSymmetric,
+              isTransitive = uri.isIsTransitive,
+              name = uri.name())
+            o2ri.copy(rextent = rj, unreifiedRelationships = o2ri.unreifiedRelationships + (uri -> urj)).right
+          case (tboxj, sourcej, targetj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertUnreifiedRelationship: Failed to resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                sourcej.fold(s" source: ${sourcei.getName}")(_ => "") +
+                targetj.fold(s" target: ${targeti.getName}")(_ => "")
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
+    }
+  }
 
   protected def convertStructures
-  (o2r: OMLText2Resolver, scs: Set[Structure])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    val result = scs.foldLeft[OMLText2Resolver](o2r) { case (ri, sci) =>
-      val (rj, scj) = f.createStructure(ri.rextent, ri.tboxes(sci.getTbox), sci.name())
-      ri.copy(rextent = rj, structures = ri.structures + (sci -> scj))
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: Structure => s })
+    ss.foldLeft(state) { case (acc, sci) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        (rj, scj) = f.createStructure(o2ri.rextent, o2ri.tboxes(sci.getTbox), sci.name())
+        o2rj = o2ri.copy(rextent = rj, structures = o2ri.structures + (sci -> scj))
+        next = prev.updated(e, o2rj)
+      } yield next
     }
-    result.right
   }
 
   protected def convertScalars
-  (o2r: OMLText2Resolver, scs: Set[Scalar])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    val result = scs.foldLeft[OMLText2Resolver](o2r) { case (ri, sci) =>
-      val (rj, scj) = f.createScalar(ri.rextent, ri.tboxes(sci.getTbox), sci.name())
-      ri.copy(rextent = rj, dataRanges = ri.dataRanges + (sci -> scj))
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: Scalar => s })
+    ss.foldLeft(state) { case (acc, sci) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        (rj, scj) = f.createScalar(o2ri.rextent, o2ri.tboxes(sci.getTbox), sci.name())
+        o2rj = o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (sci -> scj))
+        next = prev.updated(e, o2rj)
+      } yield next
     }
-    result.right
   }
 
-  @scala.annotation.tailrec
   protected def convertRestrictedDataRanges
-  (o2r: OMLText2Resolver, rdrs: Set[RestrictedDataRange])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (rdrs.nonEmpty) {
-    rdrs
-      .map { rdr => Tuple2(rdr, o2r.dataRanges.get(rdr.getRestrictedRange)) }
-      .find { t2 => t2._2.isDefined } match {
-      case Some((rdri, Some(rsi))) =>
-        val (extj, rdrj) = rdri match {
-          case rri: BinaryScalarRestriction =>
-            f.createBinaryScalarRestriction(
-              extent = o2r.rextent,
-              tbox = o2r.tboxes(rdri.getTbox),
-              restrictedRange = rsi,
-              length = Option.apply(rri.getLength),
-              minLength = Option.apply(rri.getMinLength),
-              maxLength = Option.apply(rri.getMaxLength),
-              name = rri.name)
-          case rri: IRIScalarRestriction =>
-            f.createIRIScalarRestriction(
-              extent = o2r.rextent,
-              tbox = o2r.tboxes(rdri.getTbox),
-              restrictedRange = rsi,
-              length = Option.apply(rri.getLength),
-              minLength = Option.apply(rri.getMinLength),
-              maxLength = Option.apply(rri.getMaxLength),
-              pattern = Option.apply(rri.getPattern),
-              name = rri.name)
-          case rri: NumericScalarRestriction =>
-            f.createNumericScalarRestriction(
-              extent = o2r.rextent,
-              tbox = o2r.tboxes(rdri.getTbox),
-              restrictedRange = rsi,
-              minExclusive = Option.apply(rri.getMinExclusive),
-              minInclusive = Option.apply(rri.getMinInclusive),
-              maxExclusive = Option.apply(rri.getMaxExclusive),
-              maxInclusive = Option.apply(rri.getMaxInclusive),
-              name = rri.name)
-          case rri: PlainLiteralScalarRestriction =>
-            f.createPlainLiteralScalarRestriction(
-              extent = o2r.rextent,
-              tbox = o2r.tboxes(rdri.getTbox),
-              restrictedRange = rsi,
-              length = Option.apply(rri.getLength),
-              minLength = Option.apply(rri.getMinLength),
-              maxLength = Option.apply(rri.getMaxLength),
-              pattern = Option.apply(rri.getPattern),
-              langRange = Option.apply(rri.getLangRange),
-              name = rri.name)
-          case rri: ScalarOneOfRestriction =>
-            f.createScalarOneOfRestriction(
-              extent = o2r.rextent,
-              tbox = o2r.tboxes(rdri.getTbox),
-              restrictedRange = rsi,
-              name = rri.name)
-          case rri: StringScalarRestriction =>
-            f.createStringScalarRestriction(
-              extent = o2r.rextent,
-              tbox = o2r.tboxes(rdri.getTbox),
-              restrictedRange = rsi,
-              length = Option.apply(rri.getLength),
-              minLength = Option.apply(rri.getMinLength),
-              maxLength = Option.apply(rri.getMaxLength),
-              pattern = Option.apply(rri.getPattern),
-              name = rri.name)
-          case rri: SynonymScalarRestriction =>
-            f.createSynonymScalarRestriction(
-              extent = o2r.rextent,
-              tbox = o2r.tboxes(rdri.getTbox),
-              restrictedRange = rsi,
-              name = rri.name)
-          case rri: TimeScalarRestriction =>
-            f.createTimeScalarRestriction(
-              extent = o2r.rextent,
-              tbox = o2r.tboxes(rdri.getTbox),
-              restrictedRange = rsi,
-              minExclusive = Option.apply(rri.getMinExclusive),
-              minInclusive = Option.apply(rri.getMinInclusive),
-              maxExclusive = Option.apply(rri.getMaxExclusive),
-              maxInclusive = Option.apply(rri.getMaxInclusive),
-              name = rri.name)
-        }
-        val remaining = rdrs - rdri
-        val updated = o2r.copy(rextent = extj, dataRanges = o2r.dataRanges + (rdri -> rdrj))
-        if (remaining.isEmpty)
-          updated.right
-        else
-          convertRestrictedDataRanges(updated, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"Cannot find any convertible RestrictedDataRange among ${rdrs.size}: " +
-            rdrs.map(_.abbrevIRI()).mkString(", "))).left
-    }
-  } else
-    o2r.right
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
-  @scala.annotation.tailrec
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: RestrictedDataRange => s })
+    ss.foldLeft(state) { case (acc, rdri) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = rdri.getTbox
+        rsi = rdri.getRestrictedRange
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(rsi.getTbox.getExtent).flatMap(_.dataRanges.get(rsi))) match {
+          case (Some(tboxj), Some(rsj)) =>
+            val (rj, rdrj) = rdri match {
+              case rri: BinaryScalarRestriction =>
+                f.createBinaryScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  length = Option.apply(rri.getLength),
+                  minLength = Option.apply(rri.getMinLength),
+                  maxLength = Option.apply(rri.getMaxLength),
+                  name = rri.name)
+              case rri: IRIScalarRestriction =>
+                f.createIRIScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  length = Option.apply(rri.getLength),
+                  minLength = Option.apply(rri.getMinLength),
+                  maxLength = Option.apply(rri.getMaxLength),
+                  pattern = Option.apply(rri.getPattern),
+                  name = rri.name)
+              case rri: NumericScalarRestriction =>
+                f.createNumericScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  minExclusive = Option.apply(rri.getMinExclusive),
+                  minInclusive = Option.apply(rri.getMinInclusive),
+                  maxExclusive = Option.apply(rri.getMaxExclusive),
+                  maxInclusive = Option.apply(rri.getMaxInclusive),
+                  name = rri.name)
+              case rri: PlainLiteralScalarRestriction =>
+                f.createPlainLiteralScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  length = Option.apply(rri.getLength),
+                  minLength = Option.apply(rri.getMinLength),
+                  maxLength = Option.apply(rri.getMaxLength),
+                  pattern = Option.apply(rri.getPattern),
+                  langRange = Option.apply(rri.getLangRange),
+                  name = rri.name)
+              case rri: ScalarOneOfRestriction =>
+                f.createScalarOneOfRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  name = rri.name)
+              case rri: StringScalarRestriction =>
+                f.createStringScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  length = Option.apply(rri.getLength),
+                  minLength = Option.apply(rri.getMinLength),
+                  maxLength = Option.apply(rri.getMaxLength),
+                  pattern = Option.apply(rri.getPattern),
+                  name = rri.name)
+              case rri: SynonymScalarRestriction =>
+                f.createSynonymScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  name = rri.name)
+              case rri: TimeScalarRestriction =>
+                f.createTimeScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  minExclusive = Option.apply(rri.getMinExclusive),
+                  minInclusive = Option.apply(rri.getMinInclusive),
+                  maxExclusive = Option.apply(rri.getMaxExclusive),
+                  maxInclusive = Option.apply(rri.getMaxInclusive),
+                  name = rri.name)
+            }
+            o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (rdri -> rdrj)).right
+          case (tboxj, rsj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertRestrictedDataRanges: Failed to resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                rsj.fold(s" restricted data range: ${rsi.getName}")(_ => "")
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
+    }
+  }
+
   protected def convertScalarOneOfLiteralAxioms
-  (o2r: OMLText2Resolver, lits: Set[ScalarOneOfLiteralAxiom])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (lits.isEmpty)
-    o2r.right
-  else {
-    val (li, remaining) = (lits.head, lits.tail)
-    o2r.dataRanges.get(li.getAxiom) match {
-      case Some(sc: api.ScalarOneOfRestriction) =>
-        val (rj, lj) = f.createScalarOneOfLiteralAxiom(
-          o2r.rextent,
-          o2r.tboxes(li.getTbox),
-          sc,
-          li.getValue)
-        val next = o2r.copy(
-          rextent = rj,
-          scalarOneOfLiterals = o2r.scalarOneOfLiterals + (li -> lj),
-          termAxioms = o2r.termAxioms + (li -> lj))
-        convertScalarOneOfLiteralAxioms(next, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertScalarOneLiteralAxioms: Cannot find ScalarOneOfRestriction for ${li.getAxiom.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: ScalarOneOfLiteralAxiom => s })
+    ss.foldLeft(state) { case (acc, li) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = li.getTbox
+        dri = li.getAxiom
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(dri.getTbox.getExtent).flatMap(_.dataRanges.get(dri))) match {
+          case (Some(tboxj), Some(drj: api.ScalarOneOfRestriction)) =>
+            val (rj, lj) = f.createScalarOneOfLiteralAxiom(
+              extent = o2ri.rextent,
+              tbox = tboxj,
+              axiom = drj,
+              value = li.getValue)
+            o2ri.copy(
+              rextent = rj,
+              scalarOneOfLiterals = o2ri.scalarOneOfLiterals + (li -> lj),
+              termAxioms = o2ri.termAxioms + (li -> lj)).right
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertScalarOneLiteralAxioms: Cannot find ScalarOneOfRestriction for ${li.getAxiom.abbrevIRI()}"
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertEntityScalarDataProperties
-  (o2r: OMLText2Resolver, dps: Set[EntityScalarDataProperty])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (dps.isEmpty)
-    o2r.right
-  else {
-    val (dpi, remaining) = (dps.head, dps.tail)
-    (o2r.entityLookup(dpi.getDomain), o2r.dataRanges.get(dpi.getRange)) match {
-      case (Some(domain: api.Entity), Some(range: api.DataRange)) =>
-        val (rj, dpj) = f.createEntityScalarDataProperty(
-          o2r.rextent,
-          o2r.tboxes(dpi.getTbox),
-          domain, range,
-          dpi.isIsIdentityCriteria,
-          dpi.name())
-        val next = o2r.copy(rextent = rj, entityScalarDataProperties = o2r.entityScalarDataProperties + (dpi -> dpj))
-        convertEntityScalarDataProperties(next, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertEntityScalarDataProperties: Cannot find EntityScalarDataProperty for ${dpi.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: EntityScalarDataProperty => s })
+    ss.foldLeft(state) { case (acc, dpi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = dpi.getTbox
+        dpdi = dpi.getDomain
+        dpri = dpi.getRange
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(dpdi.getTbox.getExtent).flatMap(_.entityLookup(dpdi)),
+          prev.get(dpri.getTbox.getExtent).flatMap(_.dataRanges.get(dpri))) match {
+          case (Some(tboxj), Some(dpdj: api.Entity), Some(dprj: api.DataRange)) =>
+            val (rj, dpj) = f.createEntityScalarDataProperty(
+              o2ri.rextent,
+              tboxj,
+              dpdj, dprj,
+              dpi.isIsIdentityCriteria,
+              dpi.name())
+            o2ri.copy(rextent = rj, entityScalarDataProperties = o2ri.entityScalarDataProperties + (dpi -> dpj)).right
+          case (tboxj, dpdj, dprj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertEntityScalarDataProperties: Cannot resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                dpdj.fold(s" data property domain: ${dpdi.getName}")(_ => "") +
+                dprj.fold(s" data property range: ${dpri.getName}")(_ => "")
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertEntityStructuredDataProperties
-  (o2r: OMLText2Resolver, dps: Set[EntityStructuredDataProperty])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (dps.isEmpty)
-    o2r.right
-  else {
-    val (dpi, remaining) = (dps.head, dps.tail)
-    (o2r.entityLookup(dpi.getDomain), o2r.structures.get(dpi.getRange)) match {
-      case (Some(domain: api.Entity), Some(range: api.Structure)) =>
-        val (rj, dpj) = f.createEntityStructuredDataProperty(
-          o2r.rextent,
-          o2r.tboxes(dpi.getTbox),
-          domain, range,
-          dpi.isIsIdentityCriteria,
-          dpi.name())
-        val next = o2r.copy(rextent = rj, entityStructuredDataProperties = o2r.entityStructuredDataProperties + (dpi -> dpj))
-        convertEntityStructuredDataProperties(next, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertEntityStructuredDataProperties: Cannot find EntityStructuredDataProperty for ${dpi.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: EntityStructuredDataProperty => s })
+    ss.foldLeft(state) { case (acc, dpi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = dpi.getTbox
+        dpdi = dpi.getDomain
+        dpri = dpi.getRange
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(dpdi.getTbox.getExtent).flatMap(_.entityLookup(dpdi)),
+          prev.get(dpri.getTbox.getExtent).flatMap(_.structures.get(dpri))) match {
+          case (Some(tboxj), Some(dpdj: api.Entity), Some(dprj: api.Structure)) =>
+            val (rj, dpj) = f.createEntityStructuredDataProperty(
+              o2ri.rextent,
+              tboxj,
+              dpdj, dprj,
+              dpi.isIsIdentityCriteria,
+              dpi.name())
+            o2ri.copy(rextent = rj, entityStructuredDataProperties = o2ri.entityStructuredDataProperties + (dpi -> dpj)).right
+          case (tboxj, dpdj, dprj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertEntityStructuredDataProperties: Cannot resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                dpdj.fold(s" data property domain: ${dpdi.getName}")(_ => "") +
+                dprj.fold(s" data property range: ${dpri.getName}")(_ => "")
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertScalarDataProperties
-  (o2r: OMLText2Resolver, dps: Set[ScalarDataProperty])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (dps.isEmpty)
-    o2r.right
-  else {
-    val (dpi, remaining) = (dps.head, dps.tail)
-    (o2r.structures.get(dpi.getDomain), o2r.dataRanges.get(dpi.getRange)) match {
-      case (Some(domain: api.Structure), Some(range: api.DataRange)) =>
-        val (rj, dpj) = f.createScalarDataProperty(
-          o2r.rextent,
-          o2r.tboxes(dpi.getTbox),
-          domain, range,
-          dpi.name())
-        val next = o2r.copy(rextent = rj, scalarDataProperties = o2r.scalarDataProperties + (dpi -> dpj))
-        convertScalarDataProperties(next, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertScalarDataProperties: Cannot find ScalarDataProperty for ${dpi.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: ScalarDataProperty => s })
+    ss.foldLeft(state) { case (acc, dpi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = dpi.getTbox
+        dpdi = dpi.getDomain
+        dpri = dpi.getRange
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(dpdi.getTbox.getExtent).flatMap(_.structures.get(dpdi)),
+          prev.get(dpri.getTbox.getExtent).flatMap(_.dataRanges.get(dpri))) match {
+          case (Some(tboxj), Some(dpdj: api.Structure), Some(dprj: api.DataRange)) =>
+            val (rj, dpj) = f.createScalarDataProperty(
+              o2ri.rextent,
+              tboxj,
+              dpdj, dprj,
+              dpi.name())
+            o2ri.copy(rextent = rj, scalarDataProperties = o2ri.scalarDataProperties + (dpi -> dpj)).right
+          case (tboxj, dpdj, dprj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertScalarDataProperties: Cannot resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                dpdj.fold(s" data property domain: ${dpdi.getName}")(_ => "") +
+                dprj.fold(s" data property range: ${dpri.getName}")(_ => "")
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertStructuredDataProperties
-  (o2r: OMLText2Resolver, dps: Set[StructuredDataProperty])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (dps.isEmpty)
-    o2r.right
-  else {
-    val (dpi, remaining) = (dps.head, dps.tail)
-    (o2r.structures.get(dpi.getDomain), o2r.structures.get(dpi.getRange)) match {
-      case (Some(domain: api.Structure), Some(range: api.Structure)) =>
-        val (rj, dpj) = f.createStructuredDataProperty(
-          o2r.rextent,
-          o2r.tboxes(dpi.getTbox),
-          domain, range,
-          dpi.name())
-        val next = o2r.copy(rextent = rj, structuredDataProperties = o2r.structuredDataProperties + (dpi -> dpj))
-        convertStructuredDataProperties(next, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertStructuredDataProperties: Cannot find StructuredDataProperty for ${dpi.abbrevIRI()}"
-        )).left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: StructuredDataProperty => s })
+    ss.foldLeft(state) { case (acc, dpi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = dpi.getTbox
+        dpdi = dpi.getDomain
+        dpri = dpi.getRange
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(dpdi.getTbox.getExtent).flatMap(_.structures.get(dpdi)),
+          prev.get(dpri.getTbox.getExtent).flatMap(_.structures.get(dpri))) match {
+          case (Some(tboxj), Some(dpdj: api.Structure), Some(dprj: api.Structure)) =>
+            val (rj, dpj) = f.createStructuredDataProperty(
+              o2ri.rextent,
+              tboxj,
+              dpdj, dprj,
+              dpi.name())
+            o2ri.copy(rextent = rj, structuredDataProperties = o2ri.structuredDataProperties + (dpi -> dpj)).right
+          case (tboxj, dpdj, dprj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertStructuredDataProperties: Cannot resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                dpdj.fold(s" data property domain: ${dpdi.getName}")(_ => "") +
+                dprj.fold(s" data property range: ${dpri.getName}")(_ => "")
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertEntityRestrictionAxioms
-  (o2r: OMLText2Resolver, axs: Set[EntityRestrictionAxiom])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    ( o2r.entityLookup(axi.getRestrictedDomain),
-      o2r.entityLookup(axi.getRestrictedRange),
-      o2r.entityRelationshipLookup(axi.getRestrictedRelation)) match {
-      case (Some(domain), Some(range), Some(rl)) =>
-        val (rj, axj) = axi match {
-          case _: EntityExistentialRestrictionAxiom =>
-            f.createEntityExistentialRestrictionAxiom(o2r.rextent, o2r.tboxes(axi.getTbox), rl, domain, range)
-          case _: EntityUniversalRestrictionAxiom =>
-            f.createEntityUniversalRestrictionAxiom(o2r.rextent, o2r.tboxes(axi.getTbox), rl, domain, range)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: EntityRestrictionAxiom => s })
+    ss.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = axi.getTbox
+        rdi = axi.getRestrictedDomain
+        rri = axi.getRestrictedRange
+        rli = axi.getRestrictedRelation
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(rdi.getTbox.getExtent).flatMap(_.entityLookup(rdi)),
+          prev.get(rri.getTbox.getExtent).flatMap(_.entityLookup(rri)),
+          prev.get(rli.getTbox.getExtent).flatMap(_.entityRelationshipLookup(rli))) match {
+          case (Some(tboxj), Some(rdj), Some(rrj), Some(rlj)) =>
+            val (rj, axj) = axi match {
+              case _: EntityExistentialRestrictionAxiom =>
+                f.createEntityExistentialRestrictionAxiom(o2ri.rextent, tboxj, rlj, rdj, rrj)
+              case _: EntityUniversalRestrictionAxiom =>
+                f.createEntityUniversalRestrictionAxiom(o2ri.rextent, tboxj, rlj, rdj, rrj)
+            }
+            o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axj)).right
+          case (tboxj, rdj, rrj, rlj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertEntityRestrictionAxioms: Cannot resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                rdj.fold(s" restriction domain: ${rdi.getName}")(_ => "") +
+                rrj.fold(s" restriction range: ${rdi.getName}")(_ => "") +
+                rlj.fold(s" restricted relation: ${rli.getName}")(_ => "")
+            )).left
         }
-        val next = o2r.copy(rextent = rj, termAxioms = o2r.termAxioms + (axi -> axj))
-        convertEntityRestrictionAxioms(next, remaining)
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertEntityRestrictionAxioms: Cannot find EntityRestrictionAxiom for"+
-            s": domain: ${axi.getRestrictedDomain.abbrevIRI()}" +
-            s", relation: ${axi.getRestrictedRelation.abbrevIRI()}" +
-            s", range: ${axi.getRestrictedRange.abbrevIRI()}"
-        )).left
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertEntityScalarDataPropertyRestrictionAxioms
-  (o2r: OMLText2Resolver, axs: Set[EntityScalarDataPropertyRestrictionAxiom])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    ( o2r.entityLookup(axi.getRestrictedEntity),
-      o2r.entityScalarDataProperties.get(axi.getScalarProperty)) match {
-      case (Some(e), Some(dp)) =>
-        val (rj, axj: \/[EMFProblems, api.EntityScalarDataPropertyRestrictionAxiom]) = axi match {
-          case axpi: EntityScalarDataPropertyParticularRestrictionAxiom =>
-            f
-              .createEntityScalarDataPropertyParticularRestrictionAxiom(
-                o2r.rextent, o2r.tboxes(axi.getTbox), e, dp, axpi.getLiteralValue) match { case (rk, ak) => rk -> ak.right }
-          case axui: EntityScalarDataPropertyExistentialRestrictionAxiom =>
-            o2r.dataRanges.get(axui.getScalarRestriction) match {
-              case Some(dr) =>
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: EntityScalarDataPropertyRestrictionAxiom => s })
+    ss.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = axi.getTbox
+        ei = axi.getRestrictedEntity
+        dpi = axi.getScalarProperty
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(ei.getTbox.getExtent).flatMap(_.entityLookup(ei)),
+          prev.get(dpi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(dpi))) match {
+          case (Some(tboxj), Some(ej), Some(dpj)) =>
+            val (rj, axj: \/[EMFProblems, api.EntityScalarDataPropertyRestrictionAxiom]) = axi match {
+              case axpi: EntityScalarDataPropertyParticularRestrictionAxiom =>
                 f
-                  .createEntityScalarDataPropertyExistentialRestrictionAxiom(
-                    o2r.rextent, o2r.tboxes(axi.getTbox), e, dp, dr) match { case (rk, ak) => rk -> ak.right }
-              case _ =>
-                o2r.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
-                  s"convertEntityScalarDataPropertyRestrictionAxioms: "+
-                    s"Cannot find DataRange: ${axui.getScalarRestriction.abbrevIRI()}"
-                )).left
+                  .createEntityScalarDataPropertyParticularRestrictionAxiom(
+                    o2ri.rextent, tboxj, ej, dpj, axpi.getLiteralValue) match {
+                  case (rk, ak) => rk -> ak.right
+                }
+              case axui: EntityScalarDataPropertyExistentialRestrictionAxiom =>
+                val dri = axui.getScalarRestriction
+                prev.get(dri.getTbox.getExtent).flatMap(_.dataRanges.get(dri)) match {
+                  case Some(drj) =>
+                    f
+                      .createEntityScalarDataPropertyExistentialRestrictionAxiom(
+                        o2ri.rextent, tboxj, ej, dpj, drj) match {
+                      case (rk, ak) => rk -> ak.right
+                    }
+                  case _ =>
+                    o2ri.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"convertEntityScalarDataPropertyRestrictionAxioms: " +
+                        s"Cannot find DataRange: ${axui.getScalarRestriction.abbrevIRI()}"
+                    )).left
+                }
+              case axui: EntityScalarDataPropertyUniversalRestrictionAxiom =>
+                val dri = axui.getScalarRestriction
+                prev.get(dri.getTbox.getExtent).flatMap(_.dataRanges.get(dri)) match {
+                  case Some(drj) =>
+                    f
+                      .createEntityScalarDataPropertyUniversalRestrictionAxiom(
+                        o2ri.rextent, tboxj, ej, dpj, drj) match {
+                      case (rk, ak) => rk -> ak.right
+                    }
+                  case _ =>
+                    o2ri.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"convertEntityScalarDataPropertyRestrictionAxioms: " +
+                        s"Cannot find DataRange: ${axui.getScalarRestriction.abbrevIRI()}"
+                    )).left
+                }
             }
-          case axui: EntityScalarDataPropertyUniversalRestrictionAxiom =>
-            o2r.dataRanges.get(axui.getScalarRestriction) match {
-              case Some(dr) =>
-                f
-                  .createEntityScalarDataPropertyUniversalRestrictionAxiom(
-                    o2r.rextent, o2r.tboxes(axi.getTbox), e, dp, dr) match { case (rk, ak) => rk -> ak.right }
-              case _ =>
-                o2r.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
-                  s"convertEntityScalarDataPropertyRestrictionAxioms: "+
-                    s"Cannot find DataRange: ${axui.getScalarRestriction.abbrevIRI()}"
-                )).left
+            axj match {
+              case \/-(axrj) =>
+                o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axrj)).right
+              case -\/(error) =>
+                error.left
             }
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertEntityScalarDataPropertyRestrictionAxioms: Cannot find EntityScalarDataPropertyRestrictionAxiom for" +
+                s": restricted entity: ${axi.getRestrictedEntity.abbrevIRI()}" +
+                s", scalar data property: ${axi.getScalarProperty.abbrevIRI()}"
+            )).left
         }
-        axj match {
+        next = prev.updated(e, o2rj)
+      } yield next
+    }
+  }
+
+  protected def convertSpecializationAxioms
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: SpecializationAxiom => s })
+    ss.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = axi.getTbox
+        supi = axi.parent()
+        subi = axi.child()
+        (rj, axj: \/[EMFProblems, api.SpecializationAxiom]) =
+        (axi,
+          prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(supi.getTbox.getExtent).flatMap(_.entityLookup(supi)),
+          prev.get(subi.getTbox.getExtent).flatMap(_.entityLookup(subi))) match {
+          case (_: ConceptSpecializationAxiom, Some(tboxj), Some(supj: api.Concept), Some(subj: api.Concept)) =>
+            f.createConceptSpecializationAxiom(o2ri.rextent, tboxj, supj, subj) match {
+              case (rk, ak) => rk -> ak.right
+            }
+          case (_: AspectSpecializationAxiom, Some(tboxj), Some(supj: api.Aspect), Some(subj)) =>
+            f.createAspectSpecializationAxiom(o2ri.rextent, tboxj, supj, subj) match {
+              case (rk, ak) => rk -> ak.right
+            }
+          case (_: ReifiedRelationshipSpecializationAxiom, Some(tboxj), Some(supj: api.ReifiedRelationship), Some(subj: api.ReifiedRelationship)) =>
+            f.createReifiedRelationshipSpecializationAxiom(o2ri.rextent, tboxj, supj, subj) match {
+              case (rk, ak) => rk -> ak.right
+            }
+          case (_, tboxj, supj, subj) =>
+            o2ri.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertSpecializationAxioms: Cannot find: " +
+                s"tbox: ${tboxi.abbrevIRI()}" +
+                s"general: ${supi.abbrevIRI()}" +
+                s"specific: ${subi.abbrevIRI()}"
+            )).left
+        }
+        o2rj <- axj match {
           case \/-(axrj) =>
-            val next = o2r.copy(rextent = rj, termAxioms = o2r.termAxioms + (axi -> axrj))
-            convertEntityScalarDataPropertyRestrictionAxioms(next, remaining)
+            o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axrj)).right
           case -\/(error) =>
             error.left
         }
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertEntityScalarDataPropertyRestrictionAxioms: Cannot find EntityScalarDataPropertyRestrictionAxiom for"+
-            s": restricted entity: ${axi.getRestrictedEntity.abbrevIRI()}" +
-            s", scalar data property: ${axi.getScalarProperty.abbrevIRI()}"
-        )).left
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
-  protected def convertSpecializationAxioms
-  (o2r: OMLText2Resolver, axs: Set[SpecializationAxiom])
-  (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    val (rj, axj: \/[EMFProblems, api.SpecializationAxiom]) =
-      ( axi,
-      o2r.tboxes.get(axi.getTbox),
-      o2r.entityLookup(axi.parent),
-      o2r.entityLookup(axi.child) ) match {
-      case (_:ConceptSpecializationAxiom, Some(tbox), Some(sup: api.Concept), Some(sub: api.Concept)) =>
-        f.createConceptSpecializationAxiom(o2r.rextent, tbox, sup, sub) match {
-          case (rk, ak) => rk -> ak.right }
-      case (_:AspectSpecializationAxiom, Some(tbox), Some(sup: api.Aspect), Some(sub)) =>
-        f.createAspectSpecializationAxiom(o2r.rextent, tbox, sup, sub) match {
-          case (rk, ak) => rk -> ak.right }
-      case (_:ReifiedRelationshipSpecializationAxiom, Some(tbox), Some(sup: api.ReifiedRelationship), Some(sub: api.ReifiedRelationship)) =>
-        f.createReifiedRelationshipSpecializationAxiom(o2r.rextent, tbox, sup, sub) match {
-          case (rk, ak) => rk -> ak.right }
-      case _ =>
-        o2r.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertSpecializationAxioms: Cannot find: "+
-            s"tbox: ${axi.getTbox.abbrevIRI()}"+
-            s"general: ${axi.parent.abbrevIRI()}"+
-            s"specific: ${axi.child.abbrevIRI()}"
-        )).left
-      }
-    axj match {
-      case \/-(axrj) =>
-        val next = o2r.copy(rextent = rj, termAxioms = o2r.termAxioms + (axi -> axrj))
-        convertSpecializationAxioms(next, remaining)
-      case -\/(error) =>
-        error.left
-    }
-  }
-
-  @scala.annotation.tailrec
   protected def convertRootConceptTaxonomyAxioms
-  (o2r: OMLText2Resolver, axs: Set[RootConceptTaxonomyAxiom])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (axs.isEmpty)
-    o2r.right
-  else {
-    val (axi, remaining) = (axs.head, axs.tail)
-    convertConceptTreeDisjunction(o2r, axi) match {
-      case \/-(next) =>
-        convertRootConceptTaxonomyAxioms(next, remaining)
-      case -\/(error) =>
-        error.left
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val bundles = e.getModules.selectByKindOf { case b: Bundle => b }
+    val axs = bundles.flatMap(_.getBundleStatements.selectByKindOf { case ax: RootConceptTaxonomyAxiom => ax })
+    axs.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        o2rj <- convertConceptTreeDisjunction(o2ri, axi)
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
@@ -991,215 +1234,266 @@ object OMLText2Resolver {
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertConceptInstances
-  (o2r: OMLText2Resolver, cxs: List[(DescriptionBox, api.DescriptionBox, List[ConceptInstance])])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (cxs.isEmpty)
-      o2r.right
-  else {
-    val ((di, dj, cis), remaining) = (cxs.head, cxs.tail)
-    cis match {
-      case ci :: cit =>
-        o2r.concepts.get(ci.getSingletonConceptClassifier) match {
-          case Some(ck) =>
-            val (rj, cj) = f.createConceptInstance(o2r.rextent, dj, ck, ci.getName)
-            val next = o2r.copy(
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
+    val ss = dboxes.flatMap(_.getConceptInstances.asScala.to[Set])
+    ss.foldLeft(state) { case (acc, di) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        dboxi = di.descriptionBox()
+        cli = di.getSingletonConceptClassifier
+        o2rj <-
+        (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
+          prev.get(cli.getTbox.getExtent).flatMap(_.concepts.get(cli))) match {
+          case (Some(dboxj), Some(clj)) =>
+            val (rj, dj) = f.createConceptInstance(o2ri.rextent, dboxj, clj, di.getName)
+            o2ri.copy(
               rextent = rj,
-              conceptualEntitySingletonInstances = o2r.conceptualEntitySingletonInstances + (ci -> cj))
-            convertConceptInstances(next, (di, dj, cit) :: remaining)
+              conceptualEntitySingletonInstances = o2ri.conceptualEntitySingletonInstances + (di -> dj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertConceptInstances: Cannot find: " +
-                s"concept: ${ci.getSingletonConceptClassifier.abbrevIRI}"
+                s"concept: ${di.getSingletonConceptClassifier.abbrevIRI}"
             )).left
         }
-      case _ =>
-        convertConceptInstances(o2r, remaining)
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertReifiedRelationshipInstances
-  (o2r: OMLText2Resolver, rrxs: List[(DescriptionBox, api.DescriptionBox, List[ReifiedRelationshipInstance])])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (rrxs.isEmpty)
-    o2r.right
-  else {
-    val ((di, dj, rris), remaining) = (rrxs.head, rrxs.tail)
-    rris match {
-      case rri :: rrit =>
-        o2r.reifiedRelationships.get(rri.getSingletonReifiedRelationshipClassifier) match {
-          case Some(rrk) =>
-            val (rj, rrj) = f.createReifiedRelationshipInstance(o2r.rextent, dj, rrk, rri.getName)
-            val next = o2r.copy(
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
+    val ss = dboxes.flatMap(_.getReifiedRelationshipInstances.asScala.to[Set])
+    ss.foldLeft(state) { case (acc, di) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        dboxi = di.descriptionBox()
+        cli = di.getSingletonReifiedRelationshipClassifier
+        o2rj <-
+        (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
+          prev.get(cli.getTbox.getExtent).flatMap(_.reifiedRelationships.get(cli))) match {
+          case (Some(dboxj), Some(clj)) =>
+            val (rj, dj) = f.createReifiedRelationshipInstance(o2ri.rextent, dboxj, clj, di.getName)
+            o2ri.copy(
               rextent = rj,
-              conceptualEntitySingletonInstances = o2r.conceptualEntitySingletonInstances + (rri -> rrj))
-            convertReifiedRelationshipInstances(next, (di, dj, rrit) :: remaining)
+              conceptualEntitySingletonInstances = o2ri.conceptualEntitySingletonInstances + (di -> dj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertReifiedRelationshipInstances: Cannot find: " +
-                s"concept: ${rri.getSingletonReifiedRelationshipClassifier.abbrevIRI}"
+                s"reified relationship: ${di.getSingletonReifiedRelationshipClassifier.abbrevIRI}"
             )).left
         }
-      case _ =>
-        convertReifiedRelationshipInstances(o2r, remaining)
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertReifiedRelationshipInstanceDomains
-  (o2r: OMLText2Resolver, rrxs: List[(DescriptionBox, api.DescriptionBox, List[ReifiedRelationshipInstanceDomain])])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (rrxs.isEmpty)
-    o2r.right
-  else {
-    val ((di, dj, rris), remaining) = (rrxs.head, rrxs.tail)
-    rris match {
-      case rri :: rrit =>
-        ( o2r.conceptualEntitySingletonInstances.get(rri.getReifiedRelationshipInstance),
-          o2r.conceptualEntitySingletonInstances.get(rri.getDomain) ) match {
-          case ( Some(rrk: api.ReifiedRelationshipInstance), Some(rrdj) ) =>
-            val (rj, _) = f.createReifiedRelationshipInstanceDomain(o2r.rextent, dj, rrk, rrdj)
-            val next = o2r.copy(rextent = rj)
-            convertReifiedRelationshipInstanceDomains(next, (di, dj, rrit) :: remaining)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
+    val ss = dboxes.flatMap(_.getReifiedRelationshipInstanceDomains.asScala.to[Set])
+    ss.foldLeft(state) { case (acc, di) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        dboxi = di.descriptionBox()
+        rrii = di.getReifiedRelationshipInstance
+        rdi = di.getDomain
+        o2rj <-
+        (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
+          prev.get(rrii.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(rrii)),
+          prev.get(rdi.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(rdi))) match {
+          case (Some(dboxj), Some(rrij: api.ReifiedRelationshipInstance), Some(rdj)) =>
+            val (rj, _) = f.createReifiedRelationshipInstanceDomain(o2ri.rextent, dboxj, rrij, rdj)
+            o2ri.copy(rextent = rj).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertReifiedRelationshipInstanceDomains: Cannot find: " +
-                s"reified relationship instance: ${rri.getReifiedRelationshipInstance.abbrevIRI}" +
-                s"reified relationship domain: ${rri.getDomain.abbrevIRI}"
+                s"reified relationship instance: ${rrii.abbrevIRI}" +
+                s"reified relationship domain: ${rdi.abbrevIRI}"
             )).left
         }
-      case _ =>
-        convertReifiedRelationshipInstanceDomains(o2r, remaining)
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertReifiedRelationshipInstanceRanges
-  (o2r: OMLText2Resolver, rrxs: List[(DescriptionBox, api.DescriptionBox, List[ReifiedRelationshipInstanceRange])])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (rrxs.isEmpty)
-    o2r.right
-  else {
-    val ((di, dj, rris), remaining) = (rrxs.head, rrxs.tail)
-    rris match {
-      case rri :: rrit =>
-        ( o2r.conceptualEntitySingletonInstances.get(rri.getReifiedRelationshipInstance),
-          o2r.conceptualEntitySingletonInstances.get(rri.getRange) ) match {
-          case ( Some(rrk: api.ReifiedRelationshipInstance), Some(rrdj) ) =>
-            val (rj, _) = f.createReifiedRelationshipInstanceRange(o2r.rextent, dj, rrk, rrdj)
-            val next = o2r.copy(rextent = rj)
-            convertReifiedRelationshipInstanceRanges(next, (di, dj, rrit) :: remaining)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
+    val ss = dboxes.flatMap(_.getReifiedRelationshipInstanceRanges.asScala.to[Set])
+    ss.foldLeft(state) { case (acc, di) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        dboxi = di.descriptionBox()
+        rrii = di.getReifiedRelationshipInstance
+        rri = di.getRange
+        o2rj <-
+        (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
+          prev.get(rrii.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(rrii)),
+          prev.get(rri.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(rri))) match {
+          case (Some(dboxj), Some(rrij: api.ReifiedRelationshipInstance), Some(rrj)) =>
+            val (rj, _) = f.createReifiedRelationshipInstanceRange(o2ri.rextent, dboxj, rrij, rrj)
+            o2ri.copy(rextent = rj).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertReifiedRelationshipInstanceRanges: Cannot find: " +
-                s"reified relationship instance: ${rri.getReifiedRelationshipInstance.abbrevIRI}" +
-                s"reified relationship range: ${rri.getRange.abbrevIRI}"
+                s"reified relationship instance: ${rrii.abbrevIRI}" +
+                s"reified relationship range: ${rri.abbrevIRI}"
             )).left
         }
-      case _ =>
-        convertReifiedRelationshipInstanceRanges(o2r, remaining)
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertUnreifiedRelationshipInstances
-  (o2r: OMLText2Resolver, urxs: List[(DescriptionBox, api.DescriptionBox, List[UnreifiedRelationshipInstanceTuple])])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (urxs.isEmpty)
-    o2r.right
-  else {
-    val ((di, dj, uris), remaining) = (urxs.head, urxs.tail)
-    uris match {
-      case uri :: urit =>
-        ( o2r.conceptualEntitySingletonInstances.get(uri.getDomain),
-          o2r.conceptualEntitySingletonInstances.get(uri.getRange),
-          o2r.unreifiedRelationships.get(uri.getUnreifiedRelationship) ) match {
-          case ( Some(urjd), Some(urjr), Some(urj) ) =>
-            val (rj, _) = f.createUnreifiedRelationshipInstanceTuple(o2r.rextent, dj, urj, urjd, urjr)
-            val next = o2r.copy(rextent = rj)
-            convertUnreifiedRelationshipInstances(next, (di, dj, urit) :: remaining)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
+    val ss = dboxes.flatMap(_.getUnreifiedRelationshipInstanceTuples.asScala.to[Set])
+    ss.foldLeft(state) { case (acc, di) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        dboxi = di.descriptionBox()
+        ui = di.getUnreifiedRelationship
+        udi = di.getDomain
+        uri = di.getRange
+        o2rj <-
+        (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
+          prev.get(ui.getTbox.getExtent).flatMap(_.unreifiedRelationships.get(ui)),
+          prev.get(udi.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(udi)),
+          prev.get(uri.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(uri))) match {
+          case (Some(dboxj), Some(uj), Some(udj), Some(urj)) =>
+            val (rj, _) = f.createUnreifiedRelationshipInstanceTuple(o2ri.rextent, dboxj, uj, udj, urj)
+            o2ri.copy(rextent = rj).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertUnreifiedRelationshipInstances: Cannot find: " +
-                s"domain: ${uri.getDomain.abbrevIRI}" +
-                s"range: ${uri.getRange.abbrevIRI}" +
-                s"unreified relationship: ${uri.getUnreifiedRelationship.abbrevIRI}"
+                s"domain: ${udi.abbrevIRI}" +
+                s"range: ${uri.abbrevIRI}" +
+                s"unreified relationship: ${ui.abbrevIRI}"
             )).left
         }
-      case _ =>
-        convertUnreifiedRelationshipInstances(o2r, remaining)
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertSingletonScalarDataPropertyValues
-  (o2r: OMLText2Resolver, vs: List[(DescriptionBox, api.DescriptionBox, List[SingletonInstanceScalarDataPropertyValue])])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (vs.isEmpty)
-    o2r.right
-  else {
-    val ((di, dj, vis), remaining) = (vs.head, vs.tail)
-    vis match {
-      case vi :: vit =>
-        ( o2r.conceptualEntitySingletonInstances.get(vi.getSingletonInstance),
-          o2r.entityScalarDataProperties.get(vi.getScalarDataProperty) ) match {
-          case ( Some(cj), Some(scj) ) =>
-            val (rj, _) = f.createSingletonInstanceScalarDataPropertyValue(o2r.rextent, dj, cj, scj, vi.getScalarPropertyValue)
-            val next = o2r.copy(rextent = rj)
-            convertSingletonScalarDataPropertyValues(next, (di, dj, vit) :: remaining)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
+    val ss = dboxes.flatMap(_.getSingletonScalarDataPropertyValues.asScala.to[Set])
+    ss.foldLeft(state) { case (acc, di) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        dboxi = di.descriptionBox()
+        si = di.getSingletonInstance
+        dpi = di.getScalarDataProperty
+        o2rj <-
+        (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
+          prev.get(si.descriptionBox().getExtent).flatMap(_.conceptualEntitySingletonInstances.get(si)),
+          prev.get(dpi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(dpi))) match {
+          case (Some(dboxj), Some(sj), Some(dpj)) =>
+            val (rj, _) = f.createSingletonInstanceScalarDataPropertyValue(o2ri.rextent, dboxj, sj, dpj, di.getScalarPropertyValue)
+            o2ri.copy(rextent = rj).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertSingletonScalarDataPropertyValues: Cannot find: " +
-                s"singleton instance: ${vi.getSingletonInstance.abbrevIRI}" +
-                s"scalar data property: ${vi.getScalarDataProperty.abbrevIRI}"
+                s"singleton instance: ${si.abbrevIRI}" +
+                s"entity scalar data property: ${dpi.abbrevIRI}"
             )).left
         }
-      case _ =>
-        convertSingletonScalarDataPropertyValues(o2r, remaining)
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
-  @scala.annotation.tailrec
   protected def convertSingletonStructuredDataPropertyValues
-  (o2r: OMLText2Resolver, vs: List[(DescriptionBox, api.DescriptionBox, List[SingletonInstanceStructuredDataPropertyValue])])
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
-  : EMFProblems \/ OMLText2Resolver
-  = if (vs.isEmpty)
-    o2r.right
-  else {
-    val ((di, dj, vis), remaining) = (vs.head, vs.tail)
-    vis match {
-      case vi :: vit =>
-        ( o2r.conceptualEntitySingletonInstances.get(vi.getSingletonInstance),
-          o2r.dataRelationshipToStructureLookup(vi.getStructuredDataProperty) ) match {
-          case ( Some(cj), Some(scj: api.StructuredDataProperty) ) =>
-            val (rj, vj) = f.createSingletonInstanceStructuredDataPropertyValue(o2r.rextent, dj, cj, scj)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
+    val ss = dboxes.flatMap(_.getSingletonStructuredDataPropertyValues.asScala.to[Set])
+    ss.foldLeft(state) { case (acc, di) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        dboxi = di.descriptionBox()
+        si = di.getSingletonInstance
+        dpi = di.getStructuredDataProperty.asInstanceOf[EntityStructuredDataProperty]
+        o2rj <-
+        (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
+          prev.get(si.descriptionBox().getExtent).flatMap(_.conceptualEntitySingletonInstances.get(si)),
+          prev.get(dpi.getTbox.getExtent).flatMap(_.entityStructuredDataProperties.get(dpi))) match {
+          case (Some(dboxj), Some(sj), Some(dpj)) =>
+            val (rj, vj) = f.createSingletonInstanceStructuredDataPropertyValue(o2ri.rextent, dboxj, sj, dpj)
             convertSingletonInstanceStructuredDataPropertyContext(
-              o2r.copy(rextent = rj),
-              vi.getScalarDataPropertyValues.asScala.to[Seq].map(vj -> _),
-              vi.getStructuredPropertyTuples.asScala.to[Seq].map(vj -> _)) match {
-              case \/-(next) =>
-                convertSingletonStructuredDataPropertyValues(next, (di, dj, vit) :: remaining)
-              case -\/(error) =>
-                error.left
-            }
+              o2ri.copy(rextent = rj),
+              di.getScalarDataPropertyValues.asScala.to[Seq].map(vj -> _),
+              di.getStructuredPropertyTuples.asScala.to[Seq].map(vj -> _))
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertSingletonStructuredDataPropertyValues: Cannot find: " +
-                s"singleton instance: ${vi.getSingletonInstance.abbrevIRI}" +
-                s"structured data property: ${vi.getStructuredDataProperty.abbrevIRI}"
+                s"singleton instance: ${si.abbrevIRI}" +
+                s"entity structured data property: ${dpi.abbrevIRI}"
             )).left
         }
-      case _ =>
-        convertSingletonStructuredDataPropertyValues(o2r, remaining)
+        next = prev.updated(e, o2rj)
+      } yield next
     }
   }
 
@@ -1240,5 +1534,195 @@ object OMLText2Resolver {
     }
   } else
     o2r.right
+
+  protected def convertAnnotations
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    val (e, _) = entry
+    e.getModules.asScala.to[Set].foldLeft(state) {
+      case (acc1, mi) =>
+        mi match {
+          case tboxi: TerminologyBox =>
+            for {
+              prev <- acc1
+              allO2Rs = prev.values
+              annotationProperties = allO2Rs.flatMap(_.aps).toMap
+              o2ri = prev(e)
+              o2rj <- tboxi.getAnnotations.asScala.foldLeft(o2ri.right[EMFProblems]) { case (acc2, a0) =>
+                for {
+                  o2rk <- acc2
+                  aSubject <- allO2Rs.flatMap(_.elementLookup(a0.getSubject)).headOption match {
+                    case Some(aSubject) =>
+                      aSubject.right
+                    case None =>
+                      new EMFProblems(new java.lang.IllegalArgumentException(
+                        s"convertAnnotations: Cannot find: ${a0.getSubject} "
+                      )).left
+                  }
+                  aProperty <- annotationProperties.get(a0.getProperty) match {
+                    case Some(aProperty) =>
+                      aProperty.right
+                    case None =>
+                      new EMFProblems(new java.lang.IllegalArgumentException(
+                        s"convertAnnotations: Cannot find: ${a0.getProperty} "
+                      )).left
+                  }
+                  tboxk = o2rk.tboxes(tboxi)
+                  (el, _) = f.createAnnotation(o2rk.rextent, tboxk, aSubject, aProperty, a0.getValue)
+                  o2rl = o2rk.copy(rextent = el)
+                } yield o2rl
+              }
+              next = prev.updated(e, o2rj)
+            } yield next
+
+          case dboxi: DescriptionBox =>
+            for {
+              prev <- acc1
+              allO2Rs = prev.values
+              annotationProperties = allO2Rs.flatMap(_.aps).toMap
+              o2ri = prev(e)
+              o2rj <- dboxi.getAnnotations.asScala.foldLeft(o2ri.right[EMFProblems]) { case (acc2, a0) =>
+                for {
+                  o2rk <- acc2
+                  aSubject <- allO2Rs.flatMap(_.elementLookup(a0.getSubject)).headOption match {
+                    case Some(aSubject) =>
+                      aSubject.right
+                    case None =>
+                      new EMFProblems(new java.lang.IllegalArgumentException(
+                        s"convertAnnotations: Cannot find: ${a0.getSubject} "
+                      )).left
+                  }
+                  aProperty <- annotationProperties.get(a0.getProperty) match {
+                    case Some(aProperty) =>
+                      aProperty.right
+                    case None =>
+                      new EMFProblems(new java.lang.IllegalArgumentException(
+                        s"convertAnnotations: Cannot find: ${a0.getProperty} "
+                      )).left
+                  }
+                  dboxk = o2rk.dboxes(dboxi)
+                  (el, _) = f.createAnnotation(o2rk.rextent, dboxk, aSubject, aProperty, a0.getValue)
+                  o2rl = o2rk.copy(rextent = el)
+                } yield o2rl
+              }
+              next = prev.updated(e, o2rj)
+            } yield next
+        }
+    }
+  }
+
+  def convert
+  (fileExtents: Map[Extent, File])
+  (implicit factory: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = for {
+    c00 <- fileExtents.map { case (e, f) =>
+      e -> OMLText2Resolver(omlFile = f, rextent = api.Extent())
+    }.right[EMFProblems]
+
+    // Modules
+    c01 <- c00.foldLeft(c00.right[EMFProblems])(convertModules)
+
+    // AnnotationProperties
+    c02 <- c01.foldLeft(c01.right[EMFProblems])(convertAnnotationProperties)
+
+    // TerminologyExtensions
+
+    c03 <- c02.foldLeft(c02.right[EMFProblems])(convertTerminologyExtensions)
+
+    // Atomic Entities
+    c10 = c03
+
+    c11 <- c10.foldLeft(c10.right[EMFProblems])(convertAspects)
+
+    c12 <- c11.foldLeft(c11.right[EMFProblems])(convertConcepts)
+
+    // Other ModuleEdges
+    c20 = c12
+
+    c21 <- c20.foldLeft(c20.right[EMFProblems])(convertConceptDesignationTerminologyAxioms)
+
+    c22 <- c21.foldLeft(c21.right[EMFProblems])(convertTerminologyNestingAxioms)
+
+    c23 <- c22.foldLeft(c22.right[EMFProblems])(convertBundledTerminologyAxioms)
+
+    c24 <- c23.foldLeft(c23.right[EMFProblems])(convertDescriptionBoxExtendsClosedWorldDefinitions)
+
+    c25 <- c24.foldLeft(c24.right[EMFProblems])(convertDescriptionBoxRefinements)
+
+    // Relationships
+    c30 = c25
+
+    c31 <- c30.foldLeft(c30.right[EMFProblems])(convertReifiedRelationships)
+
+    c32 <- c31.foldLeft(c31.right[EMFProblems])(convertUnreifiedRelationships)
+
+    // DataTypes
+
+    c33 <- c32.foldLeft(c32.right[EMFProblems])(convertStructures)
+
+    c34 <- c33.foldLeft(c33.right[EMFProblems])(convertScalars)
+
+    c35 <- c34.foldLeft(c34.right[EMFProblems])(convertRestrictedDataRanges)
+
+    c36 <- c35.foldLeft(c35.right[EMFProblems])(convertScalarOneOfLiteralAxioms)
+
+    // DataRelationships
+    c40 = c36
+
+    c41 <- c40.foldLeft(c40.right[EMFProblems])(convertEntityScalarDataProperties)
+
+    c42 <- c41.foldLeft(c41.right[EMFProblems])(convertEntityStructuredDataProperties)
+
+    c43 <- c42.foldLeft(c42.right[EMFProblems])(convertScalarDataProperties)
+
+    c44 <- c43.foldLeft(c43.right[EMFProblems])(convertStructuredDataProperties)
+
+    // Restrictions
+    c50 = c44
+
+    c51 <- c50.foldLeft(c50.right[EMFProblems])(convertEntityRestrictionAxioms)
+
+    c52 <- c51.foldLeft(c51.right[EMFProblems])(convertEntityScalarDataPropertyRestrictionAxioms)
+
+    // Specializations
+    c60 = c52
+
+    c61 <- c60.foldLeft(c60.right[EMFProblems])(convertSpecializationAxioms)
+
+    // Disjunctions
+    c70 = c61
+
+    c71 <- c70.foldLeft(c70.right[EMFProblems])(convertRootConceptTaxonomyAxioms)
+
+    // ConceptualEntityInstances
+    c80 = c71
+
+    c81 <- c80.foldLeft(c80.right[EMFProblems])(convertConceptInstances)
+
+    c82 <- c81.foldLeft(c81.right[EMFProblems])(convertReifiedRelationshipInstances)
+
+    c83 <- c82.foldLeft(c82.right[EMFProblems])(convertReifiedRelationshipInstanceDomains)
+
+    c84 <- c83.foldLeft(c83.right[EMFProblems])(convertReifiedRelationshipInstanceRanges)
+
+    c85 <- c84.foldLeft(c84.right[EMFProblems])(convertUnreifiedRelationshipInstances)
+
+    // Data Property Values
+    c90 = c85
+
+    c91 <- c90.foldLeft(c90.right[EMFProblems])(convertSingletonScalarDataPropertyValues)
+
+    c92 <- c91.foldLeft(c91.right[EMFProblems])(convertSingletonStructuredDataPropertyValues)
+
+    cA0 = c92
+
+    // AnnotationProperties
+    cA1 <- cA0.foldLeft(cA0.right[EMFProblems])(convertAnnotations)
+
+  } yield cA1
 
 }

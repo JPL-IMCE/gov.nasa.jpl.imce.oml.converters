@@ -18,6 +18,7 @@
 
 package gov.nasa.jpl.imce.oml.converters
 
+import java.io.File
 import java.lang.System
 
 import scala.collection.immutable.List
@@ -26,7 +27,7 @@ import scala.Predef.String
 
 object OMLConverterFromNormalizedTabularSyntax {
 
-  def convert(omlCatalog: String, omlTabularFiles: List[String]): Unit = {
+  def convert(catalogFile: File, omlTabularFiles: List[String]): Unit = {
     System.err.println(s"convertFromNormalizedTabularSyntax: ${omlTabularFiles.mkString("\n - ", "\n - ", "\n")}")
     System.exit(-1)
   }

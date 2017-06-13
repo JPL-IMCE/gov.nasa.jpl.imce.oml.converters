@@ -20,22 +20,38 @@ package gov.nasa.jpl.imce.oml.converters
 
 import java.io.File
 import java.lang.System
-import java.nio.file.Paths
 
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
 import gov.nasa.jpl.imce.oml.model.common.Extent
 import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager, OMLExtensions}
 import gov.nasa.jpl.imce.oml.resolver._
-import gov.nasa.jpl.imce.oml.tables.{ClosedWorldDesignations, Final, OMLSpecificationTables, OpenWorldDefinitions, Partial}
+import gov.nasa.jpl.imce.oml.tables.{AnnotationProperty => TAnnotationProperty, ClosedWorldDesignations, Final, OMLSpecificationTables, OpenWorldDefinitions, Partial}
 import gov.nasa.jpl.imce.oml.uuid
-import gov.nasa.jpl.omf.scala.binding.owlapi.{emptyMutable2ImmutableModuleMap, Mutable2ImmutableModuleMap, OWLAPIOMFGraphStore, OWLAPIOMFModule, OWLAPIOMFOps}
+import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{ImmutableTerminologyBox => OWLAPIImmutableTerminologyBox}
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{MutableBundle => OWLAPIMutableBundle}
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{MutableTerminologyBox => OWLAPIMutableTerminologyBox}
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{MutableTerminologyGraph => OWLAPIMutableTerminologyGraph}
-import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{TerminologyBox => OWLAPITerminologyBox}
-import gov.nasa.jpl.omf.scala.binding.owlapi.types.terms.{Concept => OWLAPIConcept, ConceptualEntity => OWLAPIConceptualEntity, ReifiedRelationship => OWLAPIReifiedRelationship}
-import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.{ConceptualEntitySingletonInstance => OWLAPIConceptualEntitySingletonInstance, ImmutableDescriptionBox => OWLAPIImmutableDescriptionBox, MutableDescriptionBox => OWLAPIMutableDescriptionBox}
+import gov.nasa.jpl.omf.scala.binding.owlapi.types.{Term => OWLAPITerm}
+import gov.nasa.jpl.omf.scala.binding.owlapi.types.terms.{
+Concept => OWLAPIConcept,
+ConceptualEntity => OWLAPIConceptualEntity,
+DataRange => OWLAPIDataRange,
+Entity => OWLAPIEntity,
+EntityScalarDataProperty => OWLAPIEntityScalarDataProperty,
+EntityStructuredDataProperty => OWLAPIEntityStructuredDataProperty,
+ReifiedRelationship => OWLAPIReifiedRelationship,
+ScalarDataProperty => OWLAPIScalarDataProperty,
+Structure => OWLAPIStructure,
+StructuredDataProperty => OWLAPIStructuredDataProperty,
+UnreifiedRelationship => OWLAPIUnreifiedRelationship}
+import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.{
+ConceptualEntitySingletonInstance => OWLAPIConceptualEntitySingletonInstance,
+ConceptInstance => OWLAPIConceptInstance,
+ReifiedRelationshipInstance => OWLAPIReifiedRelationshipInstance,
+ImmutableDescriptionBox => OWLAPIImmutableDescriptionBox,
+MutableDescriptionBox => OWLAPIMutableDescriptionBox,
+SingletonInstanceStructuredDataPropertyContext => OWLAPISingletonInstanceStructuredDataPropertyContext}
 import gov.nasa.jpl.omf.scala.core.{OMFError, RelationshipCharacteristics, TerminologyKind}
 import gov.nasa.jpl.omf.scala.core.OMLString._
 import org.apache.xml.resolver.tools.CatalogResolver
@@ -46,62 +62,89 @@ import org.semanticweb.owlapi.apibinding.OWLManager
 import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable._
-import scala.collection.mutable.HashMap
 import scala.util.{Failure, Success, Try}
-import scala.{Int, None, Option, Some, StringContext, Tuple2, Unit}
-import scala.Predef.{ArrowAssoc, String, classOf}
+import scala.{Int, Option, None, Some, StringContext, Tuple2, Tuple5, Tuple6, Unit}
+import scala.Predef.{ArrowAssoc, String}
 import scalax.collection.immutable.Graph
 import scalaz._
 import Scalaz._
+import scalax.collection.GraphEdge.NodeProduct
 
 object OMLConverterFromTextualConcreteSyntax {
 
-  def convert(outTables: String, omlFiles: List[String]): Unit = {
+  def convert(catalogFile: File, omlFiles: List[String]): Unit = {
     val rs = OMLResourceSet.initializeResourceSet()
+    ( Option.apply(OMLExtensions.getOrCreateCatalogManager(rs)),
+      Option.apply(OMLExtensions.getCatalog(rs))) match {
+      case (Some(cm: OMLCatalogManager), Some(cat: OMLCatalog)) =>
 
-    val result =
-      omlFiles.foldLeft[EMFProblems \/ Seq[Extent]](Seq.empty.right) {
-        case (acc, omlFile) =>
-          for {
-            extents <- acc
-            extent <- OMLResourceSet.loadOMLResource(
-              rs,
-              URI.createFileURI(omlFile))
-          } yield extents :+ extent
-      }
+        cat.parseCatalog(catalogFile.toURI.toURL)
 
-    result match {
-      case -\/(emfProblems) =>
-        System.out.println(emfProblems.show)
-        System.exit(-1)
+        val result =
+          omlFiles.foldLeft(Map.empty[Extent, File].right[EMFProblems]) {
+            case (acc, omlFilename) =>
+              for {
+                extents <- acc
+                omlFile <- {
+                  val f = new File(omlFilename).getAbsoluteFile
+                  if (f.exists() && f.canRead)
+                    \/-(f)
+                  else
+                    new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"OMLConverterFromTextualConcreteSyntax: Cannot read OML textual concrete syntax file: " +
+                      omlFilename
+                    )).left
+                }
+                extent <- OMLResourceSet.loadOMLResource(
+                  rs,
+                  URI.createFileURI(omlFile.toString))
+                _ <- {
+                  val nbModules = extent.getModules.size
+                  if (1 == nbModules)
+                    ().right
+                  else if (nbModules > 1)
+                    new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"OMLConverterFromTextualConcreteSyntax: read ${nbModules} instead of 1 modules for $omlFile"
+                    )).left
+                  else
+                    new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"OMLConverterFromTextualConcreteSyntax: no module read for $omlFile"
+                    )).left
+                }
+              } yield extents + (extent -> omlFile)
+          }
 
-      case \/-(extents) =>
-        (Option.apply(OMLExtensions.getOrCreateCatalogManager(rs)),
-         Option.apply(OMLExtensions.getCatalog(rs))) match {
-          case (Some(cm: OMLCatalogManager), Some(cat: OMLCatalog)) =>
+        result match {
+          case -\/(emfProblems) =>
+            System.out.println(emfProblems.show)
+            System.exit(-1)
+
+          case \/-(fileExtents) =>
+
             EcoreUtil.resolveAll(rs)
 
             val omlUUIDg = uuid.JVMUUIDGenerator()
-            implicit val f: api.OMLResolvedFactory =
+            implicit val factory: api.OMLResolvedFactory =
               impl.OMLResolvedFactoryImpl(omlUUIDg)
 
-            OMLText2Resolver.convert(rs) match {
+            OMLText2Resolver.convert(fileExtents) match {
               case -\/(errors) =>
                 System.out.println(errors.show)
 
               case \/-(o2rMap) =>
-                o2rMap.foldLeft {
-                  Try.apply(())
-                } {
-                  case (acc, (e, o2r)) =>
-                    for {
-                      _ <- acc
-                      apiExtent = o2r.rextent
-                      tables = Extent2Tables.convert(apiExtent)
-                      _ <- convertToTables(outTables, rs, cm, cat, tables)
-                      _ <- convertToOWL(cm, cat, apiExtent)
-                    } yield ()
-                } match {
+                val conversions = for {
+                  _ <- o2rMap.foldLeft(Try.apply(())) {
+                    case (acc, (e, o2r)) =>
+                      for {
+                        _ <- acc
+                        apiExtent = o2r.rextent
+                        tables = Extent2Tables.convert(apiExtent)
+                        _ <- convertToTables(rs, cm, cat, tables, o2r.toOMLTablesFile)
+                      } yield ()
+                  }
+                  _ <- convertToOWL(cm, cat, o2rMap)
+                } yield ()
+                conversions match {
                   case Success(_) =>
                     System.out.println(s"... Finished.")
 
@@ -111,37 +154,21 @@ object OMLConverterFromTextualConcreteSyntax {
                     System.exit(-1)
                 }
             }
-
-          case _ =>
-            System.err.println(
-              s"There should have been a catalog on the resource set!")
-            System.exit(-1)
         }
+      case _ =>
+        System.err.println(
+          s"There should have been a catalog on the resource set!")
+        System.exit(-1)
     }
   }
 
-  def convertToTables(omlTablesFile: String,
-                      rs: XtextResourceSet,
-                      cm: OMLCatalogManager,
-                      cat: OMLCatalog,
-                      tables: OMLSpecificationTables): Try[Unit] = {
+  def convertToTables
+  (rs: XtextResourceSet,
+   cm: OMLCatalogManager,
+   cat: OMLCatalog,
+   tables: OMLSpecificationTables,
+   tablesJsonZip: File): Try[Unit] = {
 
-    val parsedCatalogsField =
-      classOf[OMLCatalog].getDeclaredField("parsedCatalogs")
-    parsedCatalogsField.setAccessible(true)
-    val catalogURLs =
-      parsedCatalogsField.get(cat).asInstanceOf[java.util.Set[java.net.URL]]
-    System.out.println(s"... catalog URLs: ${catalogURLs.size()}")
-
-    val catalogURL = catalogURLs.iterator().next()
-    System.out.println(s"... catalog URL: $catalogURL")
-
-    val outDir = Paths.get(catalogURL.toURI).getParent
-    System.out.println(s"... output dir: $outDir")
-
-    val tablesJsonZip =
-      if (omlTablesFile.startsWith("/")) new File(omlTablesFile)
-      else outDir.resolve(omlTablesFile).toFile
     System.out.println(s"... output tables: $tablesJsonZip")
 
     OMLSpecificationTables.saveOMLSpecificationTables(tables, tablesJsonZip)
@@ -149,1093 +176,1304 @@ object OMLConverterFromTextualConcreteSyntax {
 
   def convertToOWL(cm: OMLCatalogManager,
                    cat: OMLCatalog,
-                   apiExtent: api.Extent): Try[Unit] = {
+                   o2rMap: Map[Extent, OMLText2Resolver]): Try[Unit] = {
 
     System.out.println("... creating OMF Store")
 
-    implicit val omfStore = OWLAPIOMFGraphStore.initGraphStore(
-      OWLAPIOMFModule.owlAPIOMFModule(cm, withOMFMetadata = false).valueOr {
-        (errors: Set[java.lang.Throwable]) =>
-          val message = s"${errors.size} errors" + errors
-            .map(_.getMessage)
-            .toList
-            .mkString("\n => ", "\n => ", "\n")
-          throw new scala.IllegalArgumentException(message)
-      },
-      OWLManager.createOWLOntologyManager(),
-      new CatalogResolver(cm),
-      cat
-    )
+    implicit val omfStore = {
+      OWLAPIOMFGraphStore.initGraphStore(
+        OWLAPIOMFModule.owlAPIOMFModule(cm, withOMFMetadata = false).valueOr {
+          (errors: Set[java.lang.Throwable]) =>
+            val message = s"${errors.size} errors" + errors
+              .map(_.getMessage)
+              .toList
+              .mkString("\n => ", "\n => ", "\n")
+            throw new scala.IllegalArgumentException(message)
+        },
+        OWLManager.createOWLOntologyManager(),
+        new CatalogResolver(cm),
+        cat
+      )
+    }
 
     implicit val ops = omfStore.ops
 
     import OMLOps._
 
-    implicit val ex: api.Extent = apiExtent
-
     val g0: Graph[api.Module, ModuleGraphEdge] =
       Graph[api.Module, ModuleGraphEdge]()
 
     val g1: Graph[api.Module, ModuleGraphEdge] =
-      apiExtent.terminologyGraphs.foldLeft(g0) {
-        case (gi, (_, tgraph)) => gi + tgraph
+      o2rMap.foldLeft(g0) {
+        case (gi, (_, o2r)) =>
+          (o2r.tboxes.values ++ o2r.dboxes.values).foldLeft(gi)(_ + _)
       }
 
     val g2: Graph[api.Module, ModuleGraphEdge] =
-      apiExtent.bundles.foldLeft(g1) { case (gi, (_, bundle)) => gi + bundle }
-
-    val g3: Graph[api.Module, ModuleGraphEdge] =
-      apiExtent.descriptionBoxes.foldLeft(g2) {
-        case (gi, (_, dbox)) => gi + dbox
-      }
-
-    val g4: Graph[api.Module, ModuleGraphEdge] =
-      apiExtent.boxAxioms.foldLeft(g3) {
-        case (gi, (tbox, axs)) =>
-          axs.foldLeft(gi) {
-            case (gj, ax) =>
-              // traverse the edge backwards
-              gj + ModuleGraphEdge((ax.target(), tbox), ax)
-          }
-      }
-
-    val g5: Graph[api.Module, ModuleGraphEdge] =
-      apiExtent.bundleAxioms.foldLeft(g4) {
-        case (gi, (bundle, axs)) =>
-          axs.foldLeft(gi) {
-            case (gj, ax) =>
-              // traverse the edge backwards
-              gj + ModuleGraphEdge((ax.target(), bundle), ax)
-          }
-      }
-
-    val g6: Graph[api.Module, ModuleGraphEdge] =
-      apiExtent.closedWorldDefinitions.foldLeft(g5) {
-        case (gi, (dbox, axs)) =>
-          axs.foldLeft(gi) {
-            case (gj, ax) =>
-              // traverse the edge backwards
-              gj + ModuleGraphEdge((ax.closedWorldDefinitions, dbox), ax)
-          }
-      }
-
-    val g7: Graph[api.Module, ModuleGraphEdge] =
-      apiExtent.descriptionBoxRefinements.foldLeft(g6) {
-        case (gi, (dbox, axs)) =>
-          axs.foldLeft(gi) {
-            case (gj, ax) =>
-              // traverse the edge backwards
-              gj + ModuleGraphEdge((ax.refinedDescriptionBox, dbox), ax)
-          }
-      }
-
-    val g = g7
-
-    val result: \/[OMFError.Throwables, Unit] = for {
-      moduleOrder <- g
-        .topologicalSort()
-        .fold[\/[OMFError.Throwables, g.TopologicalOrder[api.Module]]](
-          (cycleNode: g.NodeT) =>
-            Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
-              s"TerminologyContext circularity on node: $cycleNode in graph $g")).left,
-          (order: g.TopologicalOrder[g.NodeT]) => order.toOuter.right
-        )
-
-      // map TerminologyBox
-      tbox2ont <- moduleOrder
-        .foldLeft[\/[OMFError.Throwables,
-                     Seq[(api.TerminologyBox, OWLAPIMutableTerminologyBox)]]](
-          Seq.empty.right) {
-          case (acc, tbox: api.TerminologyBox) =>
-            acc.flatMap { current =>
-              val k: TerminologyKind = tbox.kind match {
-                case OpenWorldDefinitions =>
-                  TerminologyKind.isDefinition
-                case ClosedWorldDesignations =>
-                  TerminologyKind.isDesignation
-              }
-              val i = tbox.iri
-              val m = tbox match {
-                case tgraph: api.TerminologyGraph =>
-                  ops.makeTerminologyGraph(tgraph.uuid,
-                                           LocalName(tgraph.name),
-                                           IRI.create(i),
-                                           k)
-                case tbundle: api.Bundle =>
-                  ops.makeBundle(tbundle.uuid,
-                                 LocalName(tbundle.name),
-                                 IRI.create(i),
-                                 k)
-              }
-              m.map { mutable =>
-                current :+ (tbox -> mutable)
-              }
-            }
-          case (acc, _) =>
-            acc
+      o2rMap.foldLeft(g1) { case (gi, (_, o2r)) =>
+        o2r.moduleEdges.values.foldLeft(gi) { case (gk, me) =>
+          implicit val ext: api.Extent = o2r.rextent
+          val source = me.sourceModule().get
+          val target = me.targetModule()
+          val edge = new ModuleGraphEdge[api.Module](NodeProduct(source, target), me)
+          gk + edge
         }
-
-      _ = tbox2ont.foreach {
-        case (tbox, _) =>
-          System.out.println(s"... TBox Conversion order: ${tbox.iri}")
       }
 
-      // map DescriptionBox
-      dbox2ont <- moduleOrder
-        .foldLeft[\/[OMFError.Throwables,
-                     Seq[(api.DescriptionBox, OWLAPIMutableDescriptionBox)]]](
-          Seq.empty.right) {
-          case (acc, dbox: api.DescriptionBox) =>
-            acc.flatMap { current =>
-              val k: gov.nasa.jpl.omf.scala.core.DescriptionKind =
-                dbox.kind match {
-                  case Final =>
-                    gov.nasa.jpl.omf.scala.core.DescriptionKind.isFinal
-                  case Partial =>
-                    gov.nasa.jpl.omf.scala.core.DescriptionKind.isPartial
-                }
-              val i = dbox.iri
-              val m = ops.makeDescriptionBox(dbox.uuid,
-                                             LocalName(dbox.name),
-                                             IRI.create(i),
-                                             k)
-              m.map { mutable =>
-                current :+ (dbox -> mutable)
-              }
-            }
-          case (acc, _) =>
-            acc
-        }
+    val g = g2
 
-      _ = dbox2ont.foreach {
-        case (dbox, _) =>
-          System.out.println(s"... DBox Conversion order: ${dbox.iri}")
+    val moduleSort
+    : Seq[api.Module]
+    = OWLAPIOMFLoader
+      .hierarchicalTopologicalSort[api.Module, ModuleGraphEdge](Seq(g), Seq.empty) match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    // map TerminologyBox
+    val tbox2ont
+    : Map[api.TerminologyBox, (api.Extent, OWLAPIMutableTerminologyBox)]
+    = o2rMap.foldLeft {
+      Map.empty[api.TerminologyBox, (api.Extent, OWLAPIMutableTerminologyBox)].right[OMFError.Throwables]
+    } { case (acc1, (_, o2r)) =>
+      o2r.tboxes.foldLeft(acc1) { case (acc2, (_, tbox)) =>
+        for {
+          prev2 <- acc2
+          k = tbox.kind match {
+            case OpenWorldDefinitions =>
+              TerminologyKind.isDefinition
+            case ClosedWorldDesignations =>
+              TerminologyKind.isDesignation
+          }
+          i = tbox.iri
+          m <- tbox match {
+            case tgraph: api.TerminologyGraph =>
+              ops.makeTerminologyGraph(tgraph.uuid,
+                LocalName(tgraph.name),
+                IRI.create(i),
+                k)
+            case tbundle: api.Bundle =>
+              ops.makeBundle(tbundle.uuid,
+                LocalName(tbundle.name),
+                IRI.create(i),
+                k)
+          }
+          next2 = prev2 + (tbox -> (o2r.rextent -> m))
+        } yield next2
       }
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
 
-      conceptualEntitiesMap = new HashMap[api.ConceptualEntity,
-                                          OWLAPIConceptualEntity]()
-
-      conceptualEntityInstanceMap = new HashMap[
-        api.ConceptualEntitySingletonInstance,
-        OWLAPIConceptualEntitySingletonInstance]()
-
-      // Atomic terms
-      _ <- tbox2ont.foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-        case (acc, (tbox, mg)) =>
-          for {
-            _ <- acc
-            _ <- tbox.aspects
-              .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-                case (acc1, a0) =>
-                  acc1.flatMap { _ =>
-                    ops.addAspect(mg, LocalName(a0.name)).flatMap { a1 =>
-                      if (a0.uuid == ops.getTermUUID(a1))
-                        ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table aspect $a1 conversion " +
-                            s"results in UUID mismatch: ${ops.getTermUUID(a1)}")).left
-                    }
-                  }
-              }
-            _ <- tbox.concepts
-              .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-                case (acc1, c0) =>
-                  acc1.flatMap { _ =>
-                    ops.addConcept(mg, LocalName(c0.name)).flatMap { c1 =>
-                      conceptualEntitiesMap += c0 -> c1
-                      if (c0.uuid == ops.getTermUUID(c1))
-                        ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table concept conversion from $c0 to $c1 " +
-                            s"results in UUID mismatch: ${ops.getTermUUID(c1)}")).left
-                    }
-                  }
-              }
-            _ <- tbox.dataranges
-              .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-                case (acc1, dr) =>
-                  acc1.flatMap { _ =>
-                    dr match {
-                      case sc: api.Scalar =>
-                        ops.addScalarDataType(mg, LocalName(sc.name)).flatMap {
-                          sc1 =>
-                            if (sc.uuid == ops.getTermUUID(sc1))
-                              ().right
-                            else
-                              Set[java.lang.Throwable](
-                                OMFError.omfError(
-                                  s"OMF Schema table scalar $sc conversion " +
-                                    s"results in UUID mismatch: ${ops
-                                      .getTermUUID(sc1)}")).left
-                        }
-                      case _ =>
-                        // delay converting restricted data ranges until module edges have been converted
-                        ().right
-                    }
-                  }
-              }
-
-            _ <- tbox.structures
-              .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-                case (acc1, st) =>
-                  acc1.flatMap { _ =>
-                    ops.addStructuredDataType(mg, LocalName(st.name)).flatMap {
-                      st1 =>
-                        if (st.uuid == ops.getTermUUID(st1))
-                          ().right
-                        else
-                          Set[java.lang.Throwable](OMFError.omfError(
-                            s"OMF Schema table structure $st conversion " +
-                              s"results in UUID mismatch: ${ops.getTermUUID(st1)}")).left
-                    }
-                  }
-              }
-          } yield ()
+    // map DescriptionBox
+    val dbox2ont
+    : Map[api.DescriptionBox, (api.Extent, OWLAPIMutableDescriptionBox)]
+    = o2rMap.foldLeft {
+      Map.empty[api.DescriptionBox, (api.Extent, OWLAPIMutableDescriptionBox)].right[OMFError.Throwables]
+    } { case (acc1, (_, o2r)) =>
+      o2r.dboxes.foldLeft(acc1) { case (acc2, (_, dbox)) =>
+        for {
+          prev2 <- acc2
+          k = dbox.kind match {
+            case Final =>
+              gov.nasa.jpl.omf.scala.core.DescriptionKind.isFinal
+            case Partial =>
+              gov.nasa.jpl.omf.scala.core.DescriptionKind.isPartial
+          }
+          i = dbox.iri
+          m <- ops.makeDescriptionBox(dbox.uuid,
+            LocalName(dbox.name),
+            IRI.create(i),
+            k)
+          next2 = prev2 + (dbox -> (o2r.rextent -> m))
+        } yield next2
       }
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
 
-      tbox2ontMap = tbox2ont.toMap
-      dbox2ontMap = dbox2ont.toMap
-
-      // ModuleEdge (TerminologyExtensionAxiom)
-      _ <- g.toOuterEdges
-        .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-          case (acc,
-                ModuleGraphEdge(
-                  (et: api.TerminologyBox, es: api.TerminologyBox),
-                  tx: api.TerminologyExtensionAxiom)) =>
-            for {
-              _ <- acc
-              s <- tbox2ontMap
-                .get(es)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableTerminologyBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge source: $es")).left
-                )(_.right)
-              t <- tbox2ontMap
-                .get(et)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableTerminologyBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge target: $et")).left
-                )(_.right)
-              _ <- ops
-                .addTerminologyExtension(extendingG = s, extendedG = t)
-                .flatMap { ax =>
-                  if (tx.uuid == ops.getTerminologyAxiomUUID(ax))
-                    ax.right
+    // Atomic terms
+    val terms0
+    : Map[api.Term, OWLAPITerm]
+    = tbox2ont.foldLeft {
+      Map.empty[api.Term, OWLAPITerm].right[OMFError.Throwables]
+    } { case (acc1, (tbox, (e, mg))) =>
+      implicit val ext: api.Extent = e
+      for {
+        step0 <- acc1
+        step1 <- tbox.aspects
+          .foldLeft(step0.right[OMFError.Throwables]) {
+            case (acc2, a0) =>
+              acc2.flatMap { prev =>
+                ops.addAspect(mg, LocalName(a0.name)).flatMap { a1 =>
+                  if (a0.uuid == ops.getTermUUID(a1))
+                    (prev + (a0 -> a1)).right
                   else
                     Set[java.lang.Throwable](OMFError.omfError(
-                      s"OMF Schema table TerminologyExtensionAxiom $tx conversion " +
-                        s"results in UUID mismatch: ${ops
-                          .getTerminologyAxiomUUID(ax)}")).left
+                      s"OMF Schema table aspect $a1 conversion " +
+                        s"results in UUID mismatch: ${ops.getTermUUID(a1)}")).left
                 }
-            } yield ()
-          case (acc, _) =>
-            acc
+              }
+          }
+        step2 <- tbox.concepts
+          .foldLeft(step1.right[OMFError.Throwables]) {
+            case (acc2, c0) =>
+              acc2.flatMap { prev =>
+                ops.addConcept(mg, LocalName(c0.name)).flatMap { c1 =>
+                  if (c0.uuid == ops.getTermUUID(c1))
+                    (prev + (c0 -> c1)).right
+                  else
+                    Set[java.lang.Throwable](OMFError.omfError(
+                      s"OMF Schema table concept conversion from $c0 to $c1 " +
+                        s"results in UUID mismatch: ${ops.getTermUUID(c1)}")).left
+                }
+              }
+          }
+        step3 <- tbox.dataranges
+          .foldLeft(step2.right[OMFError.Throwables]) {
+            case (acc2, dr) =>
+              acc2.flatMap { prev =>
+                dr match {
+                  case sc0: api.Scalar =>
+                    ops.addScalarDataType(mg, LocalName(sc0.name)).flatMap {
+                      sc1 =>
+                        if (sc0.uuid == ops.getTermUUID(sc1))
+                          (prev + (sc0 -> sc1)).right
+                        else
+                          Set[java.lang.Throwable](
+                            OMFError.omfError(
+                              s"OMF Schema table scalar $sc0 conversion " +
+                                s"results in UUID mismatch: ${
+                                  ops
+                                    .getTermUUID(sc1)
+                                }")).left
+                    }
+                  case _ =>
+                    // delay converting restricted data ranges until module edges have been converted
+                    prev.right
+                }
+              }
+          }
+
+        step4 <- tbox.structures
+          .foldLeft(step3.right[OMFError.Throwables]) {
+            case (acc2, st0) =>
+              acc2.flatMap { prev =>
+                ops.addStructuredDataType(mg, LocalName(st0.name)).flatMap {
+                  st1 =>
+                    if (st0.uuid == ops.getTermUUID(st1))
+                      (prev + (st0 -> st1)).right
+                    else
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"OMF Schema table structure $st0 conversion " +
+                          s"results in UUID mismatch: ${ops.getTermUUID(st1)}")).left
+                }
+              }
+          }
+      } yield step4
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    val dataRangeRestrictions
+    : Seq[(api.DataRange, api.RestrictedDataRange, api.TerminologyBox, api.Extent, OWLAPIMutableTerminologyBox)]
+    = tbox2ont.to[Seq].flatMap { case (tbox, (e, m)) =>
+      import utils.EMFFilterable._
+      implicit val ext: api.Extent = e
+      val rdrs = tbox.dataranges.selectByKindOf { case rdr: api.RestrictedDataRange => rdr }
+      rdrs.map { rdr =>
+        Tuple5(rdr.restrictedRange, rdr, tbox, e, m)
+      }
+    }
+
+    val terms1 = convertDataRanges(terms0, dataRangeRestrictions) match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    g.toOuterEdges.foreach {
+
+      // ModuleEdge (TerminologyExtensionAxiom)
+      case ModuleGraphEdge(
+      (es: api.TerminologyBox,
+       et: api.TerminologyBox),
+      _: api.TerminologyExtensionAxiom) =>
+        val s = tbox2ont(es)._2
+        val t = tbox2ont(et)._2
+        ops.addTerminologyExtension(extendingG = s, extendedG = t) match {
+          case \/-(_) =>
+            ()
+          case -\/(errors) =>
+            return Failure(errors.head)
         }
 
       // ModuleEdge (TerminologyNestingAxiom)
-      _ <- g.toOuterEdges
-        .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-          case (acc,
-                ModuleGraphEdge(
-                  (et: api.TerminologyBox, es: api.TerminologyBox),
-                  tx: api.TerminologyNestingAxiom)) =>
-            for {
-              _ <- acc
-              s <- tbox2ontMap
-                .get(es)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableTerminologyGraph]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge source: $es")).left
-                ) {
-                  case mg: OWLAPIMutableTerminologyGraph =>
-                    mg.right
-                  case _ =>
-                    Set[java.lang.Throwable](OMFError.omfError(
-                      s"Invalid edge source: $es is not a graph!")).left
-                }
-              t <- tbox2ontMap
-                .get(et)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableTerminologyBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge target: $et")).left
-                )(_.right)
-              _ <- ops
-                .lookupConcept(t, tx.nestingContext.iri, recursively = false)
-                .fold[\/[OMFError.Throwables, Unit]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"Invalid terminology nesting axiom: " +
-                      s"Unresolved nesting context: ${tx.nestingContext}")).left
-                ) { nc: OWLAPIConcept =>
-                  ops
-                    .addNestedTerminology(nestedGraph = s,
-                                          nestingGraph = t,
-                                          nestingContext = nc)
-                    .flatMap { ax =>
-                      if (tx.uuid == ops.getTerminologyAxiomUUID(ax))
-                        ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table TerminologyNestingAxiom $tx conversion " +
-                            s"results in UUID mismatch: ${ops
-                              .getTerminologyAxiomUUID(ax)}")).left
-                    }
-                }
-            } yield ()
-          case (acc, _) =>
-            acc
+      case ModuleGraphEdge((es: api.TerminologyBox, et: api.TerminologyGraph), ax: api.TerminologyNestingAxiom) =>
+        val s = tbox2ont(es)._2.asInstanceOf[OWLAPIMutableTerminologyGraph]
+        val t = tbox2ont(et)._2.asInstanceOf[OWLAPIMutableTerminologyGraph]
+        val c = terms1(ax.nestingContext).asInstanceOf[OWLAPIConcept]
+        ops.addNestedTerminology(
+          nestedGraph = s,
+          nestingContext = c,
+          nestingGraph = t) match {
+          case \/-(_) =>
+            ()
+          case -\/(errors) =>
+            return Failure(errors.head)
         }
 
       // ModuleEdge (ConceptDesignationTerminologyAxiom)
-      _ <- g.toOuterEdges
-        .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-          case (acc,
-                ModuleGraphEdge(
-                  (et: api.TerminologyBox, es: api.TerminologyBox),
-                  tx: api.ConceptDesignationTerminologyAxiom)) =>
-            for {
-              _ <- acc
-              s <- tbox2ontMap
-                .get(es)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableTerminologyBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge source: $es")).left) {
-                  case mg: OWLAPIMutableTerminologyGraph =>
-                    mg.right
-                  case _ =>
-                    Set[java.lang.Throwable](OMFError.omfError(
-                      s"Invalid edge source: $es is not a graph!")).left
-                }
-              t <- tbox2ontMap
-                .get(et)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableTerminologyBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge target: $et")).left
-                )(_.right)
-              _ <- ops
-                .lookupConcept(t,
-                               tx.designatedConcept.iri,
-                               recursively = false)
-                .fold[\/[OMFError.Throwables, Unit]](
-                  Set[java.lang.Throwable](OMFError.omfError(
-                    s"Invalid concept designation terminology axiom: " +
-                      s"Unresolved designated concept: ${tx.designatedConcept}")).left) {
-                  nc: OWLAPIConcept =>
-                    ops
-                      .addEntityConceptDesignationTerminologyAxiom(
-                        graph = s,
-                        entityConceptDesignation = nc,
-                        designationTerminologyGraph = t)
-                      .flatMap { ax =>
-                        if (tx.uuid == ops.getTerminologyAxiomUUID(ax))
-                          ().right
-                        else
-                          Set[java.lang.Throwable](OMFError.omfError(
-                            s"OMF Schema table ConceptDesignationTerminologyAxiom $tx conversion " +
-                              s"results in UUID mismatch: ${ops
-                                .getTerminologyAxiomUUID(ax)}")).left
-                      }
-                }
-            } yield ()
-          case (acc, _) =>
-            acc
+      case ModuleGraphEdge((es: api.TerminologyGraph, et: api.TerminologyBox), ax: api.ConceptDesignationTerminologyAxiom) =>
+        val s = tbox2ont(es)._2.asInstanceOf[OWLAPIMutableTerminologyGraph]
+        val t = tbox2ont(et)._2
+        val c = terms1(ax.designatedConcept).asInstanceOf[OWLAPIConcept]
+        ops.addEntityConceptDesignationTerminologyAxiom(
+          graph = s,
+          entityConceptDesignation = c,
+          designationTerminologyGraph = t) match {
+          case \/-(_) =>
+            ()
+          case -\/(errors) =>
+            return Failure(errors.head)
         }
 
       // ModuleEdge (BundledTerminologyAxiom)
-      _ <- g.toOuterEdges
-        .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-          case (acc,
-                ModuleGraphEdge((et: api.TerminologyBox, es: api.Bundle),
-                                tx: api.BundledTerminologyAxiom)) =>
-            for {
-              _ <- acc
-              s <- tbox2ontMap
-                .get(es)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableBundle]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge source: $es")).left
-                ) {
-                  case b: OWLAPIMutableBundle =>
-                    b.right
-                  case _ =>
-                    Set[java.lang.Throwable](
-                      OMFError.omfError(s"invalid edge source: $es")).left
-                }
-              t <- tbox2ontMap
-                .get(et)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableTerminologyBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge target: $et")).left
-                )(_.right)
-              _ <- ops
-                .addBundledTerminologyAxiom(terminologyBundle = s,
-                                            bundledTerminology = t)
-                .flatMap { ax =>
-                  if (tx.uuid == ops.getElementUUID(ax))
-                    ax.right
-                  else
-                    Set[java.lang.Throwable](OMFError.omfError(
-                      s"OMF Schema table BundledTerminologyAxiom $tx conversion " +
-                        s"results in UUID mismatch: ${ops.getElementUUID(ax)}")).left
-                }
-            } yield ()
-          case (acc, _) =>
-            acc
+      case ModuleGraphEdge((es: api.Bundle, et: api.TerminologyBox), ax: api.BundledTerminologyAxiom) =>
+        val s = tbox2ont(es)._2.asInstanceOf[OWLAPIMutableBundle]
+        val t = tbox2ont(et)._2
+        ops.addBundledTerminologyAxiom(terminologyBundle = s, bundledTerminology = t) match {
+          case \/-(_) =>
+            ()
+          case -\/(errors) =>
+            return Failure(errors.head)
         }
 
       // ModuleEdge (DescriptionBoxExtendsClosedWorldDefinitions)
-      _ <- g.toOuterEdges
-        .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-          case (acc,
-                ModuleGraphEdge(
-                  (et: api.TerminologyBox, es: api.DescriptionBox),
-                  tx: api.DescriptionBoxExtendsClosedWorldDefinitions)) =>
-            for {
-              _ <- acc
-              s <- dbox2ontMap
-                .get(es)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableDescriptionBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge source: $es")).left
-                )(_.right)
-              t <- tbox2ontMap
-                .get(et)
-                .fold[\/[OMFError.Throwables, OWLAPITerminologyBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge target: $et")).left
-                )(_.right)
-              _ <- ops
-                .addDescriptionBoxExtendsClosedWorldDefinitions(
-                  dbox = s,
-                  closedWorldDefinitions = t)
-                .flatMap { ax =>
-                  if (tx.uuid == ops.getElementUUID(ax))
-                    ax.right
-                  else
-                    Set[java.lang.Throwable](OMFError.omfError(s"OMF Schema table DescriptionBoxExtendsClosedWorldDefinitions $tx conversion " +
-                      s"results in UUID mismatch: ${ops.getElementUUID(ax)}")).left
-                }
-            } yield ()
-          case (acc, _) =>
-            acc
+      case ModuleGraphEdge((es: api.DescriptionBox, et: api.TerminologyBox), ax: api.DescriptionBoxExtendsClosedWorldDefinitions) =>
+        val s = dbox2ont(es)._2
+        val t = tbox2ont(et)._2
+        ops.addDescriptionBoxExtendsClosedWorldDefinitions(dbox = s, closedWorldDefinitions = t) match {
+          case \/-(_) =>
+            ()
+          case -\/(errors) =>
+            return Failure(errors.head)
         }
 
       // ModuleEdge (DescriptionBoxRefinement)
-      _ <- g.toOuterEdges
-        .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-          case (acc,
-                ModuleGraphEdge(
-                  (et: api.DescriptionBox, es: api.DescriptionBox),
-                  tx: api.DescriptionBoxRefinement)) =>
-            for {
-              _ <- acc
-              s <- dbox2ontMap
-                .get(es)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableDescriptionBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge source: $es")).left
-                )(_.right)
-              t <- dbox2ontMap
-                .get(et)
-                .fold[\/[OMFError.Throwables, OWLAPIMutableDescriptionBox]](
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"invalid edge target: $et")).left
-                )(_.right)
-              _ <- ops
-                .addDescriptionBoxRefinement(refiningDescriptionBox = s,
-                                             refinedDescriptionBox = t)
-                .flatMap { ax =>
-                  if (tx.uuid == ops.getElementUUID(ax))
-                    ax.right
-                  else
-                    Set[java.lang.Throwable](OMFError.omfError(
-                      s"OMF Schema table DescriptionBoxRefinement $tx conversion " +
-                        s"results in UUID mismatch: ${ops.getElementUUID(ax)}")).left
-                }
-            } yield ()
-          case (acc, _) =>
-            acc
+      case ModuleGraphEdge((es: api.DescriptionBox, et: api.DescriptionBox), ax: api.DescriptionBoxRefinement) =>
+        val s = dbox2ont(es)._2
+        val t = dbox2ont(et)._2
+        ops.addDescriptionBoxRefinement(refiningDescriptionBox = s, refinedDescriptionBox = t) match {
+          case \/-(_) =>
+            ()
+          case -\/(errors) =>
+            return Failure(errors.head)
         }
+    }
 
-      // Relational terms
-      _ <- tbox2ont.foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-        case (acc, (tbox, mg)) =>
-          for {
-            _ <- acc
-            _ = System.out.println(s"... Relational terms: ${tbox.iri}")
-            _ <- convertDataRanges(tbox, mg, tbox.dataranges)
-            _ <- convertReifiedRelationships(conceptualEntitiesMap,
-                                             tbox,
-                                             mg,
-                                             tbox.reifiedRelationships)
-            _ <- convertUnreifiedRelationships(tbox,
-                                               mg,
-                                               tbox.unreifiedRelationships)
-          } yield ()
+    val reifiedRelationships
+    : Seq[(api.Term, api.Term, api.ReifiedRelationship, api.TerminologyBox, api.Extent, OWLAPIMutableTerminologyBox)]
+    = tbox2ont.to[Seq].flatMap { case (tbox, (e, m)) =>
+      implicit val ext: api.Extent = e
+      tbox.reifiedRelationships.map { rr =>
+        Tuple6(rr.relationDomain(), rr.relationRange(), rr, tbox, e, m)
       }
+    }
 
-      // DataRelationships
-      _ <- tbox2ont.foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-        case (acc, (tbox, mg)) =>
-          for {
-            _ <- acc
-            _ = System.out.println(s"... DataRelationships: ${tbox.iri}")
-            _ <- tbox.boxStatements
-              .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-                case (acc1, dr: api.EntityScalarDataProperty) =>
-                  acc1.flatMap { _ =>
-                    (ops.lookupEntity(mg, dr.source().iri, recursively = true),
-                     ops.lookupDataRange(mg,
-                                         dr.target().iri,
-                                         recursively = true)) match {
-                      case (Some(s), Some(t)) =>
-                        ops
-                          .addEntityScalarDataProperty(mg,
-                                                       s,
-                                                       t,
-                                                       LocalName(dr.name),
-                                                       dr.isIdentityCriteria)
-                          .flatMap { odr =>
-                            if (dr.uuid == ops.getTermUUID(odr))
-                              ().right
-                            else
-                              Set[java.lang.Throwable](OMFError.omfError(
-                                s"OMF Schema table EntityScalarDataProperty $dr conversion " +
-                                  s"results in UUID mismatch: ${ops
-                                    .getTermUUID(odr)}")).left
-                          }
-                      case (_, _) =>
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"Unresolved EntityScalarDataProperty: $dr")).left
-                    }
-                  }
-                case (acc1, dr: api.EntityStructuredDataProperty) =>
-                  acc1.flatMap { _ =>
-                    (ops.lookupEntity(mg, dr.source().iri, recursively = true),
-                     ops.lookupStructure(mg,
-                                         dr.target().iri,
-                                         recursively = true)) match {
-                      case (Some(s), Some(t)) =>
-                        ops
-                          .addEntityStructuredDataProperty(
-                            mg,
-                            s,
-                            t,
-                            LocalName(dr.name),
-                            dr.isIdentityCriteria)
-                          .flatMap { odr =>
-                            if (dr.uuid == ops.getTermUUID(odr))
-                              ().right
-                            else
-                              Set[java.lang.Throwable](OMFError.omfError(
-                                s"OMF Schema table EntityStructuredDataProperty $dr conversion " +
-                                  s"results in UUID mismatch: ${ops
-                                    .getTermUUID(odr)}")).left
-                          }
-                      case (_, _) =>
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"Unresolved EntityStructuredDataProperty: $dr")).left
-                    }
-                  }
-                case (acc1, dr: api.ScalarDataProperty) =>
-                  acc1.flatMap { _ =>
-                    (ops.lookupStructure(mg,
-                                         dr.source().iri,
-                                         recursively = true),
-                     ops.lookupDataRange(mg,
-                                         dr.target().iri,
-                                         recursively = true)) match {
-                      case (Some(s), Some(t)) =>
-                        ops
-                          .addScalarDataProperty(mg, s, t, LocalName(dr.name))
-                          .flatMap { odr =>
-                            if (dr.uuid == ops.getTermUUID(odr))
-                              ().right
-                            else
-                              Set[java.lang.Throwable](OMFError.omfError(
-                                s"OMF Schema table ScalarDataProperty $dr conversion " +
-                                  s"results in UUID mismatch: ${ops
-                                    .getTermUUID(odr)}")).left
-                          }
-                      case (_, _) =>
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"Unresolved ScalarDataProperty: $dr")).left
-                    }
-                  }
-                case (acc1, dr: api.StructuredDataProperty) =>
-                  acc1.flatMap { _ =>
-                    (ops.lookupStructure(mg,
-                                         dr.source().iri,
-                                         recursively = true),
-                     ops.lookupStructure(mg,
-                                         dr.target().iri,
-                                         recursively = true)) match {
-                      case (Some(s), Some(t)) =>
-                        ops
-                          .addStructuredDataProperty(mg,
-                                                     s,
-                                                     t,
-                                                     LocalName(dr.name))
-                          .flatMap { odr =>
-                            if (dr.uuid == ops.getTermUUID(odr))
-                              ().right
-                            else
-                              Set[java.lang.Throwable](OMFError.omfError(
-                                s"OMF Schema table StructuredDataProperty $dr conversion " +
-                                  s"results in UUID mismatch: ${ops
-                                    .getTermUUID(odr)}")).left
-                          }
-                      case (_, _) =>
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"Unresolved StructuredDataProperty: $dr")).left
-                    }
-                  }
-                case (acc1, _) =>
-                  acc1
-              }
-          } yield ()
-      }
-
-      // Atomic instances
-      _ <- dbox2ont.foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-        case (acc, (dbox, md)) =>
-          for {
-            _ <- acc
-            _ <- ex
-              .lookupConceptInstances(dbox)
-              .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-                case (acc1, ci0) =>
-                  acc1.flatMap { _ =>
-                    conceptualEntitiesMap.get(ci0.singletonConceptClassifier) match {
-                      case Some(scl: OWLAPIConcept) =>
-                        ops
-                          .addConceptInstance(md, scl, LocalName(ci0.name))
-                          .flatMap { ci1 =>
-                            conceptualEntityInstanceMap += ci0 -> ci1
-                            if (ci0.uuid == ops.getElementUUID(ci1))
-                              ().right
-                            else
-                              Set[java.lang.Throwable](OMFError.omfError(
-                                s"OMF Schema table conceptInstance $ci1 conversion from $ci0 " +
-                                  s"results in UUID mismatch: ${ops
-                                    .getElementUUID(ci1)}")).left
-
-                          }
-                      case _ =>
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table conceptInstance conversion from $ci0 " +
-                            s"failed to find the corresponding " +
-                            s"singletonConceptClassifier: ${ci0.singletonConceptClassifier}")).left
-                    }
-                  }
-              }
-            _ <- ex
-              .lookupReifiedRelationshipInstances(dbox)
-              .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-                case (acc1, rri0) =>
-                  acc1.flatMap { _ =>
-                    conceptualEntitiesMap.get(
-                      rri0.singletonReifiedRelationshipClassifier) match {
-                      case Some(srr: OWLAPIReifiedRelationship) =>
-                        ops
-                          .addReifiedRelationshipInstance(md,
-                                                          srr,
-                                                          LocalName(rri0.name))
-                          .flatMap { rri1 =>
-                            conceptualEntityInstanceMap += rri0 -> rri1
-                            if (rri0.uuid == ops.getElementUUID(rri1))
-                              ().right
-                            else
-                              Set[java.lang.Throwable](OMFError.omfError(
-                                s"OMF Schema table reifiedRelationshipInstance $rri1 conversion from $rri0 " +
-                                  s"results in UUID mismatch: ${ops
-                                    .getElementUUID(rri1)}")).left
-
-                          }
-                      case _ =>
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table reifiedRelationshipInstance conversion from $rri0 " +
-                            s"failed to find the corresponding " +
-                            s"singletonReifiedRelationshipClassifier: ${rri0.singletonReifiedRelationshipClassifier}")).left
-                    }
-                  }
-              }
-
-          } yield ()
-      }
-
-      tbox2iont <- tbox2ont
-        .foldLeft[\/[OMFError.Throwables,
-                     (Seq[(api.Module, OWLAPIImmutableTerminologyBox)],
-                      Mutable2ImmutableModuleMap)]](
-          (Seq.empty[(api.Module, OWLAPIImmutableTerminologyBox)], emptyMutable2ImmutableModuleMap).right
-
-        ) {
-          case (acc, (tbox, mg)) =>
-            for {
-              pair <- acc
-              (convs, m2i) = pair
-              _ = System.out.println(s"... Converting terminology ${mg.sig.kind}: ${mg.iri}")
-              c <- ops.asImmutableTerminologyBox(mg, m2i)
-              (conv, m2iWithConversion) = c
-            } yield Tuple2(convs :+ (tbox -> conv), m2iWithConversion)
-        }
-
-      _ <- tbox2iont._1
-        .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-        case (acc, (tbox, i)) =>
-          acc.flatMap { _ =>
-            System.out.println(
-              s"... Saving terminology ${i.ont.getOntologyID}")
-            val next = ops.saveTerminology(i)
-            next
-          }
-      }
-
-      dbox2iont <- dbox2ont
-        .foldLeft[\/[OMFError.Throwables,
-                     (Seq[(api.DescriptionBox, OWLAPIImmutableDescriptionBox)],
-                       Mutable2ImmutableModuleMap)]](
-          (Seq.empty[(api.DescriptionBox, OWLAPIImmutableDescriptionBox)], emptyMutable2ImmutableModuleMap).right
-        ) {
-          case (acc, (dbox, md)) =>
-            for {
-              pair <- acc
-              (convs, m2i) = pair
-              _ = System.out.println(
-                s"... Converting description ${md.sig.kind}: ${md.ont.getOntologyID}")
-              c <- ops.asImmutableDescription(md, m2i)
-              (conv, m2iWithConversion) = c
-            } yield Tuple2(convs :+ (dbox -> conv), m2iWithConversion)
-        }
-
-      _ <- dbox2iont._1
-        .foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-          case (acc, (dbox, i)) =>
-            acc.flatMap { _ =>
-              System.out.println(
-                s"... Saving description ${i.ont.getOntologyID}")
-              val next = ops.saveDescriptionBox(i)
-              next
-            }
-        }
-    } yield ()
-
-    result match {
-      case \/-(_) =>
-        Success(())
+    val terms2 = convertReifiedRelationships(terms1, reifiedRelationships) match {
+      case \/-(map) =>
+        map
       case -\/(errors) =>
-        Failure(errors.head)
+        return Failure(errors.head)
     }
 
-  }
-
-  final protected def convertDataRanges(
-      tbox: api.TerminologyBox,
-      mg: OWLAPIMutableTerminologyBox,
-      drs: Set[api.DataRange],
-      queue: Set[api.DataRange] = HashSet.empty,
-      progress: Int = 0)(implicit ops: OWLAPIOMFOps,
-                         store: OWLAPIOMFGraphStore,
-                         extent: api.Extent): OMFError.Throwables \/ Unit = {
-    if (drs.isEmpty) {
-      if (queue.isEmpty)
-        ().right
-      else if (0 == progress)
-        Set[java.lang.Throwable](
-          OMFError.omfError("No-progress in convertDataRanges!")).left
-      else
-        convertDataRanges(tbox, mg, queue)
-    } else
-      drs.head match {
-        case rdr: api.RestrictedDataRange =>
-          ops.lookupDataRange(mg, rdr.restrictedRange.iri, recursively = true) match {
-            case None =>
-              convertDataRanges(tbox, mg, drs.tail, queue + drs.head, progress)
-            case Some(r) =>
-              val mr: OMFError.Throwables \/ Unit = rdr match {
-                case sr: api.BinaryScalarRestriction =>
-                  ops
-                    .addBinaryScalarRestriction(mg,
-                                                LocalName(sr.name),
-                                                r,
-                                                sr.length,
-                                                sr.minLength,
-                                                sr.maxLength)
-                    .flatMap { osr =>
-                      if (sr.uuid == ops.getTermUUID(osr)) ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table BinaryScalarRestriction $sr conversion " +
-                            s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-                    }
-                case sr: api.IRIScalarRestriction =>
-                  ops
-                    .addIRIScalarRestriction(mg,
-                                             LocalName(sr.name),
-                                             r,
-                                             sr.length,
-                                             sr.minLength,
-                                             sr.maxLength,
-                                             sr.pattern.map(Pattern(_)))
-                    .flatMap { osr =>
-                      if (sr.uuid == ops.getTermUUID(osr)) ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table IRIScalarRestriction $sr conversion " +
-                            s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-                    }
-                case sr: api.NumericScalarRestriction =>
-                  ops
-                    .addNumericScalarRestriction(
-                      mg,
-                      LocalName(sr.name),
-                      r,
-                      sr.minInclusive.map(LexicalValue(_)),
-                      sr.maxInclusive.map(LexicalValue(_)),
-                      sr.minExclusive.map(LexicalValue(_)),
-                      sr.maxExclusive.map(LexicalValue(_))
-                    )
-                    .flatMap { osr =>
-                      if (sr.uuid == ops.getTermUUID(osr)) ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table NumericScalarRestriction $sr conversion " +
-                            s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-                    }
-                case sr: api.PlainLiteralScalarRestriction =>
-                  ops
-                    .addPlainLiteralScalarRestriction(
-                      mg,
-                      LocalName(sr.name),
-                      r,
-                      sr.length,
-                      sr.minLength,
-                      sr.maxLength,
-                      sr.pattern.map(Pattern(_)))
-                    .flatMap { osr =>
-                      if (sr.uuid == ops.getTermUUID(osr)) ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table PlainLiteralScalarRestriction $sr conversion " +
-                            s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-                    }
-                case sr: api.ScalarOneOfRestriction =>
-                  ops
-                    .addScalarOneOfRestriction(mg, LocalName(sr.name), r)
-                    .flatMap { osr =>
-                      if (sr.uuid == ops.getTermUUID(osr)) ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table ScalarOneOfRestriction $sr conversion " +
-                            s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-                    }
-                case sr: api.StringScalarRestriction =>
-                  ops
-                    .addStringScalarRestriction(mg,
-                                                LocalName(sr.name),
-                                                r,
-                                                sr.length,
-                                                sr.minLength,
-                                                sr.maxLength,
-                                                sr.pattern.map(Pattern(_)))
-                    .flatMap { osr =>
-                      if (sr.uuid == ops.getTermUUID(osr)) ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table StringScalarRestriction $sr conversion " +
-                            s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-                    }
-                case sr: api.TimeScalarRestriction =>
-                  ops
-                    .addTimeScalarRestriction(
-                      mg,
-                      LocalName(sr.name),
-                      r,
-                      sr.minInclusive.map(LexicalValue(_)),
-                      sr.maxInclusive.map(LexicalValue(_)),
-                      sr.minExclusive.map(LexicalValue(_)),
-                      sr.maxExclusive.map(LexicalValue(_))
-                    )
-                    .flatMap { osr =>
-                      if (sr.uuid == ops.getTermUUID(osr)) ().right
-                      else
-                        Set[java.lang.Throwable](OMFError.omfError(
-                          s"OMF Schema table TimeScalarRestriction $sr conversion " +
-                            s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-                    }
-              }
-              mr match {
-                case -\/(errors) =>
-                  Set[java.lang.Throwable](
-                    OMFError.omfException("Errors in convertDataRanges",
-                                          errors)).left
-                case \/-(_) =>
-                  convertDataRanges(tbox, mg, drs.tail, queue, 1 + progress)
-              }
-          }
-        case _ =>
-          convertDataRanges(tbox, mg, drs.tail, queue, progress)
-      }
-  }
-
-  final protected def convertReifiedRelationships(
-      conceptualEntitiesMap: HashMap[api.ConceptualEntity,
-                                     OWLAPIConceptualEntity],
-      tbox: api.TerminologyBox,
-      mg: OWLAPIMutableTerminologyBox,
-      rrs: Set[api.ReifiedRelationship],
-      queue: Set[api.ReifiedRelationship] = TreeSet.empty,
-      progress: Int = 0)(implicit ops: OWLAPIOMFOps,
-                         store: OWLAPIOMFGraphStore,
-                         extent: api.Extent): OMFError.Throwables \/ Unit = {
-    if (rrs.isEmpty) {
-      if (queue.isEmpty)
-        ().right
-      else if (0 == progress)
-        Set[java.lang.Throwable](OMFError.omfError(
-          "No progress in convertReifiedRelationships!")).left
-      else
-        convertReifiedRelationships(conceptualEntitiesMap, tbox, mg, queue)
-    } else {
-      val rr = rrs.head
-      (ops.lookupEntity(mg, rr.source.iri, recursively = true),
-       ops.lookupEntity(mg, rr.target.iri, recursively = true)) match {
-        case (Some(s), Some(t)) =>
-          val mr: OMFError.Throwables \/ Unit = ops
-            .addReifiedRelationship(
-              mg,
-              s,
-              t,
-              Iterable() ++
-                (if (rr.isAsymmetric)
-                   Iterable(RelationshipCharacteristics.isAsymmetric)
-                 else Iterable()) ++
-                (if (rr.isEssential)
-                   Iterable(RelationshipCharacteristics.isEssential)
-                 else Iterable()) ++
-                (if (rr.isFunctional)
-                   Iterable(RelationshipCharacteristics.isFunctional)
-                 else Iterable()) ++
-                (if (rr.isInverseEssential)
-                   Iterable(RelationshipCharacteristics.isInverseEssential)
-                 else Iterable()) ++
-                (if (rr.isInverseFunctional)
-                   Iterable(RelationshipCharacteristics.isInverseFunctional)
-                 else Iterable()) ++
-                (if (rr.isIrreflexive)
-                   Iterable(RelationshipCharacteristics.isIrreflexive)
-                 else Iterable()) ++
-                (if (rr.isReflexive)
-                   Iterable(RelationshipCharacteristics.isReflexive)
-                 else Iterable()) ++
-                (if (rr.isSymmetric)
-                   Iterable(RelationshipCharacteristics.isSymmetric)
-                 else Iterable()) ++
-                (if (rr.isTransitive)
-                   Iterable(RelationshipCharacteristics.isTransitive)
-                 else Iterable()),
-              LocalName(rr.name),
-              LocalName(rr.unreifiedPropertyName),
-              rr.unreifiedInversePropertyName.map(LocalName(_))
-            )
-            .flatMap { orr =>
-              conceptualEntitiesMap += rr -> orr
-              if (rr.uuid == ops.getTermUUID(orr))
-                ().right
-              else
-                Set[java.lang.Throwable](OMFError.omfError(
-                  s"OMF Schema table ReifiedRelationship $rr conversion " +
-                    s"results in UUID mismatch: ${ops.getTermUUID(orr)}")).left
-            }
-          mr match {
-            case -\/(errors) =>
-              Set[java.lang.Throwable](
-                OMFError.omfException("Errors in convertReifiedRelationships",
-                                      errors)).left
-            case \/-(_) =>
-              convertReifiedRelationships(conceptualEntitiesMap,
-                                          tbox,
-                                          mg,
-                                          rrs.tail,
-                                          queue,
-                                          1 + progress)
-          }
-        case (_, _) =>
-          convertReifiedRelationships(conceptualEntitiesMap,
-                                      tbox,
-                                      mg,
-                                      rrs.tail,
-                                      queue + rrs.head,
-                                      progress)
-      }
+    val terms3 = convertUnreifiedRelationships(terms2, tbox2ont) match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
     }
-  }
 
-  protected def convertUnreifiedRelationships(
-      tbox: api.TerminologyBox,
-      mg: OWLAPIMutableTerminologyBox,
-      urs: Set[api.UnreifiedRelationship])(
-      implicit ops: OWLAPIOMFOps,
-      store: OWLAPIOMFGraphStore,
-      extent: api.Extent): OMFError.Throwables \/ Unit =
-    urs.foldLeft[\/[OMFError.Throwables, Unit]](().right) {
-      case (acc1, ur) =>
-        acc1.flatMap { _ =>
-          (ops.lookupEntity(mg, ur.source.iri, recursively = true),
-           ops.lookupEntity(mg, ur.target.iri, recursively = true)) match {
-            case (Some(s), Some(t)) =>
+    // Data Properties
+
+    val e2sc
+    : Map[api.EntityScalarDataProperty, OWLAPIEntityScalarDataProperty]
+    = tbox2ont.foldLeft {
+      Map.empty[api.EntityScalarDataProperty, OWLAPIEntityScalarDataProperty].right[OMFError.Throwables]
+    } { case (acc1, (tbox, (e, mg))) =>
+      implicit val ext: api.Extent = e
+      tbox.entityScalarDataProperties.foldLeft(acc1) { case (acc2, e2sc0) =>
+        for {
+          prev <- acc2
+          next <- (terms3.get(e2sc0.source), terms3.get(e2sc0.range)) match {
+            case (Some(s: OWLAPIEntity), Some(t: OWLAPIDataRange)) =>
               ops
-                .addUnreifiedRelationship(
-                  mg,
+                .addEntityScalarDataProperty(mg,
                   s,
                   t,
-                  Iterable() ++
-                    (if (ur.isAsymmetric)
-                       Iterable(RelationshipCharacteristics.isAsymmetric)
-                     else Iterable()) ++
-                    (if (ur.isEssential)
-                       Iterable(RelationshipCharacteristics.isEssential)
-                     else Iterable()) ++
-                    (if (ur.isFunctional)
-                       Iterable(RelationshipCharacteristics.isFunctional)
-                     else Iterable()) ++
-                    (if (ur.isInverseEssential)
-                       Iterable(RelationshipCharacteristics.isInverseEssential)
-                     else Iterable()) ++
-                    (if (ur.isInverseFunctional)
-                       Iterable(
-                         RelationshipCharacteristics.isInverseFunctional)
-                     else Iterable()) ++
-                    (if (ur.isIrreflexive)
-                       Iterable(RelationshipCharacteristics.isIrreflexive)
-                     else Iterable()) ++
-                    (if (ur.isReflexive)
-                       Iterable(RelationshipCharacteristics.isReflexive)
-                     else Iterable()) ++
-                    (if (ur.isSymmetric)
-                       Iterable(RelationshipCharacteristics.isSymmetric)
-                     else Iterable()) ++
-                    (if (ur.isTransitive)
-                       Iterable(RelationshipCharacteristics.isTransitive)
-                     else Iterable()),
-                  LocalName(ur.name)
-                )
-                .flatMap { our =>
-                  if (ur.uuid == ops.getTermUUID(our))
-                    ().right
+                  LocalName(e2sc0.name),
+                  e2sc0.isIdentityCriteria).flatMap { e2sc1 =>
+                if (e2sc0.uuid == ops.getTermUUID(e2sc1))
+                  (prev + (e2sc0 -> e2sc1)).right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table EntityScalarDataProperty $e2sc0 conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(e2sc1)}"
+                  )).left
+              }
+            case (s, t) =>
+              Set[java.lang.Throwable](OMFError.omfError(
+                s"OMF Schema table EntityScalarDataProperty $e2sc0 conversion " +
+                  s.fold(s" failed to resolve conceptual entity: ${e2sc0.source.abbrevIRI()}")(_ => "") +
+                  t.fold(s" failed to resolve data range: ${e2sc0.range.abbrevIRI()}")(_ => "")
+              )).left
+          }
+        } yield next
+      }
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    val e2st
+    : Map[api.EntityStructuredDataProperty, OWLAPIEntityStructuredDataProperty]
+    = tbox2ont.foldLeft {
+      Map.empty[api.EntityStructuredDataProperty, OWLAPIEntityStructuredDataProperty].right[OMFError.Throwables]
+    } { case (acc1, (tbox, (e, mg))) =>
+      implicit val ext: api.Extent = e
+      tbox.entityStructuredDataProperties.foldLeft(acc1) { case (acc2, e2st0) =>
+        for {
+          prev <- acc2
+          next <- (terms3.get(e2st0.source), terms3.get(e2st0.range)) match {
+            case (Some(s: OWLAPIEntity), Some(t: OWLAPIStructure)) =>
+              ops
+                .addEntityStructuredDataProperty(mg,
+                  s,
+                  t,
+                  LocalName(e2st0.name),
+                  e2st0.isIdentityCriteria).flatMap { e2sc1 =>
+                if (e2st0.uuid == ops.getTermUUID(e2sc1))
+                  (prev + (e2st0 -> e2sc1)).right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table EntityStructuredDataProperty $e2st0 conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(e2sc1)}"
+                  )).left
+              }
+            case (s, t) =>
+              Set[java.lang.Throwable](OMFError.omfError(
+                s"OMF Schema table EntityStructuredDataProperty $e2st0 conversion " +
+                  s.fold(s" failed to resolve conceptual entity: ${e2st0.source.abbrevIRI()}")(_ => "") +
+                  t.fold(s" failed to resolve structure: ${e2st0.range.abbrevIRI()}")(_ => "")
+              )).left
+          }
+        } yield next
+      }
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    val s2sc
+    : Map[api.ScalarDataProperty, OWLAPIScalarDataProperty]
+    = tbox2ont.foldLeft {
+      Map.empty[api.ScalarDataProperty, OWLAPIScalarDataProperty].right[OMFError.Throwables]
+    } { case (acc1, (tbox, (e, mg))) =>
+      implicit val ext: api.Extent = e
+      tbox.scalarDataProperties.foldLeft(acc1) { case (acc2, s2sc0) =>
+        for {
+          prev <- acc2
+          next <- (terms3.get(s2sc0.source), terms3.get(s2sc0.range)) match {
+            case (Some(s: OWLAPIStructure), Some(t: OWLAPIDataRange)) =>
+              ops
+                .addScalarDataProperty(mg,
+                  s,
+                  t,
+                  LocalName(s2sc0.name)).flatMap { s2sc1 =>
+                if (s2sc0.uuid == ops.getTermUUID(s2sc1))
+                  (prev + (s2sc0 -> s2sc1)).right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table ScalarDataProperty $s2sc0 conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(s2sc1)}"
+                  )).left
+              }
+            case (s, t) =>
+              Set[java.lang.Throwable](OMFError.omfError(
+                s"OMF Schema table ScalarDataProperty $s2sc0 conversion " +
+                  s.fold(s" failed to resolve structure: ${s2sc0.source.abbrevIRI()}")(_ => "") +
+                  t.fold(s" failed to resolve data range: ${s2sc0.range.abbrevIRI()}")(_ => "")
+              )).left
+          }
+        } yield next
+      }
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    val s2st
+    : Map[api.StructuredDataProperty, OWLAPIStructuredDataProperty]
+    = tbox2ont.foldLeft {
+      Map.empty[api.StructuredDataProperty, OWLAPIStructuredDataProperty].right[OMFError.Throwables]
+    } { case (acc1, (tbox, (e, mg))) =>
+      implicit val ext: api.Extent = e
+      tbox.structuredDataProperties.foldLeft(acc1) { case (acc2, s2st0) =>
+        for {
+          prev <- acc2
+          next <- (terms3.get(s2st0.source), terms3.get(s2st0.range)) match {
+            case (Some(s: OWLAPIStructure), Some(t: OWLAPIStructure)) =>
+              ops
+                .addStructuredDataProperty(mg,
+                  s,
+                  t,
+                  LocalName(s2st0.name)).flatMap { s2sc1 =>
+                if (s2st0.uuid == ops.getTermUUID(s2sc1))
+                  (prev + (s2st0 -> s2sc1)).right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table StructuredDataProperty $s2st0 conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(s2sc1)}"
+                  )).left
+              }
+            case (s, t) =>
+              Set[java.lang.Throwable](OMFError.omfError(
+                s"OMF Schema table StructuredDataProperty $s2st0 conversion " +
+                  s.fold(s" failed to resolve structure: ${s2st0.source.abbrevIRI()}")(_ => "") +
+                  t.fold(s" failed to resolve structure: ${s2st0.range.abbrevIRI()}")(_ => "")
+              )).left
+          }
+        } yield next
+      }
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    val allTboxElements: Map[api.Element, common.Element]
+    = terms3 ++ e2sc ++ e2st ++ s2sc ++ s2st ++ tbox2ont.map { case (tbox, (_, ont_tbox)) => tbox -> ont_tbox }
+
+    tbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (_, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.annotationProperties.foldLeft(acc1) { case (acc2, (_, ap)) =>
+        for {
+          _ <- acc2
+          tap = TAnnotationProperty(ap.uuid.toString, ap.iri, ap.abbrevIRI)
+          _ <- md.addAnnotationProperty(tap)
+        } yield ()
+      }
+    } match {
+      case \/-(_) =>
+        ()
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    tbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (_, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.annotations.foldLeft(acc1) {
+        case (acc2, (mtbox: api.TerminologyBox, as)) =>
+          for {
+            _ <- acc2
+            ont_mtbox <- tbox2ont.get(mtbox) match {
+              case Some((_, om)) =>
+                if (om == md)
+                  om.right[OMFError.Throwables]
+                else
+                  Set[java.lang.Throwable](
+                    OMFError.omfError(s"tbox2ont.addAnnotation: the tbox, $mtbox, is not the expected: $om instead of $md")
+                  ).left
+              case None =>
+                Set[java.lang.Throwable](
+                  OMFError.omfError(s"tbox2ont.addAnnotation: the tbox, $mtbox, is not mapped to the expected: $md")
+                ).left
+            }
+            _ <- addModuleAnnotations(allTboxElements, ont_mtbox, as)
+          } yield ()
+        case (_, (m, _)) =>
+          Set[java.lang.Throwable](
+            OMFError.omfError(s"tbox2ont.addAnnotation: the module should have been a TBOX: $m")
+          ).left
+      }
+    } match {
+      case \/-(_) =>
+        ()
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    // Atomic instances
+
+    val conceptInstances
+    : Map[api.ConceptInstance, OWLAPIConceptInstance]
+    = dbox2ont.foldLeft {
+      Map.empty[api.ConceptInstance, OWLAPIConceptInstance].right[OMFError.Throwables]
+    } { case (acc1, (dbox, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.conceptInstances.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, ci0) =>
+        for {
+          prev <- acc2
+          next <- terms3.get(ci0.singletonConceptClassifier) match {
+            case Some(scl: OWLAPIConcept) =>
+              ops
+                .addConceptInstance(md, scl, LocalName(ci0.name))
+                .flatMap { ci1 =>
+                  if (ci0.uuid == ops.getElementUUID(ci1))
+                    (prev + (ci0 -> ci1)).right
                   else
                     Set[java.lang.Throwable](OMFError.omfError(
-                      s"OMF Schema table UnreifiedRelationship $ur conversion " +
-                        s"results in UUID mismatch: ${ops.getTermUUID(our)}")).left
+                      s"OMF Schema table conceptInstance $ci1 conversion from $ci0 " +
+                        s"results in UUID mismatch: ${
+                          ops
+                            .getElementUUID(ci1)
+                        }")).left
                 }
-            case (_, _) =>
+            case _ =>
               Set[java.lang.Throwable](OMFError.omfError(
-                s"Unresolved unreifiedRelationship: $ur")).left
+                s"OMF Schema table conceptInstance from $ci0 " +
+                  s"unresolved singleton concept classifier: " +
+                  ci0.singletonConceptClassifier.abbrevIRI()
+              )).left
           }
-        }
+        } yield next
+      }
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
     }
+
+    val reifiedRelationshipInstances
+    : Map[api.ReifiedRelationshipInstance, OWLAPIReifiedRelationshipInstance]
+    = dbox2ont.foldLeft {
+      Map.empty[api.ReifiedRelationshipInstance, OWLAPIReifiedRelationshipInstance].right[OMFError.Throwables]
+    } { case (acc1, (dbox, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.reifiedRelationshipInstances.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, rri0) =>
+        for {
+          prev <- acc2
+          next <- terms3.get(rri0.singletonReifiedRelationshipClassifier) match {
+            case Some(scl: OWLAPIReifiedRelationship) =>
+              ops
+                .addReifiedRelationshipInstance(md, scl, LocalName(rri0.name))
+                .flatMap { rri1 =>
+                  if (rri0.uuid == ops.getElementUUID(rri1))
+                    (prev + (rri0 -> rri1)).right
+                  else
+                    Set[java.lang.Throwable](OMFError.omfError(
+                      s"OMF Schema table reifiedRelationshipInstance $rri1 conversion from $rri0 " +
+                        s"results in UUID mismatch: ${ops.getElementUUID(rri1)}"
+                    )).left
+                }
+            case _ =>
+              Set[java.lang.Throwable](OMFError.omfError(
+                s"OMF Schema table reifiedRelationshipInstance from $rri0 " +
+                  s"unresolved singleton reified relationship classifier: " +
+                  rri0.singletonReifiedRelationshipClassifier.abbrevIRI()
+              )).left
+          }
+        } yield next
+      }
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    val conceptualInstances
+    : Map[api.ConceptualEntitySingletonInstance, OWLAPIConceptualEntitySingletonInstance]
+    = conceptInstances ++ reifiedRelationshipInstances
+
+    val allDboxElements: Map[api.Element, common.Element]
+    = conceptualInstances ++ dbox2ont.map { case (dbox, (_, ont_dbox)) => dbox -> ont_dbox }
+
+    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
+      implicit val ext: api.Extent = e
+        e.reifiedRelationshipInstanceDomains.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, rrid) =>
+          for {
+            _ <- acc2
+            ont_rri <- reifiedRelationshipInstances.get(rrid.reifiedRelationshipInstance).fold(
+              Set[java.lang.Throwable](
+                OMFError.omfError(
+                  s"OMF Schema table reifiedRelationshipInstanceDomains " +
+                    s"unresolved singleton reified relationship: " +
+                    rrid.reifiedRelationshipInstance.abbrevIRI())
+              ).left[OWLAPIReifiedRelationshipInstance]
+            ) (_.right[OMFError.Throwables])
+            ont_source = conceptualInstances(rrid.domain)
+            _ <- ops.addReifiedRelationshipInstanceDomain(md, ont_rri, ont_source)
+          } yield ()
+        }
+    } match {
+      case \/-(_) =>
+        ()
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.reifiedRelationshipInstanceRanges.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, rrir) =>
+        for {
+          _ <- acc2
+          ont_rri <- reifiedRelationshipInstances.get(rrir.reifiedRelationshipInstance).fold(
+            Set[java.lang.Throwable](
+              OMFError.omfError(
+                s"OMF Schema table reifiedRelationshipInstanceRanges " +
+                  s"unresolved singleton reified relationship: " +
+                  rrir.reifiedRelationshipInstance.abbrevIRI())
+            ).left[OWLAPIReifiedRelationshipInstance]
+          ) (_.right[OMFError.Throwables])
+          ont_target = conceptualInstances(rrir.range)
+          _ <- ops.addReifiedRelationshipInstanceRange(md, ont_rri, ont_target)
+        } yield ()
+      }
+    } match {
+      case \/-(_) =>
+        ()
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.unreifiedRelationshipInstanceTuples.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, uri0) =>
+        for {
+          _ <- acc2
+          ont_uri <- terms3.get(uri0.unreifiedRelationship) match {
+            case Some(ur: OWLAPIUnreifiedRelationship) =>
+              ur.right
+            case _ =>
+              Set[java.lang.Throwable](OMFError.omfError(
+                s"OMF Schema table unreifiedRelationshipInstanceTuple from $uri0 " +
+                  s"unresolved unreified relationship: " +
+                  uri0.unreifiedRelationship.abbrevIRI()
+              )).left
+          }
+          ont_source = conceptualInstances(uri0.domain)
+          ont_target = conceptualInstances(uri0.range)
+          _ <- ops.addUnreifiedRelationshipInstanceTuple(md, ont_uri, ont_source, ont_target)
+        } yield ()
+      }
+    } match {
+      case \/-(_) =>
+        ()
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.singletonScalarDataPropertyValues.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, scv) =>
+        for {
+          _ <- acc2
+          _ <- convertEntitySingletonInstanceScalarDataPropertyValue(e2sc, conceptualInstances, e, md, scv)
+        } yield ()
+      }
+    } match {
+      case \/-(_) =>
+        ()
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.singletonStructuredDataPropertyValues.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, stv) =>
+        for {
+          _ <- acc2
+          _ <- convertEntitySingletonInstanceStructuredDataPropertyValue(e2st, s2sc, s2st, conceptualInstances, e, md, stv)
+        } yield ()
+      }
+    } match {
+      case \/-(_) =>
+        ()
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (_, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.annotationProperties.foldLeft(acc1) { case (acc2, (_, ap)) =>
+        for {
+          _ <- acc2
+          tap = TAnnotationProperty(ap.uuid.toString, ap.iri, ap.abbrevIRI)
+          _ <- md.addAnnotationProperty(tap)
+        } yield ()
+      }
+    } match {
+      case \/-(_) =>
+        ()
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (_, (e, md))) =>
+      implicit val ext: api.Extent = e
+      e.annotations.foldLeft(acc1) {
+        case (acc2, (mdbox: api.DescriptionBox, as)) =>
+          for {
+            _ <- acc2
+            ont_mdbox <- dbox2ont.get(mdbox) match {
+              case Some((_, om)) =>
+                if (om == md)
+                  om.right[OMFError.Throwables]
+                else
+                  Set[java.lang.Throwable](
+                    OMFError.omfError(s"dbox2ont.addAnnotation: the dbox, $mdbox, is not the expected: $om instead of $md")
+                  ).left
+              case None =>
+                Set[java.lang.Throwable](
+                  OMFError.omfError(s"dbox2ont.addAnnotation: the dbox, $mdbox, is not mapped to the expected: $md")
+                ).left
+            }
+            _ <- addModuleAnnotations(allDboxElements, ont_mdbox, as)
+          } yield ()
+        case (_, (m, _)) =>
+          Set[java.lang.Throwable](
+            OMFError.omfError(s"dbox2ont.addAnnotation: the module should have been a DBOX: $m")
+          ).left
+      }
+    } match {
+      case \/-(_) =>
+        ()
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
+    val (tboxConvs, m2iTboxConv) =
+      moduleSort.foldLeft[OMFError.Throwables \/ (Seq[(api.Module, OWLAPIImmutableTerminologyBox)], Mutable2ImmutableModuleMap)](
+        (Seq.empty[(api.Module, OWLAPIImmutableTerminologyBox)], emptyMutable2ImmutableModuleMap).right
+      ) {
+        case (acc, m: api.TerminologyBox) =>
+          for {
+            prev <- acc
+            (convs, m2i) = prev
+            next <- tbox2ont.get(m) match {
+              case Some((e, mg)) =>
+                System.out.println(s"... Converting terminology ${mg.sig.kind}: ${mg.iri}")
+                ops.asImmutableTerminologyBox(mg, m2i).map { case (conv, m2iWithConv) =>
+                  Tuple2(convs :+ (m -> conv), m2iWithConv)
+                }
+              case _ =>
+                acc
+            }
+          } yield next
+        case (acc, _) =>
+          acc
+      } match {
+        case \/-(map) =>
+          map
+        case -\/(errors) =>
+          return Failure(errors.head)
+      }
+
+    tboxConvs.foreach { case (_, itbox) =>
+      System.out.println(s"... Saving terminology ${itbox.iri}")
+      ops.saveTerminology(itbox) match {
+        case \/-(_) =>
+          ()
+        case -\/(errors) =>
+          return Failure(errors.head)
+      }
+    }
+
+    val (dboxConvs, _) =
+      moduleSort.foldLeft[OMFError.Throwables \/ (Seq[(api.Module, OWLAPIImmutableDescriptionBox)], Mutable2ImmutableModuleMap)](
+        (Seq.empty[(api.Module, OWLAPIImmutableDescriptionBox)], m2iTboxConv).right
+      ) {
+        case (acc, m: api.DescriptionBox) =>
+          for {
+            prev <- acc
+            (convs, m2i) = prev
+            next <- dbox2ont.get(m) match {
+              case Some((e, mg)) =>
+                System.out.println(s"... Converting description ${mg.sig.kind}: ${mg.iri}")
+                ops.asImmutableDescription(mg, m2i).map { case (conv, m2iWithConv) =>
+                  Tuple2(convs :+ (m -> conv), m2iWithConv)
+                }
+              case _ =>
+                acc
+            }
+          } yield next
+        case (acc, _) =>
+          acc
+      } match {
+        case \/-(map) =>
+          map
+        case -\/(errors) =>
+          return Failure(errors.head)
+      }
+
+    dboxConvs.foreach { case (_, idbox) =>
+      System.out.println(s"... Saving description ${idbox.iri}")
+      ops.saveDescriptionBox(idbox) match {
+        case \/-(_) =>
+          ()
+        case -\/(errors) =>
+          return Failure(errors.head)
+      }
+    }
+    Success(())
+  }
+
+  final protected def addModuleAnnotations
+  (allTboxElements: Map[api.Element, common.Element],
+   md: OWLAPIMutableTerminologyBox,
+   as: Set[api.Annotation])
+  (implicit ext: api.Extent, store: OWLAPIOMFGraphStore)
+  : OMFError.Throwables \/ Unit
+  = as.foldLeft(().right[OMFError.Throwables]) { case (acc, a) =>
+    for {
+      _ <- acc
+      ap = a.property
+      tap = TAnnotationProperty(ap.uuid.toString, ap.iri, ap.abbrevIRI)
+      ont_subject <- allTboxElements.get(a.subject) match {
+        case Some(e) =>
+          e.right[OMFError.Throwables]
+        case None =>
+          Set[java.lang.Throwable](
+            OMFError.omfError(s"addModuleAnnotations(tbox: ${md.iri}) missing element mapping for ${a.subject}")
+          ).left
+      }
+      _ <- md.addAnnotation(ont_subject, tap, a.value)
+    } yield ()
+  }
+
+  final protected def addModuleAnnotations
+  (allDboxElements: Map[api.Element, common.Element],
+   md: OWLAPIMutableDescriptionBox,
+   as: Set[api.Annotation])
+  (implicit ext: api.Extent, store: OWLAPIOMFGraphStore)
+  : OMFError.Throwables \/ Unit
+  = as.foldLeft(().right[OMFError.Throwables]) { case (acc, a) =>
+    for {
+      _ <- acc
+      ap = a.property
+      tap = TAnnotationProperty(ap.uuid.toString, ap.iri, ap.abbrevIRI)
+      ont_subject <- allDboxElements.get(a.subject) match {
+        case Some(e) =>
+          e.right[OMFError.Throwables]
+        case None =>
+          Set[java.lang.Throwable](
+            OMFError.omfError(s"addModuleAnnotations(dbox: ${md.iri}) missing element mapping for ${a.subject}")
+          ).left
+      }
+      _ <- md.addAnnotation(ont_subject, tap, a.value)
+    } yield ()
+  }
+
+  final protected def convertEntitySingletonInstanceScalarDataPropertyValue
+  (e2sc: Map[api.EntityScalarDataProperty, OWLAPIEntityScalarDataProperty],
+   conceptualInstances: Map[api.ConceptualEntitySingletonInstance, OWLAPIConceptualEntitySingletonInstance],
+   e: api.Extent,
+   md: OWLAPIMutableDescriptionBox,
+   scv: api.SingletonInstanceScalarDataPropertyValue)
+  (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
+  : OMFError.Throwables \/ Unit
+  = {
+    implicit val apiExtent: api.Extent = e
+    for {
+      ont_scp <- e2sc.get(scv.scalarDataProperty) match {
+        case Some(sc: OWLAPIEntityScalarDataProperty) =>
+          sc.right
+        case _ =>
+          Set[java.lang.Throwable](OMFError.omfError(
+            s"OMF Schema table convertEntitySingletonInstanceScalarDataPropertyValue from $scv " +
+              s"unresolved scalarDataProperty: " +
+              scv.scalarDataProperty.abbrevIRI()
+          )).left
+      }
+      ont_s = conceptualInstances(scv.singletonInstance)
+      _ <- ops.addSingletonInstanceScalarDataPropertyValue(md, ont_s, ont_scp, LexicalValue(scv.scalarPropertyValue))
+    } yield ()
+  }
+
+  final protected def convertEntitySingletonInstanceStructuredDataPropertyValue
+  (e2st: Map[api.EntityStructuredDataProperty, OWLAPIEntityStructuredDataProperty],
+   s2sc: Map[api.ScalarDataProperty, OWLAPIScalarDataProperty],
+   s2st: Map[api.StructuredDataProperty, OWLAPIStructuredDataProperty],
+   conceptualInstances: Map[api.ConceptualEntitySingletonInstance, OWLAPIConceptualEntitySingletonInstance],
+   e: api.Extent,
+   md: OWLAPIMutableDescriptionBox,
+   stv: api.SingletonInstanceStructuredDataPropertyValue)
+  (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
+  : OMFError.Throwables \/ Unit
+  = {
+    implicit val apiExtent: api.Extent = e
+    for {
+      ont_stp <- e2st.get(stv.structuredDataProperty.asInstanceOf[api.EntityStructuredDataProperty]) match {
+        case Some(st: OWLAPIEntityStructuredDataProperty) =>
+          st.right
+        case _ =>
+          Set[java.lang.Throwable](OMFError.omfError(
+            s"OMF Schema table convertEntitySingletonInstanceStructuredDataPropertyValue from $stv " +
+              s"unresolved scalarDataProperty: " +
+              stv.structuredDataProperty.abbrevIRI()
+          )).left
+      }
+      ont_s = conceptualInstances(stv.singletonInstance)
+      ont_stv <- ops.addSingletonInstanceStructuredDataPropertyValue(md, ont_s, ont_stp)
+      _ <- convertSingletonInstanceScalarDataPropertyValues(s2sc, e, md, stv, ont_stv)
+      _ <- convertSingletonInstanceStructuredDataPropertyValues(s2st, s2sc, e, md, stv, ont_stv)
+    } yield ()
+  }
+
+  final protected def convertSingletonInstanceStructuredDataPropertyValues
+  (s2st: Map[api.StructuredDataProperty, OWLAPIStructuredDataProperty],
+   s2sc: Map[api.ScalarDataProperty, OWLAPIScalarDataProperty],
+   e: api.Extent,
+   md: OWLAPIMutableDescriptionBox,
+   context: api.SingletonInstanceStructuredDataPropertyContext,
+   ont_context: OWLAPISingletonInstanceStructuredDataPropertyContext)
+  (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
+  : OMFError.Throwables \/ Unit
+  = e.structuredPropertyTuples.getOrElse(context, Set.empty).foldLeft(().right[OMFError.Throwables]) { case (acc, stv) =>
+    implicit val apiExtent: api.Extent = e
+    for {
+      _ <- acc
+      ont_st2st <- s2st.get(stv.structuredDataProperty.asInstanceOf[api.StructuredDataProperty]) match {
+        case Some(st: OWLAPIStructuredDataProperty) =>
+          st.right
+        case _ =>
+          Set[java.lang.Throwable](OMFError.omfError(
+            s"OMF Schema table convertSingletonInstanceStructuredDataPropertyValues from $stv " +
+              s"unresolved structuredDataProperty: " +
+              stv.structuredDataProperty.abbrevIRI()
+          )).left
+      }
+      ont_stv <- ops.makeStructuredDataPropertyTuple(md, ont_context, ont_st2st)
+      _ <- convertSingletonInstanceScalarDataPropertyValues(s2sc, e, md, stv, ont_stv)
+      _ <- convertSingletonInstanceStructuredDataPropertyValues(s2st, s2sc, e, md, stv, ont_stv)
+    } yield ()
+  }
+
+  final protected def convertSingletonInstanceScalarDataPropertyValues
+  (s2sc: Map[api.ScalarDataProperty, OWLAPIScalarDataProperty],
+   e: api.Extent,
+   md: OWLAPIMutableDescriptionBox,
+   context: api.SingletonInstanceStructuredDataPropertyContext,
+   ont_context: OWLAPISingletonInstanceStructuredDataPropertyContext)
+  (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
+  : OMFError.Throwables \/ Unit
+  = e.scalarDataPropertyValues.getOrElse(context, Set.empty).foldLeft(().right[OMFError.Throwables]) { case (acc, sdv) =>
+    implicit val apiExtent: api.Extent = e
+    for {
+      _ <- acc
+      ont_st2sc <- s2sc.get(sdv.scalarDataProperty.asInstanceOf[api.ScalarDataProperty]) match {
+        case Some(st2sc: OWLAPIScalarDataProperty) =>
+          st2sc.right
+        case _ =>
+          Set[java.lang.Throwable](OMFError.omfError(
+            s"OMF Schema table convertSingletonInstanceScalarDataPropertyValues from $sdv " +
+              s"unresolved scalarDataProperty: " +
+              sdv.scalarDataProperty.abbrevIRI()
+          )).left
+      }
+      _ <- ops.makeScalarDataPropertyValue(md, ont_context, ont_st2sc, LexicalValue(sdv.scalarPropertyValue))
+    } yield ()
+  }
+
+  final protected def convertDataRanges
+  (terms: Map[api.Term, OWLAPITerm],
+   drs: Seq[(api.DataRange, api.RestrictedDataRange, api.TerminologyBox, api.Extent, OWLAPIMutableTerminologyBox)],
+   queue: Seq[(api.DataRange, api.RestrictedDataRange, api.TerminologyBox, api.Extent, OWLAPIMutableTerminologyBox)] = Seq.empty,
+   progress: Int = 0)
+  (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
+  : OMFError.Throwables \/ Map[api.Term, OWLAPITerm]
+  = if (drs.isEmpty) {
+    if (queue.isEmpty)
+      terms.right
+    else if (0 == progress)
+      Set[java.lang.Throwable](
+        OMFError.omfError("No-progress in convertDataRanges!")).left
+    else
+      convertDataRanges(terms, queue)
+  } else {
+    val (dr, rdr0, _, e, mg) = drs.head
+    terms.get(dr) match {
+      case Some(r: OWLAPIDataRange) =>
+        val conv = rdr0 match {
+          case sr: api.BinaryScalarRestriction =>
+            ops
+              .addBinaryScalarRestriction(mg,
+                LocalName(sr.name),
+                r,
+                sr.length,
+                sr.minLength,
+                sr.maxLength)
+              .flatMap { osr =>
+                if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table BinaryScalarRestriction $sr conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+              }
+          case sr: api.IRIScalarRestriction =>
+            ops
+              .addIRIScalarRestriction(mg,
+                LocalName(sr.name),
+                r,
+                sr.length,
+                sr.minLength,
+                sr.maxLength,
+                sr.pattern.map(Pattern(_)))
+              .flatMap { osr =>
+                if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table IRIScalarRestriction $sr conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+              }
+          case sr: api.NumericScalarRestriction =>
+            ops
+              .addNumericScalarRestriction(
+                mg,
+                LocalName(sr.name),
+                r,
+                sr.minInclusive.map(LexicalValue(_)),
+                sr.maxInclusive.map(LexicalValue(_)),
+                sr.minExclusive.map(LexicalValue(_)),
+                sr.maxExclusive.map(LexicalValue(_))
+              )
+              .flatMap { osr =>
+                if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table NumericScalarRestriction $sr conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+              }
+          case sr: api.PlainLiteralScalarRestriction =>
+            ops
+              .addPlainLiteralScalarRestriction(
+                mg,
+                LocalName(sr.name),
+                r,
+                sr.length,
+                sr.minLength,
+                sr.maxLength,
+                sr.pattern.map(Pattern(_)))
+              .flatMap { osr =>
+                if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table PlainLiteralScalarRestriction $sr conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+              }
+          case sr: api.ScalarOneOfRestriction =>
+            ops
+              .addScalarOneOfRestriction(mg, LocalName(sr.name), r)
+              .flatMap { osr =>
+                if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table ScalarOneOfRestriction $sr conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+              }
+          case sr: api.StringScalarRestriction =>
+            ops
+              .addStringScalarRestriction(mg,
+                LocalName(sr.name),
+                r,
+                sr.length,
+                sr.minLength,
+                sr.maxLength,
+                sr.pattern.map(Pattern(_)))
+              .flatMap { osr =>
+                if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table StringScalarRestriction $sr conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+              }
+          case sr: api.TimeScalarRestriction =>
+            ops
+              .addTimeScalarRestriction(
+                mg,
+                LocalName(sr.name),
+                r,
+                sr.minInclusive.map(LexicalValue(_)),
+                sr.maxInclusive.map(LexicalValue(_)),
+                sr.minExclusive.map(LexicalValue(_)),
+                sr.maxExclusive.map(LexicalValue(_))
+              )
+              .flatMap { osr =>
+                if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table TimeScalarRestriction $sr conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+              }
+        }
+        conv match {
+          case -\/(errors) =>
+            Set[java.lang.Throwable](
+              OMFError.omfException("Errors in convertDataRanges",
+                errors)).left
+          case \/-(rdr1) =>
+            convertDataRanges(
+              terms + (rdr0 -> rdr1),
+              drs.tail,
+              queue, 1 + progress)
+        }
+      case _ =>
+        convertDataRanges(terms, drs.tail, queue :+ drs.head, progress)
+    }
+  }
+
+  final protected def convertReifiedRelationships
+  (terms: Map[api.Term, OWLAPITerm],
+   rrs: Seq[(api.Term, api.Term, api.ReifiedRelationship, api.TerminologyBox, api.Extent, OWLAPIMutableTerminologyBox)],
+   queue: Seq[(api.Term, api.Term, api.ReifiedRelationship, api.TerminologyBox, api.Extent, OWLAPIMutableTerminologyBox)] = Seq.empty,
+   progress: Int = 0)
+  (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
+  : OMFError.Throwables \/ Map[api.Term, OWLAPITerm]
+  = if (rrs.isEmpty) {
+    if (queue.isEmpty)
+      terms.right
+    else if (0 == progress)
+      Set[java.lang.Throwable](OMFError.omfError(
+          "No progress in convertReifiedRelationships!")).left
+    else
+      convertReifiedRelationships(terms, queue)
+    } else {
+    val (rs, rt, rr0, _, e, mg) = rrs.head
+    (terms.get(rs), terms.get(rt)) match {
+      case (Some(s: OWLAPIEntity), Some(t: OWLAPIEntity)) =>
+        ops.addReifiedRelationship(
+          mg,
+          s,
+          t,
+          Iterable() ++
+            (if (rr0.isAsymmetric)
+              Iterable(RelationshipCharacteristics.isAsymmetric)
+            else Iterable()) ++
+            (if (rr0.isEssential)
+              Iterable(RelationshipCharacteristics.isEssential)
+            else Iterable()) ++
+            (if (rr0.isFunctional)
+              Iterable(RelationshipCharacteristics.isFunctional)
+            else Iterable()) ++
+            (if (rr0.isInverseEssential)
+              Iterable(RelationshipCharacteristics.isInverseEssential)
+            else Iterable()) ++
+            (if (rr0.isInverseFunctional)
+              Iterable(RelationshipCharacteristics.isInverseFunctional)
+            else Iterable()) ++
+            (if (rr0.isIrreflexive)
+              Iterable(RelationshipCharacteristics.isIrreflexive)
+            else Iterable()) ++
+            (if (rr0.isReflexive)
+              Iterable(RelationshipCharacteristics.isReflexive)
+            else Iterable()) ++
+            (if (rr0.isSymmetric)
+              Iterable(RelationshipCharacteristics.isSymmetric)
+            else Iterable()) ++
+            (if (rr0.isTransitive)
+              Iterable(RelationshipCharacteristics.isTransitive)
+            else Iterable()),
+          LocalName(rr0.name),
+          LocalName(rr0.unreifiedPropertyName),
+          rr0.unreifiedInversePropertyName.map(LocalName(_))
+        )
+          .flatMap { rr1 =>
+            if (rr0.uuid == ops.getTermUUID(rr1))
+              convertReifiedRelationships(terms + (rr0 -> rr1), rrs.tail, queue, 1 + progress)
+            else
+              Set[java.lang.Throwable](OMFError.omfError(
+                s"OMF Schema table ReifiedRelationship $rr0 conversion " +
+                  s"results in UUID mismatch: ${ops.getTermUUID(rr1)}")).left
+          }
+      case _ =>
+        convertReifiedRelationships(terms, rrs.tail, queue :+ rrs.head, progress)
+    }
+  }
+
+  final protected def convertUnreifiedRelationships
+  (terms: Map[api.Term, OWLAPITerm],
+   tbox2ont: Map[api.TerminologyBox, (api.Extent, OWLAPIMutableTerminologyBox)])
+  (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
+  : OMFError.Throwables \/ Map[api.Term, OWLAPITerm]
+  = tbox2ont.foldLeft(terms.right[OMFError.Throwables]) { case (acc1, (tbox, (e, mg))) =>
+    implicit val ext: api.Extent = e
+    import OMLOps._
+    tbox.unreifiedRelationships.foldLeft(acc1) { case (acc2, ur0) =>
+      acc2.flatMap { prev =>
+        (terms.get(ur0.source), terms.get(ur0.target)) match {
+          case (Some(s: OWLAPIConceptualEntity), Some(t: OWLAPIConceptualEntity)) =>
+            ops
+              .addUnreifiedRelationship(
+                mg,
+                s,
+                t,
+                Iterable() ++
+                  (if (ur0.isAsymmetric)
+                    Iterable(RelationshipCharacteristics.isAsymmetric)
+                  else Iterable()) ++
+                  (if (ur0.isEssential)
+                    Iterable(RelationshipCharacteristics.isEssential)
+                  else Iterable()) ++
+                  (if (ur0.isFunctional)
+                    Iterable(RelationshipCharacteristics.isFunctional)
+                  else Iterable()) ++
+                  (if (ur0.isInverseEssential)
+                    Iterable(RelationshipCharacteristics.isInverseEssential)
+                  else Iterable()) ++
+                  (if (ur0.isInverseFunctional)
+                    Iterable(
+                      RelationshipCharacteristics.isInverseFunctional)
+                  else Iterable()) ++
+                  (if (ur0.isIrreflexive)
+                    Iterable(RelationshipCharacteristics.isIrreflexive)
+                  else Iterable()) ++
+                  (if (ur0.isReflexive)
+                    Iterable(RelationshipCharacteristics.isReflexive)
+                  else Iterable()) ++
+                  (if (ur0.isSymmetric)
+                    Iterable(RelationshipCharacteristics.isSymmetric)
+                  else Iterable()) ++
+                  (if (ur0.isTransitive)
+                    Iterable(RelationshipCharacteristics.isTransitive)
+                  else Iterable()),
+                LocalName(ur0.name)
+              )
+              .flatMap { ur1 =>
+                if (ur0.uuid == ops.getTermUUID(ur1))
+                  (prev + (ur0 -> ur1)).right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table UnreifiedRelationship $ur0 conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(ur1)}")).left
+              }
+          case (_, _) =>
+            Set[java.lang.Throwable](OMFError.omfError(
+              s"Unresolved unreifiedRelationship: $ur0")).left
+        }
+      }
+    }
+  }
 
 }
