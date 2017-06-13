@@ -21,9 +21,8 @@ package gov.nasa.jpl.imce.oml.converters.utils
 import org.eclipse.emf.ecore.resource.Resource
 
 import scala.collection.immutable._
-import scala.collection.mutable.StringBuilder
 import scala.util.control.Exception
-import scala.StringContext
+import scala.{Option,None,Some,StringContext,Unit}
 import scala.Predef.{require,wrapRefArray,String}
 import scalaz._, Scalaz._
 
@@ -32,14 +31,34 @@ case class EMFProblems
  warnings: Map[Resource, List[Resource.Diagnostic]] = Map.empty,
  exceptions: List[java.lang.Throwable] = List.empty[java.lang.Throwable]) {
 
-  def this(exception: java.lang.Throwable) = this(exceptions = exception :: Nil)
+  def this(exception: java.lang.Throwable) = {
+    this(exceptions = exception :: Nil)
+    exception.fillInStackTrace()
+  }
 
   require(errors.nonEmpty || warnings.nonEmpty || exceptions.nonEmpty)
   require(errors.forall { case (_, ds) => ds.nonEmpty })
   require(warnings.forall { case (_, ds) => ds.nonEmpty })
 
   def show: String = {
-    val buff = new StringBuilder()
+    val buff = new scala.collection.mutable.StringBuilder()
+
+    @scala.annotation.tailrec
+    def showException(ex: java.lang.Throwable): Unit = {
+      buff ++= s"-- ${ex.getMessage}\n"
+      ex.getStackTrace.foreach { st =>
+        buff ++= s"\n  at $st"
+      }
+      Option.apply(ex.getCause) match {
+        case None =>
+          buff ++= "\n\n"
+          ()
+        case Some(c) =>
+          buff ++= s"\n Caused by:"
+          showException(c)
+      }
+    }
+
     if (errors.nonEmpty) {
       buff ++= s"- ${errors.size} resource(s) with errors:\n"
       errors.foreach { case (r, es) =>
@@ -62,13 +81,7 @@ case class EMFProblems
     }
     if (exceptions.nonEmpty) {
       buff ++= s"- ${exceptions.size} exceptions have occured:\n"
-      exceptions.foreach { ex =>
-        buff ++= s"-- ${ex.getMessage}\n"
-        ex.fillInStackTrace()
-        ex.getStackTrace.foreach { st =>
-          buff ++= s"\n  at $st"
-        }
-      }
+      exceptions.foreach(showException)
     }
     buff.toString
   }

@@ -28,6 +28,7 @@ import org.eclipse.xtext.resource.XtextResourceSet
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable._
+import scala.util.control.Exception._
 import scala.{StringContext,Unit}
 import scalaz._, Scalaz._
 
@@ -56,20 +57,46 @@ object OMLResourceSet {
   = {
     import EMFFilterable._
     val es: Seq[Extent] = r.getContents.selectByKindOf { case ext: Extent => ext }
+    val nbErrors = r.getErrors.size
+    val nbWarnings = r.getWarnings.size
     if (es.isEmpty)
       new EMFProblems(new java.lang.IllegalArgumentException(
         s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) does not have a toplevel OML Extent")).left
     else if (es.size > 1)
       new EMFProblems(new java.lang.IllegalArgumentException(
         s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) should have 1 toplevel OML Extent, not ${es.size}")).left
+    else if (0 < nbErrors)
+      new EMFProblems(new java.lang.IllegalArgumentException(
+        s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) => $nbErrors errors")).left
+    else if (0 < nbWarnings)
+      new EMFProblems(new java.lang.IllegalArgumentException(
+        s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) => $nbWarnings warnings")).left
     else
       es.head.right
   }
 
+  def verifyAbsoluteCanonicalURI(uri: URI)
+  : EMFProblems \/ URI
+  = if (uri.hasRelativePath)
+    new EMFProblems(new java.lang.IllegalArgumentException(
+      s"verifyAbsoluteCanonicalURI(uri=$uri) must be an absolute file URI!")).left
+  else
+    nonFatalCatch[EMFProblems \/ URI]
+      .withApply { (t: java.lang.Throwable) =>
+        new EMFProblems(new java.lang.IllegalArgumentException(
+          s"verifyAbsoluteCanonicalURI(uri=$uri) error: ${t.getMessage}", t
+        )).left
+      }
+      .apply {
+        val juri = new java.net.URI(uri.toString).normalize()
+        URI.createURI(juri.toString).right
+      }
+
   def loadOMLResource(rs: XtextResourceSet, uri: URI)
   : EMFProblems \/ Extent
   = for {
-    r <- EMFProblems.nonFatalCatch(rs.getResource(uri, true))
+    u <- verifyAbsoluteCanonicalURI(uri)
+    r <- EMFProblems.nonFatalCatch(rs.getResource(u, true))
     _ <- EMFProblems.nonFatalCatch[Unit](EcoreUtil.resolveAll(rs))
     e <- getOMLResourceExtent(r)
   } yield e
