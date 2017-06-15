@@ -1,0 +1,5 @@
+gov.nasa.jpl.imce.oml.converters 0.1.0.5 addresses issues found in 0.1.0.4
+
+## Issues Resolved
+
+- [#5 OMLText2Resolver needs to maintain correspondences for all OML elements](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/5)
