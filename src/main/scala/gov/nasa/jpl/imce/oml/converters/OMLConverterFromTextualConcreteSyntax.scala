@@ -51,6 +51,7 @@ ConceptInstance => OWLAPIConceptInstance,
 ReifiedRelationshipInstance => OWLAPIReifiedRelationshipInstance,
 ImmutableDescriptionBox => OWLAPIImmutableDescriptionBox,
 MutableDescriptionBox => OWLAPIMutableDescriptionBox,
+SingletonInstanceScalarDataPropertyValue => OWLAPISingletonInstanceScalarDataPropertyValue,
 SingletonInstanceStructuredDataPropertyContext => OWLAPISingletonInstanceStructuredDataPropertyContext}
 import gov.nasa.jpl.omf.scala.core.{OMFError, RelationshipCharacteristics, TerminologyKind}
 import gov.nasa.jpl.omf.scala.core.OMLString._
@@ -807,14 +808,16 @@ object OMLConverterFromTextualConcreteSyntax {
     : Map[api.ConceptualEntitySingletonInstance, OWLAPIConceptualEntitySingletonInstance]
     = conceptInstances ++ reifiedRelationshipInstances
 
-    val allDboxElements: Map[api.Element, common.Element]
+    val allDboxElements0: Map[api.Element, common.Element]
     = conceptualInstances ++ dbox2ont.map { case (dbox, (_, ont_dbox)) => dbox -> ont_dbox }
 
-    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
-      implicit val ext: api.Extent = e
+    val allDboxElements1
+    = dbox2ont.foldLeft(allDboxElements0.right[OMFError.Throwables]) {
+      case (acc1, (dbox, (e, md))) =>
+        implicit val ext: api.Extent = e
         e.reifiedRelationshipInstanceDomains.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, rrid) =>
           for {
-            _ <- acc2
+            prev <- acc2
             ont_rri <- reifiedRelationshipInstances.get(rrid.reifiedRelationshipInstance).fold(
               Set[java.lang.Throwable](
                 OMFError.omfError(
@@ -822,95 +825,106 @@ object OMLConverterFromTextualConcreteSyntax {
                     s"unresolved singleton reified relationship: " +
                     rrid.reifiedRelationshipInstance.abbrevIRI())
               ).left[OWLAPIReifiedRelationshipInstance]
-            ) (_.right[OMFError.Throwables])
+            )(_.right[OMFError.Throwables])
             ont_source = conceptualInstances(rrid.domain)
-            _ <- ops.addReifiedRelationshipInstanceDomain(md, ont_rri, ont_source)
-          } yield ()
+            rrjd <- ops.addReifiedRelationshipInstanceDomain(md, ont_rri, ont_source)
+            next = prev + (rrid -> rrjd)
+          } yield next
         }
     } match {
-      case \/-(_) =>
-        ()
+      case \/-(map) =>
+        map
       case -\/(errors) =>
         return Failure(errors.head)
     }
 
-    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
-      implicit val ext: api.Extent = e
-      e.reifiedRelationshipInstanceRanges.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, rrir) =>
-        for {
-          _ <- acc2
-          ont_rri <- reifiedRelationshipInstances.get(rrir.reifiedRelationshipInstance).fold(
-            Set[java.lang.Throwable](
-              OMFError.omfError(
-                s"OMF Schema table reifiedRelationshipInstanceRanges " +
-                  s"unresolved singleton reified relationship: " +
-                  rrir.reifiedRelationshipInstance.abbrevIRI())
-            ).left[OWLAPIReifiedRelationshipInstance]
-          ) (_.right[OMFError.Throwables])
-          ont_target = conceptualInstances(rrir.range)
-          _ <- ops.addReifiedRelationshipInstanceRange(md, ont_rri, ont_target)
-        } yield ()
-      }
+    val allDboxElements2
+    = dbox2ont.foldLeft(allDboxElements1.right[OMFError.Throwables]) {
+      case (acc1, (dbox, (e, md))) =>
+        implicit val ext: api.Extent = e
+        e.reifiedRelationshipInstanceRanges.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, rrir) =>
+          for {
+            prev <- acc2
+            ont_rri <- reifiedRelationshipInstances.get(rrir.reifiedRelationshipInstance).fold(
+              Set[java.lang.Throwable](
+                OMFError.omfError(
+                  s"OMF Schema table reifiedRelationshipInstanceRanges " +
+                    s"unresolved singleton reified relationship: " +
+                    rrir.reifiedRelationshipInstance.abbrevIRI())
+              ).left[OWLAPIReifiedRelationshipInstance]
+            )(_.right[OMFError.Throwables])
+            ont_target = conceptualInstances(rrir.range)
+            rrjr <- ops.addReifiedRelationshipInstanceRange(md, ont_rri, ont_target)
+            next = prev + (rrir -> rrjr)
+          } yield next
+        }
     } match {
-      case \/-(_) =>
-        ()
+      case \/-(map) =>
+        map
       case -\/(errors) =>
         return Failure(errors.head)
     }
 
-    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
-      implicit val ext: api.Extent = e
-      e.unreifiedRelationshipInstanceTuples.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, uri0) =>
-        for {
-          _ <- acc2
-          ont_uri <- terms3.get(uri0.unreifiedRelationship) match {
-            case Some(ur: OWLAPIUnreifiedRelationship) =>
-              ur.right
-            case _ =>
-              Set[java.lang.Throwable](OMFError.omfError(
-                s"OMF Schema table unreifiedRelationshipInstanceTuple from $uri0 " +
-                  s"unresolved unreified relationship: " +
-                  uri0.unreifiedRelationship.abbrevIRI()
-              )).left
-          }
-          ont_source = conceptualInstances(uri0.domain)
-          ont_target = conceptualInstances(uri0.range)
-          _ <- ops.addUnreifiedRelationshipInstanceTuple(md, ont_uri, ont_source, ont_target)
-        } yield ()
-      }
+    val allDboxElements3
+    = dbox2ont.foldLeft(allDboxElements2.right[OMFError.Throwables]) {
+      case (acc1, (dbox, (e, md))) =>
+        implicit val ext: api.Extent = e
+        e.unreifiedRelationshipInstanceTuples.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, uri0) =>
+          for {
+            prev <- acc2
+            ont_uri <- terms3.get(uri0.unreifiedRelationship) match {
+              case Some(ur: OWLAPIUnreifiedRelationship) =>
+                ur.right
+              case _ =>
+                Set[java.lang.Throwable](OMFError.omfError(
+                  s"OMF Schema table unreifiedRelationshipInstanceTuple from $uri0 " +
+                    s"unresolved unreified relationship: " +
+                    uri0.unreifiedRelationship.abbrevIRI()
+                )).left
+            }
+            ont_source = conceptualInstances(uri0.domain)
+            ont_target = conceptualInstances(uri0.range)
+            uri1 <- ops.addUnreifiedRelationshipInstanceTuple(md, ont_uri, ont_source, ont_target)
+            next = prev + (uri0 -> uri1)
+          } yield next
+        }
     } match {
-      case \/-(_) =>
-        ()
+      case \/-(map) =>
+        map
       case -\/(errors) =>
         return Failure(errors.head)
     }
 
-    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
-      implicit val ext: api.Extent = e
-      e.singletonScalarDataPropertyValues.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, scv) =>
-        for {
-          _ <- acc2
-          _ <- convertEntitySingletonInstanceScalarDataPropertyValue(e2sc, conceptualInstances, e, md, scv)
-        } yield ()
-      }
+    val allDboxElements4
+    = dbox2ont.foldLeft(allDboxElements3.right[OMFError.Throwables]) {
+      case (acc1, (dbox, (e, md))) =>
+        implicit val ext: api.Extent = e
+        e.singletonScalarDataPropertyValues.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, scv0) =>
+          for {
+            prev <- acc2
+            scv1 <- convertEntitySingletonInstanceScalarDataPropertyValue(e2sc, conceptualInstances, e, md, scv0)
+            next = prev + (scv0 -> scv1)
+          } yield next
+        }
     } match {
-      case \/-(_) =>
-        ()
+      case \/-(map) =>
+        map
       case -\/(errors) =>
         return Failure(errors.head)
     }
 
-    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
+    val allDboxElements5
+    = dbox2ont.foldLeft(allDboxElements4.right[OMFError.Throwables]) { case (acc1, (dbox, (e, md))) =>
       implicit val ext: api.Extent = e
       e.singletonStructuredDataPropertyValues.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, stv) =>
         for {
-          _ <- acc2
-          _ <- convertEntitySingletonInstanceStructuredDataPropertyValue(e2st, s2sc, s2st, conceptualInstances, e, md, stv)
-        } yield ()
+          prev <- acc2
+          next <- convertEntitySingletonInstanceStructuredDataPropertyValue(prev, e2st, s2sc, s2st, conceptualInstances, e, md, stv)
+        } yield next
       }
     } match {
-      case \/-(_) =>
-        ()
+      case \/-(map) =>
+        map
       case -\/(errors) =>
         return Failure(errors.head)
     }
@@ -950,7 +964,7 @@ object OMLConverterFromTextualConcreteSyntax {
                   OMFError.omfError(s"dbox2ont.addAnnotation: the dbox, $mdbox, is not mapped to the expected: $md")
                 ).left
             }
-            _ <- addModuleAnnotations(allDboxElements, ont_mdbox, as)
+            _ <- addModuleAnnotations(allDboxElements5, ont_mdbox, as)
           } yield ()
         case (_, (m, _)) =>
           Set[java.lang.Throwable](
@@ -1074,7 +1088,8 @@ object OMLConverterFromTextualConcreteSyntax {
       _ <- acc
       ap = a.property
       tap = TAnnotationProperty(ap.uuid.toString, ap.iri, ap.abbrevIRI)
-      ont_subject <- allDboxElements.get(a.subject) match {
+      aSubject = a.subject
+      ont_subject <- allDboxElements.get(aSubject) match {
         case Some(e) =>
           e.right[OMFError.Throwables]
         case None =>
@@ -1082,7 +1097,13 @@ object OMLConverterFromTextualConcreteSyntax {
             OMFError.omfError(s"addModuleAnnotations(dbox: ${md.iri}) missing element mapping for ${a.subject}")
           ).left
       }
-      _ <- md.addAnnotation(ont_subject, tap, a.value)
+      _ <- ont_subject match {
+        case _: common.Resource =>
+          md.addAnnotation(ont_subject, tap, a.value)
+        case _ =>
+          // Not yet supported.
+          ().right
+      }
     } yield ()
   }
 
@@ -1093,7 +1114,7 @@ object OMLConverterFromTextualConcreteSyntax {
    md: OWLAPIMutableDescriptionBox,
    scv: api.SingletonInstanceScalarDataPropertyValue)
   (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
-  : OMFError.Throwables \/ Unit
+  : OMFError.Throwables \/ OWLAPISingletonInstanceScalarDataPropertyValue
   = {
     implicit val apiExtent: api.Extent = e
     for {
@@ -1108,12 +1129,13 @@ object OMLConverterFromTextualConcreteSyntax {
           )).left
       }
       ont_s = conceptualInstances(scv.singletonInstance)
-      _ <- ops.addSingletonInstanceScalarDataPropertyValue(md, ont_s, ont_scp, LexicalValue(scv.scalarPropertyValue))
-    } yield ()
+      ont_scv <- ops.addSingletonInstanceScalarDataPropertyValue(md, ont_s, ont_scp, LexicalValue(scv.scalarPropertyValue))
+    } yield ont_scv
   }
 
   final protected def convertEntitySingletonInstanceStructuredDataPropertyValue
-  (e2st: Map[api.EntityStructuredDataProperty, OWLAPIEntityStructuredDataProperty],
+  (prev: Map[api.Element, common.Element],
+   e2st: Map[api.EntityStructuredDataProperty, OWLAPIEntityStructuredDataProperty],
    s2sc: Map[api.ScalarDataProperty, OWLAPIScalarDataProperty],
    s2st: Map[api.StructuredDataProperty, OWLAPIStructuredDataProperty],
    conceptualInstances: Map[api.ConceptualEntitySingletonInstance, OWLAPIConceptualEntitySingletonInstance],
@@ -1121,7 +1143,7 @@ object OMLConverterFromTextualConcreteSyntax {
    md: OWLAPIMutableDescriptionBox,
    stv: api.SingletonInstanceStructuredDataPropertyValue)
   (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
-  : OMFError.Throwables \/ Unit
+  : OMFError.Throwables \/ Map[api.Element, common.Element]
   = {
     implicit val apiExtent: api.Extent = e
     for {
@@ -1137,24 +1159,27 @@ object OMLConverterFromTextualConcreteSyntax {
       }
       ont_s = conceptualInstances(stv.singletonInstance)
       ont_stv <- ops.addSingletonInstanceStructuredDataPropertyValue(md, ont_s, ont_stp)
-      _ <- convertSingletonInstanceScalarDataPropertyValues(s2sc, e, md, stv, ont_stv)
-      _ <- convertSingletonInstanceStructuredDataPropertyValues(s2st, s2sc, e, md, stv, ont_stv)
-    } yield ()
+      next1 = prev + (stv -> ont_stv)
+      next2 <- convertSingletonInstanceScalarDataPropertyValues(next1, s2sc, e, md, stv, ont_stv)
+      next3 <- convertSingletonInstanceStructuredDataPropertyValues(next2, s2st, s2sc, e, md, stv, ont_stv)
+    } yield next3
   }
 
   final protected def convertSingletonInstanceStructuredDataPropertyValues
-  (s2st: Map[api.StructuredDataProperty, OWLAPIStructuredDataProperty],
+  (e2e: Map[api.Element, common.Element],
+   s2st: Map[api.StructuredDataProperty, OWLAPIStructuredDataProperty],
    s2sc: Map[api.ScalarDataProperty, OWLAPIScalarDataProperty],
    e: api.Extent,
    md: OWLAPIMutableDescriptionBox,
    context: api.SingletonInstanceStructuredDataPropertyContext,
    ont_context: OWLAPISingletonInstanceStructuredDataPropertyContext)
   (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
-  : OMFError.Throwables \/ Unit
-  = e.structuredPropertyTuples.getOrElse(context, Set.empty).foldLeft(().right[OMFError.Throwables]) { case (acc, stv) =>
+  : OMFError.Throwables \/ Map[api.Element, common.Element]
+  = e.structuredPropertyTuples.getOrElse(context, Set.empty).foldLeft(e2e.right[OMFError.Throwables]) {
+    case (acc, stv) =>
     implicit val apiExtent: api.Extent = e
     for {
-      _ <- acc
+      prev <- acc
       ont_st2st <- s2st.get(stv.structuredDataProperty.asInstanceOf[api.StructuredDataProperty]) match {
         case Some(st: OWLAPIStructuredDataProperty) =>
           st.right
@@ -1166,23 +1191,26 @@ object OMLConverterFromTextualConcreteSyntax {
           )).left
       }
       ont_stv <- ops.makeStructuredDataPropertyTuple(md, ont_context, ont_st2st)
-      _ <- convertSingletonInstanceScalarDataPropertyValues(s2sc, e, md, stv, ont_stv)
-      _ <- convertSingletonInstanceStructuredDataPropertyValues(s2st, s2sc, e, md, stv, ont_stv)
-    } yield ()
+      next1 = prev + (stv -> ont_stv)
+      next2 <- convertSingletonInstanceScalarDataPropertyValues(next1, s2sc, e, md, stv, ont_stv)
+      next3 <- convertSingletonInstanceStructuredDataPropertyValues(next2, s2st, s2sc, e, md, stv, ont_stv)
+    } yield next3
   }
 
   final protected def convertSingletonInstanceScalarDataPropertyValues
-  (s2sc: Map[api.ScalarDataProperty, OWLAPIScalarDataProperty],
+  (e2e: Map[api.Element, common.Element],
+   s2sc: Map[api.ScalarDataProperty, OWLAPIScalarDataProperty],
    e: api.Extent,
    md: OWLAPIMutableDescriptionBox,
    context: api.SingletonInstanceStructuredDataPropertyContext,
    ont_context: OWLAPISingletonInstanceStructuredDataPropertyContext)
   (implicit ops: OWLAPIOMFOps, store: OWLAPIOMFGraphStore)
-  : OMFError.Throwables \/ Unit
-  = e.scalarDataPropertyValues.getOrElse(context, Set.empty).foldLeft(().right[OMFError.Throwables]) { case (acc, sdv) =>
+  : OMFError.Throwables \/ Map[api.Element, common.Element]
+  = e.scalarDataPropertyValues.getOrElse(context, Set.empty).foldLeft(e2e.right[OMFError.Throwables]) {
+    case (acc, sdv) =>
     implicit val apiExtent: api.Extent = e
     for {
-      _ <- acc
+      prev <- acc
       ont_st2sc <- s2sc.get(sdv.scalarDataProperty.asInstanceOf[api.ScalarDataProperty]) match {
         case Some(st2sc: OWLAPIScalarDataProperty) =>
           st2sc.right
@@ -1193,8 +1221,8 @@ object OMLConverterFromTextualConcreteSyntax {
               sdv.scalarDataProperty.abbrevIRI()
           )).left
       }
-      _ <- ops.makeScalarDataPropertyValue(md, ont_context, ont_st2sc, LexicalValue(sdv.scalarPropertyValue))
-    } yield ()
+      ont_sdv <- ops.makeScalarDataPropertyValue(md, ont_context, ont_st2sc, LexicalValue(sdv.scalarPropertyValue))
+    } yield prev + (sdv -> ont_sdv)
   }
 
   final protected def convertDataRanges

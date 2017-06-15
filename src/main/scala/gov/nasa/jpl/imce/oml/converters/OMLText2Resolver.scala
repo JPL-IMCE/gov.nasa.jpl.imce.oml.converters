@@ -40,16 +40,15 @@ import Scalaz._
 case class OMLText2Resolver
 (omlFile: File,
  rextent: api.Extent,
+
  tboxes: Map[TerminologyBox, api.TerminologyBox] = Map.empty,
- tboxAxioms: Set[TerminologyBoxAxiom] = Set.empty,
- tboxStatements: Set[TerminologyBoxStatement] = Set.empty,
- bundleAxioms: Set[TerminologyBundleAxiom] = Set.empty,
- bundleStatements: Set[TerminologyBundleStatement] = Set.empty,
  dboxes: Map[DescriptionBox, api.DescriptionBox] = Map.empty,
- dboxDefinitions: Set[DescriptionBoxExtendsClosedWorldDefinitions] = Set.empty,
- dboxRefinements: Set[DescriptionBoxRefinement] = Set.empty,
+
+ moduleEdges: Map[ModuleEdge, api.ModuleEdge] = Map.empty,
 
  aps: Map[AnnotationProperty, api.AnnotationProperty] = Map.empty,
+
+// TerminologyBoxStatements
 
  aspects: Map[Aspect, api.Aspect] = Map.empty,
  concepts: Map[Concept, api.Concept] = Map.empty,
@@ -65,11 +64,49 @@ case class OMLText2Resolver
  scalarDataProperties: Map[ScalarDataProperty, api.ScalarDataProperty] = Map.empty,
  structuredDataProperties: Map[StructuredDataProperty, api.StructuredDataProperty] = Map.empty,
 
- moduleEdges: Map[ModuleEdge, api.ModuleEdge] = Map.empty,
  termAxioms: Map[TermAxiom, api.TermAxiom] = Map.empty,
- conceptTreeDisjunctions: Map[ConceptTreeDisjunction, api.ConceptTreeDisjunction] = Map.empty,
- disjointUnionOfConceptAxioms: Map[DisjointUnionOfConceptsAxiom, api.DisjointUnionOfConceptsAxiom] = Map.empty,
- conceptualEntitySingletonInstances: Map[ConceptualEntitySingletonInstance, api.ConceptualEntitySingletonInstance] = Map.empty) {
+
+ // statements in Bundles
+ conceptTreeDisjunctions
+ : Map[ConceptTreeDisjunction, api.ConceptTreeDisjunction]
+ = Map.empty,
+
+ disjointUnionOfConceptAxioms
+ : Map[DisjointUnionOfConceptsAxiom, api.DisjointUnionOfConceptsAxiom]
+ = Map.empty,
+
+ // statements in DescriptionBoxes
+ conceptualEntitySingletonInstances
+ : Map[ConceptualEntitySingletonInstance, api.ConceptualEntitySingletonInstance]
+ = Map.empty,
+
+ reifiedRelationshipInstanceDomains
+ : Map[ReifiedRelationshipInstanceDomain, api.ReifiedRelationshipInstanceDomain]
+ = Map.empty,
+
+ reifiedRelationshipInstanceRanges
+ : Map[ReifiedRelationshipInstanceRange, api.ReifiedRelationshipInstanceRange]
+ = Map.empty,
+
+ unreifiedRelationshipInstanceTuples
+ : Map[UnreifiedRelationshipInstanceTuple, api.UnreifiedRelationshipInstanceTuple]
+ = Map.empty,
+
+ singletonInstanceStructuredDataPropertyValues
+ : Map[SingletonInstanceStructuredDataPropertyValue, api.SingletonInstanceStructuredDataPropertyValue]
+ = Map.empty,
+
+ singletonInstanceScalarDataPropertyValues
+ : Map[SingletonInstanceScalarDataPropertyValue, api.SingletonInstanceScalarDataPropertyValue]
+ = Map.empty,
+
+ scalarDataPropertyValues
+ : Map[ScalarDataPropertyValue, api.ScalarDataPropertyValue]
+ = Map.empty,
+
+ structuredDataPropertyTuples
+ : Map[StructuredDataPropertyTuple, api.StructuredDataPropertyTuple]
+ = Map.empty) {
 
   def toOMLTablesFile: File = new File(omlFile.getPath.stripSuffix(".oml")+".oml.json.zip")
 
@@ -88,6 +125,8 @@ case class OMLText2Resolver
       tboxes.get(x)
     case x: DescriptionBox =>
       dboxes.get(x)
+    case x: ModuleEdge =>
+      moduleEdges.get(x)
     case x: Aspect =>
       aspects.get(x)
     case x: Concept =>
@@ -110,8 +149,6 @@ case class OMLText2Resolver
       scalarDataProperties.get(x)
     case x: StructuredDataProperty =>
       structuredDataProperties.get(x)
-    case x: ModuleEdge =>
-      moduleEdges.get(x)
     case x: TermAxiom =>
       termAxioms.get(x)
     case x: ConceptTreeDisjunction =>
@@ -120,6 +157,20 @@ case class OMLText2Resolver
       disjointUnionOfConceptAxioms.get(x)
     case x: ConceptualEntitySingletonInstance =>
       conceptualEntitySingletonInstances.get(x)
+    case x: ReifiedRelationshipInstanceDomain =>
+      reifiedRelationshipInstanceDomains.get(x)
+    case x: ReifiedRelationshipInstanceRange =>
+      reifiedRelationshipInstanceRanges.get(x)
+    case x: UnreifiedRelationshipInstanceTuple =>
+      unreifiedRelationshipInstanceTuples.get(x)
+    case x: SingletonInstanceStructuredDataPropertyValue =>
+      singletonInstanceStructuredDataPropertyValues.get(x)
+    case x: SingletonInstanceScalarDataPropertyValue =>
+      singletonInstanceScalarDataPropertyValues.get(x)
+    case x: ScalarDataPropertyValue =>
+      scalarDataPropertyValues.get(x)
+    case x: StructuredDataPropertyTuple =>
+      structuredDataPropertyTuples.get(x)
   }
 
   def entityLookup(e: Entity): Option[api.Entity] = e match {
@@ -181,27 +232,13 @@ object OMLText2Resolver {
         o2rj = mi match {
           case gi: TerminologyGraph =>
             val (rj, gj) = f.createTerminologyGraph(o2ri.rextent, convertTerminologyGraphKind(gi.getKind), gi.iri())
-            o2ri.copy(
-              rextent = rj,
-              tboxes = o2ri.tboxes + (gi -> gj),
-              tboxAxioms = o2ri.tboxAxioms ++ gi.getBoxAxioms.asScala.to[Set],
-              tboxStatements = o2ri.tboxStatements ++ gi.getBoxStatements.asScala.to[Set])
+            o2ri.copy(rextent = rj, tboxes = o2ri.tboxes + (gi -> gj))
           case bi: Bundle =>
             val (rj, bj) = f.createBundle(o2ri.rextent, convertTerminologyGraphKind(bi.getKind), bi.iri())
-            o2ri.copy(
-              rextent = rj,
-              tboxes = o2ri.tboxes + (bi -> bj),
-              tboxAxioms = o2ri.tboxAxioms ++ bi.getBoxAxioms.asScala.to[Set],
-              tboxStatements = o2ri.tboxStatements ++ bi.getBoxStatements.asScala.to[Set],
-              bundleAxioms = o2ri.bundleAxioms ++ bi.getBundleAxioms.asScala.to[Set],
-              bundleStatements = o2ri.bundleStatements ++ bi.getBundleStatements.asScala.to[Set])
+            o2ri.copy(rextent = rj, tboxes = o2ri.tboxes + (bi -> bj))
           case di: DescriptionBox =>
             val (rj, dj) = f.createDescriptionBox(o2ri.rextent, convertDescriptionKind(di.getKind), di.iri())
-            o2ri.copy(
-              rextent = rj,
-              dboxes = o2ri.dboxes + (di -> dj),
-              dboxDefinitions = o2ri.dboxDefinitions ++ di.getClosedWorldDefinitions.asScala.to[Set],
-              dboxRefinements = o2ri.dboxRefinements ++ di.getDescriptionBoxRefinements.asScala.to[Set])
+            o2ri.copy(rextent = rj, dboxes = o2ri.dboxes + (di -> dj))
         }
         next = prev.updated(e, o2rj)
       } yield next
@@ -1329,8 +1366,10 @@ object OMLText2Resolver {
           prev.get(rrii.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(rrii)),
           prev.get(rdi.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(rdi))) match {
           case (Some(dboxj), Some(rrij: api.ReifiedRelationshipInstance), Some(rdj)) =>
-            val (rj, _) = f.createReifiedRelationshipInstanceDomain(o2ri.rextent, dboxj, rrij, rdj)
-            o2ri.copy(rextent = rj).right
+            val (rj, dj) = f.createReifiedRelationshipInstanceDomain(o2ri.rextent, dboxj, rrij, rdj)
+            o2ri.copy(
+              rextent = rj,
+              reifiedRelationshipInstanceDomains = o2ri.reifiedRelationshipInstanceDomains + (di -> dj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertReifiedRelationshipInstanceDomains: Cannot find: " +
@@ -1366,8 +1405,10 @@ object OMLText2Resolver {
           prev.get(rrii.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(rrii)),
           prev.get(rri.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(rri))) match {
           case (Some(dboxj), Some(rrij: api.ReifiedRelationshipInstance), Some(rrj)) =>
-            val (rj, _) = f.createReifiedRelationshipInstanceRange(o2ri.rextent, dboxj, rrij, rrj)
-            o2ri.copy(rextent = rj).right
+            val (rj, dj) = f.createReifiedRelationshipInstanceRange(o2ri.rextent, dboxj, rrij, rrj)
+            o2ri.copy(
+              rextent = rj,
+              reifiedRelationshipInstanceRanges = o2ri.reifiedRelationshipInstanceRanges + (di -> dj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertReifiedRelationshipInstanceRanges: Cannot find: " +
@@ -1405,8 +1446,10 @@ object OMLText2Resolver {
           prev.get(udi.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(udi)),
           prev.get(uri.descriptionBox.getExtent).flatMap(_.conceptualEntitySingletonInstances.get(uri))) match {
           case (Some(dboxj), Some(uj), Some(udj), Some(urj)) =>
-            val (rj, _) = f.createUnreifiedRelationshipInstanceTuple(o2ri.rextent, dboxj, uj, udj, urj)
-            o2ri.copy(rextent = rj).right
+            val (rj, dj) = f.createUnreifiedRelationshipInstanceTuple(o2ri.rextent, dboxj, uj, udj, urj)
+            o2ri.copy(
+              rextent = rj,
+              unreifiedRelationshipInstanceTuples = o2ri.unreifiedRelationshipInstanceTuples + (di -> dj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertUnreifiedRelationshipInstances: Cannot find: " +
@@ -1443,8 +1486,10 @@ object OMLText2Resolver {
           prev.get(si.descriptionBox().getExtent).flatMap(_.conceptualEntitySingletonInstances.get(si)),
           prev.get(dpi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(dpi))) match {
           case (Some(dboxj), Some(sj), Some(dpj)) =>
-            val (rj, _) = f.createSingletonInstanceScalarDataPropertyValue(o2ri.rextent, dboxj, sj, dpj, di.getScalarPropertyValue)
-            o2ri.copy(rextent = rj).right
+            val (rj, dj) = f.createSingletonInstanceScalarDataPropertyValue(o2ri.rextent, dboxj, sj, dpj, di.getScalarPropertyValue)
+            o2ri.copy(
+              rextent = rj,
+              singletonInstanceScalarDataPropertyValues = o2ri.singletonInstanceScalarDataPropertyValues + (di -> dj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertSingletonScalarDataPropertyValues: Cannot find: " +
@@ -1480,11 +1525,13 @@ object OMLText2Resolver {
           prev.get(si.descriptionBox().getExtent).flatMap(_.conceptualEntitySingletonInstances.get(si)),
           prev.get(dpi.getTbox.getExtent).flatMap(_.entityStructuredDataProperties.get(dpi))) match {
           case (Some(dboxj), Some(sj), Some(dpj)) =>
-            val (rj, vj) = f.createSingletonInstanceStructuredDataPropertyValue(o2ri.rextent, dboxj, sj, dpj)
+            val (rj, dj) = f.createSingletonInstanceStructuredDataPropertyValue(o2ri.rextent, dboxj, sj, dpj)
             convertSingletonInstanceStructuredDataPropertyContext(
-              o2ri.copy(rextent = rj),
-              di.getScalarDataPropertyValues.asScala.to[Seq].map(vj -> _),
-              di.getStructuredPropertyTuples.asScala.to[Seq].map(vj -> _))
+              o2ri.copy(
+                rextent = rj,
+                singletonInstanceStructuredDataPropertyValues = o2ri.singletonInstanceStructuredDataPropertyValues + (di -> dj)),
+              di.getScalarDataPropertyValues.asScala.to[Seq].map(dj -> _),
+              di.getStructuredPropertyTuples.asScala.to[Seq].map(dj -> _))
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertSingletonStructuredDataPropertyValues: Cannot find: " +
@@ -1510,7 +1557,9 @@ object OMLText2Resolver {
       case Some(stk) =>
         val (rj, stj) = f.createStructuredDataPropertyTuple(o2r.rextent, stk, ctx)
         convertSingletonInstanceStructuredDataPropertyContext(
-          o2r.copy(rextent = rj),
+          o2r.copy(
+            rextent = rj,
+            structuredDataPropertyTuples = o2r.structuredDataPropertyTuples + (sti -> stj)),
           scs ++ sti.getScalarDataPropertyValues.asScala.to[Seq].map(stj -> _),
           stt ++ sti.getStructuredPropertyTuples.asScala.to[Seq].map(stj -> _))
       case _ =>
@@ -1523,8 +1572,10 @@ object OMLText2Resolver {
     val ((ctx, sci), sct) = (scs.head, scs.tail)
     o2r.dataRelationshipToScalarLookup(sci.getScalarDataProperty) match {
       case Some(sck) =>
-        val (rj, _) = f.createScalarDataPropertyValue(o2r.rextent, sck, sci.getScalarPropertyValue, ctx)
-        val next = o2r.copy(rextent = rj)
+        val (rj, scj) = f.createScalarDataPropertyValue(o2r.rextent, sck, sci.getScalarPropertyValue, ctx)
+        val next = o2r.copy(
+          rextent = rj,
+          scalarDataPropertyValues = o2r.scalarDataPropertyValues + (sci -> scj))
         convertSingletonInstanceStructuredDataPropertyContext(next, sct, Nil)
       case _ =>
         new EMFProblems(new java.lang.IllegalArgumentException(
