@@ -1,0 +1,8 @@
+gov.nasa.jpl.imce.oml.converters 0.1.0.6 addresses issues found in 0.1.0.5
+
+## Issues Resolved
+
+- [#6 Update OML to 0.7.0.7](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/6)
+
+- [#2 Building/publishing fails](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/2)
+
