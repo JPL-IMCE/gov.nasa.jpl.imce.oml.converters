@@ -2,6 +2,13 @@
 
 [![Build Status](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters.svg?branch=master)](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters)
 
+## Building & Publishing
+
+- Building: [![Build Status](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters.svg?branch=master)](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters)
+- Publishing: Included in the docker image published from [gov.nasa.jpl.imce.ontologies.processor](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.ontologies.processor)
+
+## Description
+
 OML supports three canonical representations:
 1) OML textual concrete syntax (`*.oml`)
 
@@ -37,7 +44,22 @@ OML supports three canonical representations:
    
 ## Usage:
 
-- Download the `OMLConverter` command-line application (compatible with Linux, MacOSX, Windows)
+- Download the [IMCE Ontologies Processor docker image](https://hub.docker.com/r/jplimce/gov.nasa.jpl.imce.ontologies.processor/tags/)
+
+
+  ```
+  docker pull jplimce/gov.nasa.jpl.imce.ontologies.processor:<version>
+  ```
+  
+  This image includes the `omlConverter` as `/imce/tools/
+
+- Run the image with a local folder that is the root of an OML ontology tree mapped as `/imce/ontologies`
+
+  ```
+  docker run -t -v `pwd`:/imce/ontologies -i jplimce/gov.nasa.jpl.imce.ontologies.processor:<version> /bin/bash
+  ```
+
+- Inside the image, the `omlConverter` is available as: `/imce/tools/omlConverter/bin/omlConverter`
 
 - `omlConverter`
 
