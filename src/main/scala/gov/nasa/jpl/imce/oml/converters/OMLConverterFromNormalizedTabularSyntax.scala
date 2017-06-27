@@ -22,12 +22,12 @@ import java.io.File
 import java.lang.System
 
 import scala.collection.immutable.List
-import scala.{StringContext, Unit}
+import scala.{Option, StringContext, Unit}
 import scala.Predef.String
 
 object OMLConverterFromNormalizedTabularSyntax {
 
-  def convert(catalogFile: File, omlTabularFiles: List[String]): Unit = {
+  def convert(catalogFile: File, metadata: Option[File], omlTabularFiles: List[String]): Unit = {
     System.err.println(s"convertFromNormalizedTabularSyntax: ${omlTabularFiles.mkString("\n - ", "\n - ", "\n")}")
     System.exit(-1)
   }

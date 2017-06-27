@@ -22,7 +22,8 @@ import java.io.File
 import java.lang.System
 
 import scala.collection.immutable._
-import scala.{Array, StringContext, Unit}
+import scala.util.control.Exception._
+import scala.{Array, Option, None, StringContext, Unit}
 import scala.Predef.{augmentString, refArrayOps, String}
 
 object OMLConverter {
@@ -32,13 +33,13 @@ object OMLConverter {
        |Usage:
        |
        |1) Convert OML textual concrete syntax files
-       |omlConvert -cat <oml.catalog.xml> <OML Textual files>
+       |omlConvert -cat <oml.catalog.xml> [-out <oml.metadata.json>] <OML Textual files>
        |
        |2) OWL2-DL ontology syntax: *.owl
-       |omlConvert -cat <oml.catalog.xml> <OML Ontology files>
+       |omlConvert -cat <oml.catalog.xml> [-out <oml.metadata.json>] <OML Ontology files>
        |
        |3) normalized tabular syntax: *.oml.json.zip
-       |omlConvert -cat <oml.catalog.xml> <OML Tabular files>
+       |omlConvert -cat <oml.catalog.xml> [-out <oml.metadata.json>] <OML Tabular files>
        |
        |where:
        |<oml.catalog.xml> is an OASIS XML catalog file named 'oml.catalog.xml' for resolving OML IRIs to OML files
@@ -48,6 +49,7 @@ object OMLConverter {
        | - a space-separated list of `iri` resolvable to `*.owl` files via the <oml.catalog.xml>
        | - a space-separated list of '*.owl' files
        |
+       |<oml.metadata.json> is an optional output file that will contain the OML metadata graph of the conversions.
      """.stripMargin
 
   def main(argv: Array[String]): Unit = {
@@ -62,21 +64,39 @@ object OMLConverter {
 
       if (args.size > 2 &&
           args.head == "-cat" &&
-          args.tail.head.endsWith("oml.catalog.xml")) {
+          args.tail.head.endsWith(".catalog.xml")) {
 
         val catalogFile = new File(args.tail.head)
         if (catalogFile.exists() && catalogFile.canRead) {
-          val inputs = args.tail.tail
 
+          val rest = args.tail.tail
+          val (output, inputs) =
+            if (rest.size > 2 && rest.head == "-out" && rest.tail.head.endsWith(".json")) {
+              val metadataFile = new File(rest.tail.head)
+              nonFatalCatch[(Option[File], List[String])]
+                .withApply {
+                  (t: java.lang.Throwable) =>
+                    System.err.println(s"OMLConverter: Error while verifying output metadata file directory")
+                    System.err.println(t.getMessage)
+                    t.printStackTrace(System.err)
+                    System.exit(-1)
+                    (None, rest)
+                }
+                .apply {
+                  Option.apply(metadataFile.getParentFile).foreach(_.mkdirs())
+                  (Option.apply(metadataFile), rest.tail.tail)
+                }
+            } else
+              (None, rest)
 
           if (inputs.forall(_.endsWith(".oml")))
-            OMLConverterFromTextualConcreteSyntax.convert(catalogFile, inputs)
+            OMLConverterFromTextualConcreteSyntax.convert(catalogFile, output, inputs)
           else if (inputs.forall(_.startsWith("http")))
-            OMLConverterFromOntologySyntax.convertIRIs(catalogFile, inputs)
+            OMLConverterFromOntologySyntax.convertIRIs(catalogFile, output, inputs)
           else if (inputs.forall(a => a.endsWith(".owl") && !a.startsWith("http")))
-            OMLConverterFromOntologySyntax.convertFiles(catalogFile, inputs)
+            OMLConverterFromOntologySyntax.convertFiles(catalogFile, output, inputs)
           else if (inputs.forall(_.endsWith(".oml.json.zip")))
-            OMLConverterFromNormalizedTabularSyntax.convert(catalogFile, inputs)
+            OMLConverterFromNormalizedTabularSyntax.convert(catalogFile, output, inputs)
           else {
             System.err.println(
               s"All supplied arguments must be OML files in the same OML format.")

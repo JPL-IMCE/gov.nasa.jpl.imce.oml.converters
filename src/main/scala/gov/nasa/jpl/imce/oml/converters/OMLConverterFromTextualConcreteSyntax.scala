@@ -25,7 +25,7 @@ import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
 import gov.nasa.jpl.imce.oml.model.common.Extent
 import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager, OMLExtensions}
 import gov.nasa.jpl.imce.oml.resolver._
-import gov.nasa.jpl.imce.oml.tables.{AnnotationProperty => TAnnotationProperty, ClosedWorldDesignations, Final, OMLSpecificationTables, OpenWorldDefinitions, Partial}
+import gov.nasa.jpl.imce.oml.tables.{ClosedWorldDesignations, Final, OMLSpecificationTables, OpenWorldDefinitions, Partial, AnnotationProperty => TAnnotationProperty}
 import gov.nasa.jpl.imce.oml.uuid
 import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{ImmutableTerminologyBox => OWLAPIImmutableTerminologyBox}
@@ -33,27 +33,9 @@ import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{MutableBundle 
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{MutableTerminologyBox => OWLAPIMutableTerminologyBox}
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{MutableTerminologyGraph => OWLAPIMutableTerminologyGraph}
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.{Term => OWLAPITerm}
-import gov.nasa.jpl.omf.scala.binding.owlapi.types.terms.{
-Concept => OWLAPIConcept,
-ConceptualEntity => OWLAPIConceptualEntity,
-DataRange => OWLAPIDataRange,
-Entity => OWLAPIEntity,
-EntityScalarDataProperty => OWLAPIEntityScalarDataProperty,
-EntityStructuredDataProperty => OWLAPIEntityStructuredDataProperty,
-ReifiedRelationship => OWLAPIReifiedRelationship,
-ScalarDataProperty => OWLAPIScalarDataProperty,
-Structure => OWLAPIStructure,
-StructuredDataProperty => OWLAPIStructuredDataProperty,
-UnreifiedRelationship => OWLAPIUnreifiedRelationship}
-import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.{
-ConceptualEntitySingletonInstance => OWLAPIConceptualEntitySingletonInstance,
-ConceptInstance => OWLAPIConceptInstance,
-ReifiedRelationshipInstance => OWLAPIReifiedRelationshipInstance,
-ImmutableDescriptionBox => OWLAPIImmutableDescriptionBox,
-MutableDescriptionBox => OWLAPIMutableDescriptionBox,
-SingletonInstanceScalarDataPropertyValue => OWLAPISingletonInstanceScalarDataPropertyValue,
-SingletonInstanceStructuredDataPropertyContext => OWLAPISingletonInstanceStructuredDataPropertyContext}
-import gov.nasa.jpl.omf.scala.core.{OMFError, RelationshipCharacteristics, TerminologyKind}
+import gov.nasa.jpl.omf.scala.binding.owlapi.types.terms.{Concept => OWLAPIConcept, ConceptualEntity => OWLAPIConceptualEntity, DataRange => OWLAPIDataRange, Entity => OWLAPIEntity, EntityScalarDataProperty => OWLAPIEntityScalarDataProperty, EntityStructuredDataProperty => OWLAPIEntityStructuredDataProperty, ReifiedRelationship => OWLAPIReifiedRelationship, ScalarDataProperty => OWLAPIScalarDataProperty, Structure => OWLAPIStructure, StructuredDataProperty => OWLAPIStructuredDataProperty, UnreifiedRelationship => OWLAPIUnreifiedRelationship}
+import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.{ConceptInstance => OWLAPIConceptInstance, ConceptualEntitySingletonInstance => OWLAPIConceptualEntitySingletonInstance, ImmutableDescriptionBox => OWLAPIImmutableDescriptionBox, MutableDescriptionBox => OWLAPIMutableDescriptionBox, ReifiedRelationshipInstance => OWLAPIReifiedRelationshipInstance, SingletonInstanceScalarDataPropertyValue => OWLAPISingletonInstanceScalarDataPropertyValue, SingletonInstanceStructuredDataPropertyContext => OWLAPISingletonInstanceStructuredDataPropertyContext}
+import gov.nasa.jpl.omf.scala.core.{OMFError, OMLString, RelationshipCharacteristics, TerminologyKind}
 import gov.nasa.jpl.omf.scala.core.OMLString._
 import org.apache.xml.resolver.tools.CatalogResolver
 import org.eclipse.emf.common.util.URI
@@ -64,8 +46,8 @@ import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable._
 import scala.util.{Failure, Success, Try}
-import scala.{Int, Option, None, Some, StringContext, Tuple2, Tuple5, Tuple6, Unit}
-import scala.Predef.{ArrowAssoc, String}
+import scala.{Boolean, Int, None, Option, Some, StringContext, Tuple2, Tuple5, Tuple6, Unit}
+import scala.Predef.{augmentString, ArrowAssoc, String}
 import scalax.collection.immutable.Graph
 import scalaz._
 import Scalaz._
@@ -73,7 +55,7 @@ import scalax.collection.GraphEdge.NodeProduct
 
 object OMLConverterFromTextualConcreteSyntax {
 
-  def convert(catalogFile: File, omlFiles: List[String]): Unit = {
+  def convert(catalogFile: File, metadataFile: Option[File], omlFiles: List[String]): Unit = {
     val rs = OMLResourceSet.initializeResourceSet()
     ( Option.apply(OMLExtensions.getOrCreateCatalogManager(rs)),
       Option.apply(OMLExtensions.getCatalog(rs))) match {
@@ -105,7 +87,7 @@ object OMLConverterFromTextualConcreteSyntax {
                     ().right
                   else if (nbModules > 1)
                     new EMFProblems(new java.lang.IllegalArgumentException(
-                      s"OMLConverterFromTextualConcreteSyntax: read ${nbModules} instead of 1 modules for $omlFile"
+                      s"OMLConverterFromTextualConcreteSyntax: read $nbModules instead of 1 modules for $omlFile"
                     )).left
                   else
                     new EMFProblems(new java.lang.IllegalArgumentException(
@@ -143,7 +125,7 @@ object OMLConverterFromTextualConcreteSyntax {
                         _ <- convertToTables(rs, cm, cat, tables, o2r.toOMLTablesFile)
                       } yield ()
                   }
-                  _ <- convertToOWL(cm, cat, o2rMap)
+                  _ <- convertToOWL(cm, cat, o2rMap, catalogFile, metadataFile)
                 } yield ()
                 conversions match {
                   case Success(_) =>
@@ -175,9 +157,34 @@ object OMLConverterFromTextualConcreteSyntax {
     OMLSpecificationTables.saveOMLSpecificationTables(tables, tablesJsonZip)
   }
 
+  def isBundle(m: api.Module) : Boolean = m match {
+    case _: api.Bundle =>
+      true
+    case _ =>
+      false
+  }
+
+  def isBuiltin(m: api.Module): Boolean = m match {
+    case _: api.Bundle =>
+      false
+    case _: api.DescriptionBox =>
+      false
+    case _ =>
+      val siri = m.iri.toString
+      siri.startsWith("http://imce.jpl.nasa.gov/oml") ||
+        "http://www.w3.org/2002/07/owl" == siri ||
+        "http://www.w3.org/2001/XMLSchema" == siri ||
+        "http://www.w3.org/2000/01/rdf-schema" == siri ||
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#" == siri ||
+        "http://www.w3.org/2003/11/swrl" == siri
+  }
+
+
   def convertToOWL(cm: OMLCatalogManager,
                    cat: OMLCatalog,
-                   o2rMap: Map[Extent, OMLText2Resolver]): Try[Unit] = {
+                   o2rMap: Map[Extent, OMLText2Resolver],
+                   catalogFile: File,
+                   metadataFile: Option[File]): Try[Unit] = {
 
     System.out.println("... creating OMF Store")
 
@@ -207,21 +214,82 @@ object OMLConverterFromTextualConcreteSyntax {
     val g1: Graph[api.Module, ModuleGraphEdge] =
       o2rMap.foldLeft(g0) {
         case (gi, (_, o2r)) =>
-          (o2r.tboxes.values ++ o2r.dboxes.values).foldLeft(gi)(_ + _)
+          (o2r.tboxes.values ++ o2r.dboxes.values).foldLeft(gi) {
+            case (gj: Graph[api.Module, ModuleGraphEdge], mi: api.Module) =>
+              System.out.println(s"Node: ${mi.iri}")
+              gj + mi
+          }
       }
 
     val g2: Graph[api.Module, ModuleGraphEdge] =
       o2rMap.foldLeft(g1) { case (gi, (_, o2r)) =>
-        o2r.moduleEdges.values.foldLeft(gi) { case (gk, me) =>
-          implicit val ext: api.Extent = o2r.rextent
-          val source = me.sourceModule().get
-          val target = me.targetModule()
-          val edge = new ModuleGraphEdge[api.Module](NodeProduct(source, target), me)
-          gk + edge
+        o2r.moduleEdges.values.foldLeft(gi) {
+          case (gk: Graph[api.Module, ModuleGraphEdge], me: api.ModuleEdge) =>
+            implicit val ext: api.Extent = o2r.rextent
+            val source: api.Module = me.sourceModule().get
+            val targetIRI = me.targetModule()
+            gk.toOuterNodes.find(_.iri == targetIRI).fold(gk) { target: api.Module =>
+              val edge = new ModuleGraphEdge[api.Module](NodeProduct(source, target), me)
+              System.out.println(s"Edge: ${source.iri} ~> ${target.iri}")
+              gk + edge
+            }
         }
       }
 
     val g = g2
+
+    val catalogDir: String = catalogFile.getAbsoluteFile.getParent
+
+    val metadataNodes
+    : Seq[metadata.OMLConvertedModule]
+    = g
+      .nodes
+      .map { n =>
+        val m: api.Module = n.value
+        val prov: metadata.OMLMetadataProvenance = if (isBuiltin(m))
+          metadata.OMLMetadataProvenance.OMLBuiltinModuleProvenance
+        else if (isBundle(n) || n.findPredecessor(x => isBundle(x.value)).isDefined)
+          metadata.OMLMetadataProvenance.OMLBundleModuleProvenance
+        else if (n.findSuccessor(x => isBundle(x.value)).isDefined)
+          metadata.OMLMetadataProvenance.OMLExtensionModuleProvenance
+        else
+          metadata.OMLMetadataProvenance.OMLOtherModuleProvenance
+
+        val filename = cat.resolveURI(m.iri).stripPrefix("file:").stripPrefix(catalogDir).stripPrefix("/")
+
+        metadata.OMLConvertedModule(
+          iri = metadata.OMLMetadataString.ModuleIRI(m.iri),
+          filename = metadata.OMLMetadataString.RelativeFilename(filename),
+          provenance = prov)
+      }
+      .to[Seq]
+      .sorted
+
+    val metadataEdges
+    : Seq[metadata.OMLConvertedModuleEdge]
+    = g
+      .edges
+      .map { e =>
+        val (s,t) = (e.from.value, e.to.value)
+        metadata.OMLConvertedModuleEdge(
+          importing = metadata.OMLMetadataString.ImportingModuleIRI(s.iri),
+          imported = metadata.OMLMetadataString.ImportedModuleIRI(t.iri))
+      }
+      .to[Seq]
+      .sorted
+
+    val metadataGraph = metadata.OMLMetadataGraph(nodes = metadataNodes, edges = metadataEdges)
+
+    metadataFile.foreach { f =>
+      val s = new java.io.PrintWriter(f)
+      try {
+        val json = metadata.OMLMetadataGraph.encoder(metadataGraph)
+        s.write(json.toString)
+        System.out.println(s"# Wrote OML Metadata Graph: $metadataFile")
+      } finally {
+        s.close()
+      }
+    }
 
     val moduleSort
     : Seq[api.Module]
@@ -674,6 +742,244 @@ object OMLConverterFromTextualConcreteSyntax {
 
     val allTboxElements: Map[api.Element, common.Element]
     = terms3 ++ e2sc ++ e2st ++ s2sc ++ s2st ++ tbox2ont.map { case (tbox, (_, ont_tbox)) => tbox -> ont_tbox }
+
+    val allTboxElementsWithAxioms: Map[api.Element, common.Element]
+    = tbox2ont.foldLeft(allTboxElements.right[OMFError.Throwables]) { case (acc1, (tbox, (e, ont_tbox))) =>
+      tbox.boxStatements(e).foldLeft(acc1) { case (acc2, s) =>
+        s match {
+          case ax: api.AspectSpecializationAxiom =>
+            for {
+              prev <- acc2
+              ont_sub <- prev.get(ax.subEntity) match {
+                case Some(e: types.terms.Entity) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"AspectSpecializationAxiom subEntity: ${ax.subEntity} conversion"
+                  )).left
+              }
+              ont_sup <- prev.get(ax.superAspect) match {
+                case Some(e: types.terms.Aspect) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"AspectSpecializationAxiom superAspect: ${ax.superAspect} conversion"
+                  )).left
+              }
+              ont_ax <- ops.addAspectSpecializationAxiom(ont_tbox, ont_sub, ont_sup)
+              next = prev + (ax -> ont_ax)
+            } yield next
+          case ax: api.ConceptSpecializationAxiom =>
+            for {
+              prev <- acc2
+              ont_sub <- prev.get(ax.subConcept) match {
+                case Some(e: types.terms.Concept) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"ConceptSpecializationAxiom subConcept: ${ax.subConcept} conversion"
+                  )).left
+              }
+              ont_sup <- prev.get(ax.superConcept) match {
+                case Some(e: types.terms.Concept) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"ConceptSpecializationAxiom superConcept: ${ax.superConcept} conversion"
+                  )).left
+              }
+              ont_ax <- ops.addConceptSpecializationAxiom(ont_tbox, ont_sub, ont_sup)
+              next = prev + (ax -> ont_ax)
+            } yield next
+          case ax: api.ReifiedRelationshipSpecializationAxiom =>
+            for {
+              prev <- acc2
+              ont_sub <- prev.get(ax.subRelationship) match {
+                case Some(e: types.terms.ReifiedRelationship) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"ReifiedRelationshipSpecializationAxiom subRelationship: ${ax.subRelationship} conversion"
+                  )).left
+              }
+              ont_sup <- prev.get(ax.superRelationship) match {
+                case Some(e: types.terms.ReifiedRelationship) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"ReifiedRelationshipSpecializationAxiom superRelationship: ${ax.superRelationship} conversion"
+                  )).left
+              }
+              ont_ax <- ops.addReifiedRelationshipSpecializationAxiom(ont_tbox, ont_sub, ont_sup)
+              next = prev + (ax -> ont_ax)
+            } yield next
+          case ax: api.ScalarOneOfLiteralAxiom =>
+            for {
+              prev <- acc2
+              ont_r <- prev.get(ax.axiom) match {
+                case Some(e: types.terms.ScalarOneOfRestriction) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"ScalarOneOfLiteralAxiom axiom: ${ax.axiom} conversion"
+                  )).left
+              }
+              ont_ax <- ops.addScalarOneOfLiteralAxiom(ont_tbox, ont_r, ax.value)
+              next = prev + (ax -> ont_ax)
+            } yield next
+          case ax: api.EntityScalarDataPropertyExistentialRestrictionAxiom =>
+            for {
+              prev <- acc2
+              ont_e <- prev.get(ax.restrictedEntity) match {
+                case Some(e: types.terms.Entity) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityScalarDataPropertyExistentialRestrictionAxiom restrictedEntity: ${ax.restrictedEntity} conversion"
+                  )).left
+              }
+              ont_dp <- prev.get(ax.scalarProperty) match {
+                case Some(e: types.terms.EntityScalarDataProperty) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityScalarDataPropertyExistentialRestrictionAxiom scalarProperty: ${ax.scalarProperty} conversion"
+                  )).left
+              }
+              ont_dr <- prev.get(ax.scalarRestriction) match {
+                case Some(e: types.terms.DataRange) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityScalarDataPropertyExistentialRestrictionAxiom scalarRestriction: ${ax.scalarRestriction} conversion"
+                  )).left
+              }
+              ont_ax <- ops.addEntityScalarDataPropertyExistentialRestrictionAxiom(ont_tbox, ont_e, ont_dp, ont_dr)
+              next = prev + (ax -> ont_ax)
+            } yield next
+          case ax: api.EntityScalarDataPropertyParticularRestrictionAxiom =>
+            for {
+              prev <- acc2
+              ont_e <- prev.get(ax.restrictedEntity) match {
+                case Some(e: types.terms.Entity) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityScalarDataPropertyParticularRestrictionAxiom restrictedEntity: ${ax.restrictedEntity} conversion"
+                  )).left
+              }
+              ont_dp <- prev.get(ax.scalarProperty) match {
+                case Some(e: types.terms.EntityScalarDataProperty) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityScalarDataPropertyExistentialRestrictionAxiom scalarProperty: ${ax.scalarProperty} conversion"
+                  )).left
+              }
+              ont_ax <- ops.addEntityScalarDataPropertyParticularRestrictionAxiom(ont_tbox, ont_e, ont_dp, OMLString.LexicalValue(ax.literalValue))
+              next = prev + (ax -> ont_ax)
+            } yield next
+          case ax: api.EntityScalarDataPropertyUniversalRestrictionAxiom =>
+            for {
+              prev <- acc2
+              ont_e <- prev.get(ax.restrictedEntity) match {
+                case Some(e: types.terms.Entity) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityScalarDataPropertyUniversalRestrictionAxiom restrictedEntity: ${ax.restrictedEntity} conversion"
+                  )).left
+              }
+              ont_dp <- prev.get(ax.scalarProperty) match {
+                case Some(e: types.terms.EntityScalarDataProperty) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityScalarDataPropertyExistentialRestrictionAxiom scalarProperty: ${ax.scalarProperty} conversion"
+                  )).left
+              }
+              ont_dr <- prev.get(ax.scalarRestriction) match {
+                case Some(e: types.terms.DataRange) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityScalarDataPropertyUniversalRestrictionAxiom scalarRestriction: ${ax.scalarRestriction} conversion"
+                  )).left
+              }
+              ont_ax <- ops.addEntityScalarDataPropertyUniversalRestrictionAxiom(ont_tbox, ont_e, ont_dp, ont_dr)
+              next = prev + (ax -> ont_ax)
+            } yield next
+          case ax: api.EntityExistentialRestrictionAxiom =>
+            for {
+              prev <- acc2
+              ont_s <- prev.get(ax.restrictedDomain) match {
+                case Some(e: types.terms.Entity) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityExistentialRestrictionAxiom restrictedDomain: ${ax.restrictedDomain} conversion"
+                  )).left
+              }
+              ont_r <- prev.get(ax.restrictedRelation) match {
+                case Some(e: types.terms.ReifiedRelationship) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityExistentialRestrictionAxiom restrictedRelation: ${ax.restrictedRelation} conversion"
+                  )).left
+              }
+              ont_t <- prev.get(ax.restrictedRange) match {
+                case Some(e: types.terms.Entity) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityExistentialRestrictionAxiom restrictedRange: ${ax.restrictedRange} conversion"
+                  )).left
+              }
+              ont_ax <- ops.addEntityExistentialRestrictionAxiom(ont_tbox, ont_s, ont_r, ont_t)
+              next = prev + (ax -> ont_ax)
+            } yield next
+          case ax: api.EntityUniversalRestrictionAxiom =>
+            for {
+              prev <- acc2
+              ont_s <- prev.get(ax.restrictedDomain) match {
+                case Some(e: types.terms.Entity) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityUniversalRestrictionAxiom restrictedDomain: ${ax.restrictedDomain} conversion"
+                  )).left
+              }
+              ont_r <- prev.get(ax.restrictedRelation) match {
+                case Some(e: types.terms.ReifiedRelationship) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityUniversalRestrictionAxiom restrictedRelation: ${ax.restrictedRelation} conversion"
+                  )).left
+              }
+              ont_t <- prev.get(ax.restrictedRange) match {
+                case Some(e: types.terms.Entity) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"EntityUniversalRestrictionAxiom restrictedRange: ${ax.restrictedRange} conversion"
+                  )).left
+              }
+              ont_ax <- ops.addEntityUniversalRestrictionAxiom(ont_tbox, ont_s, ont_r, ont_t)
+              next = prev + (ax -> ont_ax)
+            } yield next
+          case ax =>
+            System.out.println(s"... $ax")
+            acc2
+        }
+      }
+    } match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
 
     tbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (_, (e, md))) =>
       implicit val ext: api.Extent = e
@@ -1335,6 +1641,18 @@ object OMLConverterFromTextualConcreteSyntax {
                 else
                   Set[java.lang.Throwable](OMFError.omfError(
                     s"OMF Schema table StringScalarRestriction $sr conversion " +
+                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+              }
+          case sr: api.SynonymScalarRestriction =>
+            ops
+              .addSynonymScalarRestriction(mg,
+                LocalName(sr.name),
+                r)
+              .flatMap { osr =>
+                if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                else
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"OMF Schema table SynonymScalarRestriction $sr conversion " +
                       s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
               }
           case sr: api.TimeScalarRestriction =>

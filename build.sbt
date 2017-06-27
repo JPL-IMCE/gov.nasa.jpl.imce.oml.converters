@@ -85,6 +85,15 @@ lazy val core = Project("omlConverters", file("."))
       "org.eclipse.xtext" % "org.eclipse.xtext.xbase" % "2.11.0",
       "org.eclipse.xtext" % "org.eclipse.xtext.xbase.lib" % "2.11.0"
     ),
+
+    addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.patch),
+
+    libraryDependencies ++= Seq(
+      "io.circe" %% "circe-core",
+      "io.circe" %% "circe-generic",
+      "io.circe" %% "circe-parser"
+    ).map(_ % Versions_circe.version),
+
     // Avoid unresolvable dependencies from old versions of log4j
     libraryDependencies ~= {
       _ map {
