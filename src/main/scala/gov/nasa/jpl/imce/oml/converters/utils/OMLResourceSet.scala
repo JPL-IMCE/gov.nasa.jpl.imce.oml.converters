@@ -30,6 +30,7 @@ import scala.collection.JavaConverters._
 import scala.collection.immutable._
 import scala.util.control.Exception._
 import scala.{StringContext,Unit}
+import scala.Predef.String
 import scalaz._, Scalaz._
 
 object OMLResourceSet {
@@ -59,6 +60,13 @@ object OMLResourceSet {
     val es: Seq[Extent] = r.getContents.selectByKindOf { case ext: Extent => ext }
     val nbErrors = r.getErrors.size
     val nbWarnings = r.getWarnings.size
+    val message1: String = r.getErrors.asScala.foldLeft[String]("") { case (acc, d) =>
+      acc + "\nError: " + s"${d.getLocation} @ ${d.getLine}:${d.getColumn}: ${d.getMessage}"
+    }
+    val message2: String = r.getWarnings.asScala.foldLeft[String](message1) { case (acc, d) =>
+      acc + "\nWarning: " + s"${d.getLocation} @ ${d.getLine}:${d.getColumn}: ${d.getMessage}"
+    }
+
     if (es.isEmpty)
       new EMFProblems(new java.lang.IllegalArgumentException(
         s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) does not have a toplevel OML Extent")).left
@@ -67,10 +75,10 @@ object OMLResourceSet {
         s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) should have 1 toplevel OML Extent, not ${es.size}")).left
     else if (0 < nbErrors)
       new EMFProblems(new java.lang.IllegalArgumentException(
-        s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) => $nbErrors errors")).left
+        s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) => $nbErrors errors, $nbWarnings warnings\n$message2")).left
     else if (0 < nbWarnings)
       new EMFProblems(new java.lang.IllegalArgumentException(
-        s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) => $nbWarnings warnings")).left
+        s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) => $nbWarnings warnings\n$message2")).left
     else
       es.head.right
   }

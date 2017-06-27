@@ -284,22 +284,14 @@ object OMLText2Resolver {
         ( prev.get(extendingi.getExtent).flatMap(_.tboxes.get(extendingi)),
           prev.get(extendedi.getExtent).flatMap(_.tboxes.get(extendedi)) ) match {
           case ((Some(extendingj), Some(extendedj))) =>
-            val (rj, axj) = f.createTerminologyExtensionAxiom(o2ri.rextent, extendingj, extendedj)
+            val (rj, axj) = f.createTerminologyExtensionAxiom(o2ri.rextent, extendingj, extendedj.iri)
             o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
-          case ((Some(_), None)) =>
+          case (extendingj, extendedj) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertTerminologyExtensions: Failed to resolve extended: " + extendedi.getIri
-            )).left
-          case ((None, Some(_))) =>
-            new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertTerminologyExtensions: Failed to resolve extending: " + extendingi.getIri
-            )).left
-          case ((None, None)) =>
-            new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertTerminologyExtensions: Failed to resolve extending: " +
-                extendingi.getIri +
-                " and extended " +
-                extendedi.getIri
+              s"convertTerminologyExtensions: " +
+                extendingj.fold(s"Failed to resolve extending=${extendingi.getIri}")(_ => s"From extending=${extendingi.getIri}") +
+                "; " +
+                extendedj.fold(s"Failed to resolve extended=${extendedi.getIri}")(_ => s"To extended=${extendedi.getIri}")
             )).left
         }
         next = prev.updated(e, o2rj)
@@ -329,7 +321,7 @@ object OMLText2Resolver {
           prev.get(designatedi.getExtent).flatMap(_.tboxes.get(designatedi)),
           prev.get(designatedci.getTbox.getExtent).flatMap(_.concepts.get(designatedci))) match {
           case (Some(designationG), Some(designatedT), Some(designatedC)) =>
-            val (rj, axj) = f.createConceptDesignationTerminologyAxiom(o2ri.rextent, designationG, designatedC, designatedT)
+            val (rj, axj) = f.createConceptDesignationTerminologyAxiom(o2ri.rextent, designationG, designatedC, designatedT.iri)
             o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -367,7 +359,7 @@ object OMLText2Resolver {
           prev.get(nestingi.getExtent).flatMap(_.tboxes.get(nestingi)),
           prev.get(nestingci.getTbox.getExtent).flatMap(_.concepts.get(nestingci))) match {
           case (Some(nestedG: api.TerminologyGraph), Some(nestingT), Some(nestingC)) =>
-            val (rj, axj) = f.createTerminologyNestingAxiom(o2ri.rextent, nestedG, nestingT, nestingC)
+            val (rj, axj) = f.createTerminologyNestingAxiom(o2ri.rextent, nestedG, nestingC, nestingT.iri)
             o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -403,7 +395,7 @@ object OMLText2Resolver {
         (prev.get(bundlei.getExtent).flatMap(_.tboxes.get(bundlei)),
          prev.get(bundledi.getExtent).flatMap(_.tboxes.get(bundledi))) match {
           case (Some(bundle: api.Bundle), Some(bundled: api.TerminologyBox)) =>
-            val (rj, axj) = f.createBundledTerminologyAxiom(o2ri.rextent, bundled, bundle)
+            val (rj, axj) = f.createBundledTerminologyAxiom(o2ri.rextent, bundle, bundled.iri)
             o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -438,7 +430,7 @@ object OMLText2Resolver {
         (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
           prev.get(definitionsi.getExtent).flatMap(_.tboxes.get(definitionsi))) match {
           case (Some(dbox), Some(definitions)) =>
-            val (rj, axj) = f.createDescriptionBoxExtendsClosedWorldDefinitions(o2ri.rextent, dbox, definitions)
+            val (rj, axj) = f.createDescriptionBoxExtendsClosedWorldDefinitions(o2ri.rextent, dbox, definitions.iri)
             o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -473,7 +465,7 @@ object OMLText2Resolver {
         (prev.get(refiningi.getExtent).flatMap(_.dboxes.get(refiningi)),
           prev.get(refinedi.getExtent).flatMap(_.dboxes.get(refinedi))) match {
           case (Some(refining), Some(refined)) =>
-            val (rj, axj) = f.createDescriptionBoxRefinement(o2ri.rextent, refining, refined)
+            val (rj, axj) = f.createDescriptionBoxRefinement(o2ri.rextent, refining, refined.iri)
             o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -779,9 +771,9 @@ object OMLText2Resolver {
             o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (rdri -> rdrj)).right
           case (tboxj, rsj) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertRestrictedDataRanges: Failed to resolve " +
+              s"convertRestrictedDataRanges(${rdri.iri()}): Failed to resolve " +
                 tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
-                rsj.fold(s" restricted data range: ${rsi.getName}")(_ => "")
+                rsj.fold(s" restricted data range: ${rsi.iri}")(_ => "")
             )).left
         }
         next = prev.updated(e, o2rj)

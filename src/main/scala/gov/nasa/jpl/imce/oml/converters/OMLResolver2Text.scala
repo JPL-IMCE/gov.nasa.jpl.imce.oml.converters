@@ -24,19 +24,18 @@ import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable.filterable
 import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model._
 import gov.nasa.jpl.imce.oml.resolver.api
-import gov.nasa.jpl.imce.oml.tables.{ClosedWorldDesignations, OpenWorldDefinitions, TerminologyKind => TTerminologyKind}
+import gov.nasa.jpl.imce.oml.tables.{IRI, ClosedWorldDesignations, OpenWorldDefinitions, TerminologyKind => TTerminologyKind}
 import gov.nasa.jpl.imce.oml.tables.{Final, Partial, DescriptionKind => TDescriptionKind}
 import org.eclipse.xtext.resource.XtextResourceSet
 
 import scala.collection.immutable._
 import scala.{None, Option, Some, StringContext}
-import scala.Predef.ArrowAssoc
+import scala.Predef.{ArrowAssoc,String}
 import scalaz.Scalaz._
 import scalaz._
 
 case class OMLResolver2Text
-(extent: api.Extent,
- omlExtent: common.Extent,
+(mappings: Map[IRI, (api.Extent, common.Extent)] = Map.empty,
 
  // Modules
  gs: Map[api.TerminologyGraph, graphs.TerminologyGraph] = Map.empty,
@@ -72,6 +71,18 @@ case class OMLResolver2Text
     case b: api.Bundle => bs.get(b)
     case d: api.DescriptionBox => ds.get(d)
   }
+
+  def tboxLookup(iri: IRI)
+  : Option[terminologies.TerminologyBox]
+  = gs.values.find { g => g.iri() == iri } orElse bs.values.find { b => b.iri() == iri }
+
+  def bundleLookup(iri: IRI)
+  : Option[bundles.Bundle]
+  = bs.values.find { b => b.iri() == iri }
+
+  def dboxLookup(iri: IRI)
+  : Option[descriptions.DescriptionBox]
+  = ds.values.find { d => d.iri() == iri }
 
   def tboxLookup(m: api.TerminologyBox)
   : Option[terminologies.TerminologyBox]
@@ -114,17 +125,47 @@ case class OMLResolver2Text
 
 object OMLResolver2Text {
 
-  type ConversionResult = EMFProblems \/ OMLResolver2Text
+  case class ConversionState
+  (iri: IRI,
+   extent: api.Extent,
+   omlExtent: common.Extent,
+   conversions: OMLResolver2Text)
+
+  type ConversionResult = EMFProblems \/ ConversionState
 
   def convert
   (extent: api.Extent,
-   rs: XtextResourceSet)
-  : ConversionResult
+   rs: XtextResourceSet,
+   conversions: OMLResolver2Text)
+  : EMFProblems \/ OMLResolver2Text
   = for {
-    c00 <- OMLResolver2Text(extent, common.CommonFactory.eINSTANCE.createExtent()).right[EMFProblems]
+    iri <-
+    ( extent.terminologyGraphs.toList,
+      extent.bundles.toList,
+      extent.descriptionBoxes.toList ) match {
+      case (g :: Nil, Nil, Nil) =>
+        g._2.iri.right
+      case (Nil, b :: Nil, Nil) =>
+        b._2.iri.right
+      case (Nil, Nil, d :: Nil) =>
+        d._2.iri.right
+      case (gs, bs, ds) =>
+        new EMFProblems(new java.lang.IllegalArgumentException(
+          s"OMLResolver2Text.convert: extent must have a single TerminologyGraph, Bundle or DescriptionBox: "+
+          s" got ${gs.size} TerminologyGraphs, ${bs.size} Bundles, ${ds.size} DescriptionBoxes")).left
+    }
+
+    _ = java.lang.System.out.println(s"==> OMLResolver2Text: $iri")
+
+    c00 <- ConversionState(
+      iri,
+      extent,
+      common.CommonFactory.eINSTANCE.createExtent(),
+      conversions).right[EMFProblems]
+
 
     // Modules
-    c010 = c00
+    c010 = c00.copy(conversions = c00.conversions.copy(mappings = c00.conversions.mappings + (iri -> (c00.extent -> c00.omlExtent))))
     c011 <- c00.extent.terminologyGraphs.foldLeft(c010.right[EMFProblems])(convertTerminologyGraph)
     c012 <- c011.extent.bundles.foldLeft(c011.right[EMFProblems])(convertBundle)
     c013 <- c012.extent.descriptionBoxes.foldLeft(c012.right[EMFProblems])(convertDescription)
@@ -192,7 +233,12 @@ object OMLResolver2Text {
 
     // Finished!
     cDone = c60
-  } yield cDone
+
+    result = cDone.conversions
+
+  } yield result
+
+  def normalizeName(n: String): String = n.replaceAll("[.]","_")
 
   // Module
 
@@ -215,7 +261,7 @@ object OMLResolver2Text {
       _ = g1.setExtent(r2t.omlExtent)
       _ = g1.setKind(convertTerminologyKind(g0.kind))
       _ = g1.setIri(g0.iri)
-    } yield r2t.copy(gs = r2t.gs + (g0 -> g1))
+    } yield r2t.copy(conversions = r2t.conversions.copy(gs = r2t.conversions.gs + (g0 -> g1)))
   }
 
   protected val convertBundle
@@ -227,7 +273,7 @@ object OMLResolver2Text {
       _ = b1.setExtent(r2t.omlExtent)
       _ = b1.setKind(convertTerminologyKind(b0.kind))
       _ = b1.setIri(b0.iri)
-    } yield r2t.copy(bs = r2t.bs + (b0 -> b1))
+    } yield r2t.copy(conversions = r2t.conversions.copy(bs = r2t.conversions.bs + (b0 -> b1)))
   }
 
   protected val convertDescription
@@ -239,7 +285,7 @@ object OMLResolver2Text {
       _ = d1.setExtent(r2t.omlExtent)
       _ = d1.setKind(convertDescriptionKind(d0.kind))
       _ = d1.setIri(d0.iri)
-    } yield r2t.copy(ds = r2t.ds + (d0 -> d1))
+    } yield r2t.copy(conversions = r2t.conversions.copy(ds = r2t.conversions.ds + (d0 -> d1)))
   }
 
   // AnnotationProperty
@@ -249,11 +295,18 @@ object OMLResolver2Text {
   = { case (acc, (_, ap0)) =>
     for {
       r2t <- acc
-      ap1 = common.CommonFactory.eINSTANCE.createAnnotationProperty()
-      _ = ap1.setExtent(r2t.omlExtent)
-      _ = ap1.setAbbrevIRI(ap0.abbrevIRI)
-      _ = ap1.setIri(ap0.iri)
-    } yield r2t.copy(aps = r2t.aps + (ap0 -> ap1))
+      next = r2t.conversions.aps.get(ap0) match {
+        case None =>
+          val ap1 = common.CommonFactory.eINSTANCE.createAnnotationProperty()
+          ap1.setExtent(r2t.omlExtent)
+          ap1.setAbbrevIRI(ap0.abbrevIRI)
+          ap1.setIri(ap0.iri)
+//          java.lang.System.out.println(s"convertAnnotationProperty[${r2t.iri}](abbrevIRI=${ap0.abbrevIRI}, iri=${ap0.iri}")
+          r2t.copy(conversions = r2t.conversions.copy(aps = r2t.conversions.aps + (ap0 -> ap1)))
+        case Some(_) =>
+          r2t
+      }
+    } yield next
   }
 
   // TerminologyExtensions
@@ -265,16 +318,16 @@ object OMLResolver2Text {
       val ctw: ConversionResult = for {
         r2t <- acc
         ax1 = terminologies.TerminologiesFactory.eINSTANCE.createTerminologyExtensionAxiom()
-        upd <- (r2t.tboxLookup(t0), r2t.tboxLookup(ax0.extendedTerminology)) match {
+        upd <- (r2t.conversions.tboxLookup(t0), r2t.conversions.tboxLookup(ax0.extendedTerminology)) match {
           case (Some(t1), Some(e1)) =>
             ax1.setTbox(t1)
             ax1.setExtendedTerminology(e1)
-            r2t.copy(moduleEdges = r2t.moduleEdges + (ax0 -> ax1)).right
+            r2t.copy(conversions = r2t.conversions.copy(moduleEdges = r2t.conversions.moduleEdges + (ax0 -> ax1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertTerminologyExtensions: Failed to resolve " +
                 s"extending tbox: $t0" +
-                s"extended tbox: ${ax0.extendedTerminology}")).left[OMLResolver2Text]
+                s"extended tbox: ${ax0.extendedTerminology}")).left
         }
       } yield upd
       ctw
@@ -291,32 +344,32 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         a1 = terminologies.TerminologiesFactory.eINSTANCE.createAspect()
-        upd <- r2t.tboxLookup(t0) match {
+        upd <- r2t.conversions.tboxLookup(t0) match {
           case Some(t1) =>
             a1.setTbox(t1)
-            a1.setName(a0.name)
-            r2t.copy(aspects = r2t.aspects + (a0 -> a1)).right
+            a1.setName(normalizeName(a0.name))
+            r2t.copy(conversions = r2t.conversions.copy(aspects = r2t.conversions.aspects + (a0 -> a1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertAspect: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining aspect: $a0")).left[OMLResolver2Text]
+                s" for defining aspect: $a0")).left
         }
       } yield upd
     case (acc, (c0: api.Concept, t0)) =>
       for {
         r2t <- acc
         c1 = terminologies.TerminologiesFactory.eINSTANCE.createConcept()
-        upd <- r2t.tboxLookup(t0) match {
+        upd <- r2t.conversions.tboxLookup(t0) match {
           case Some(t1) =>
             c1.setTbox(t1)
-            c1.setName(c0.name)
-            r2t.copy(concepts = r2t.concepts + (c0 -> c1)).right
+            c1.setName(normalizeName(c0.name))
+            r2t.copy(conversions = r2t.conversions.copy(concepts = r2t.conversions.concepts + (c0 -> c1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertConcept: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining concept: $c0")).left[OMLResolver2Text]
+                s" for defining concept: $c0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -332,19 +385,19 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         ax1 = graphs.GraphsFactory.eINSTANCE.createConceptDesignationTerminologyAxiom()
-        upd <- (r2t.tboxLookup(t0),
-          r2t.tboxLookup(ax0.designatedTerminology),
-          r2t.concepts.get(ax0.designatedConcept)) match {
+        upd <- (r2t.conversions.tboxLookup(t0),
+          r2t.conversions.tboxLookup(ax0.designatedTerminology),
+          r2t.conversions.concepts.get(ax0.designatedConcept)) match {
           case (Some(t1), Some(dt1), Some(dc1)) =>
             ax1.setTbox(t1)
             ax1.setDesignatedTerminology(dt1)
             ax1.setDesignatedConcept(dc1)
-            r2t.copy(moduleEdges = r2t.moduleEdges + (ax0 -> ax1)).right
+            r2t.copy(conversions = r2t.conversions.copy(moduleEdges = r2t.conversions.moduleEdges + (ax0 -> ax1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertConceptDesignationTerminologyAxiom: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for ConceptDesignationTerminologyAxiom: $ax0")).left[OMLResolver2Text]
+                s" for ConceptDesignationTerminologyAxiom: $ax0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -358,19 +411,19 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         ax1 = graphs.GraphsFactory.eINSTANCE.createTerminologyNestingAxiom()
-        upd <- (r2t.tboxLookup(t0),
-          r2t.tboxLookup(ax0.nestingTerminology),
-          r2t.concepts.get(ax0.nestingContext)) match {
+        upd <- (r2t.conversions.tboxLookup(t0),
+          r2t.conversions.tboxLookup(ax0.nestingTerminology),
+          r2t.conversions.concepts.get(ax0.nestingContext)) match {
           case (Some(t1), Some(nt1), Some(nc1)) =>
             ax1.setTbox(t1)
             ax1.setNestingTerminology(nt1)
             ax1.setNestingContext(nc1)
-            r2t.copy(moduleEdges = r2t.moduleEdges + (ax0 -> ax1)).right
+            r2t.copy(conversions = r2t.conversions.copy(moduleEdges = r2t.conversions.moduleEdges + (ax0 -> ax1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertTerminologyNestingAxiom: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for TerminologyNestingAxiom: $ax0")).left[OMLResolver2Text]
+                s" for TerminologyNestingAxiom: $ax0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -384,16 +437,16 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         ax1 = bundles.BundlesFactory.eINSTANCE.createBundledTerminologyAxiom()
-        upd <- (r2t.bs.get(b0), r2t.tboxLookup(ax0.bundledTerminology)) match {
+        upd <- (r2t.conversions.bs.get(b0), r2t.conversions.tboxLookup(ax0.bundledTerminology)) match {
           case (Some(b1), Some(bt1)) =>
             ax1.setBundle(b1)
             ax1.setBundledTerminology(bt1)
-            r2t.copy(moduleEdges = r2t.moduleEdges + (ax0 -> ax1)).right
+            r2t.copy(conversions = r2t.conversions.copy(moduleEdges = r2t.conversions.moduleEdges + (ax0 -> ax1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertBundledTerminologyAxiom: Failed to resolve " +
                 s"bundle: $b0" +
-                s" for BundledTerminologyAxiom: $ax0")).left[OMLResolver2Text]
+                s" for BundledTerminologyAxiom: $ax0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -407,16 +460,16 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         ax1 = descriptions.DescriptionsFactory.eINSTANCE.createDescriptionBoxExtendsClosedWorldDefinitions()
-        upd <- (r2t.ds.get(d0), r2t.tboxLookup(ax0.closedWorldDefinitions)) match {
+        upd <- (r2t.conversions.ds.get(d0), r2t.conversions.tboxLookup(ax0.closedWorldDefinitions)) match {
           case (Some(d1), Some(cwt1)) =>
             ax1.setDescriptionBox(d1)
             ax1.setClosedWorldDefinitions(cwt1)
-            r2t.copy(moduleEdges = r2t.moduleEdges + (ax0 -> ax1)).right
+            r2t.copy(conversions = r2t.conversions.copy(moduleEdges = r2t.conversions.moduleEdges + (ax0 -> ax1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertDescriptionBoxExtendsClosedWorldDefinition: Failed to resolve " +
                 s"descriptionBox: $d0" +
-                s" for DescriptionBoxExtendsClosedWorldDefinition: $ax0")).left[OMLResolver2Text]
+                s" for DescriptionBoxExtendsClosedWorldDefinition: $ax0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -430,16 +483,16 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         ax1 = descriptions.DescriptionsFactory.eINSTANCE.createDescriptionBoxRefinement()
-        upd <- (r2t.ds.get(d0), r2t.ds.get(ax0.refinedDescriptionBox)) match {
+        upd <- (r2t.conversions.ds.get(d0), r2t.conversions.dboxLookup(ax0.refinedDescriptionBox)) match {
           case (Some(d1), Some(rd1)) =>
             ax1.setRefiningDescriptionBox(d1)
             ax1.setRefinedDescriptionBox(rd1)
-            r2t.copy(moduleEdges = r2t.moduleEdges + (ax0 -> ax1)).right
+            r2t.copy(conversions = r2t.conversions.copy(moduleEdges = r2t.conversions.moduleEdges + (ax0 -> ax1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertDescriptionBoxRefinement: Failed to resolve " +
                 s"descriptionBox: $d0" +
-                s" for DescriptionBoxRefinement: $ax0")).left[OMLResolver2Text]
+                s" for DescriptionBoxRefinement: $ax0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -455,12 +508,12 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         rr1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationship()
-        upd <- (r2t.tboxLookup(t0),
-        r2t.entityLookup(rr0.source),
-        r2t.entityLookup(rr0.target)) match {
+        upd <- (r2t.conversions.tboxLookup(t0),
+        r2t.conversions.entityLookup(rr0.source),
+        r2t.conversions.entityLookup(rr0.target)) match {
           case (Some(t1), Some(rs1), Some(rt1)) =>
             rr1.setTbox(t1)
-            rr1.setName(rr0.name)
+            rr1.setName(normalizeName(rr0.name))
             rr1.setIsAsymmetric(rr0.isAsymmetric)
             rr1.setIsEssential(rr0.isEssential)
             rr1.setIsFunctional(rr0.isFunctional)
@@ -471,12 +524,14 @@ object OMLResolver2Text {
             rr1.setIsTransitive(rr0.isTransitive)
             rr1.setUnreifiedPropertyName(rr0.unreifiedPropertyName)
             rr0.unreifiedInversePropertyName.foreach(rr1.setUnreifiedInversePropertyName)
-            r2t.copy(reifiedRelationships = r2t.reifiedRelationships + (rr0 -> rr1)).right
+            rr1.setSource(rs1)
+            rr1.setTarget(rt1)
+            r2t.copy(conversions = r2t.conversions.copy(reifiedRelationships = r2t.conversions.reifiedRelationships + (rr0 -> rr1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertReifiedRelationship: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining ReifiedRelationship: $rr0")).left[OMLResolver2Text]
+                s" for defining ReifiedRelationship: $rr0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -490,12 +545,12 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         ur1 = terminologies.TerminologiesFactory.eINSTANCE.createUnreifiedRelationship()
-        upd <- (r2t.tboxLookup(t0),
-          r2t.entityLookup(ur0.source),
-          r2t.entityLookup(ur0.target)) match {
+        upd <- (r2t.conversions.tboxLookup(t0),
+          r2t.conversions.entityLookup(ur0.source),
+          r2t.conversions.entityLookup(ur0.target)) match {
           case (Some(t1), Some(rs1), Some(rt1)) =>
             ur1.setTbox(t1)
-            ur1.setName(ur0.name)
+            ur1.setName(normalizeName(ur0.name))
             ur1.setIsAsymmetric(ur0.isAsymmetric)
             ur1.setIsEssential(ur0.isEssential)
             ur1.setIsFunctional(ur0.isFunctional)
@@ -504,12 +559,14 @@ object OMLResolver2Text {
             ur1.setIsIrreflexive(ur0.isIrreflexive)
             ur1.setIsReflexive(ur0.isSymmetric)
             ur1.setIsTransitive(ur0.isTransitive)
-            r2t.copy(unreifiedRelationships = r2t.unreifiedRelationships + (ur0 -> ur1)).right
+            ur1.setSource(rs1)
+            ur1.setTarget(rt1)
+            r2t.copy(conversions = r2t.conversions.copy(unreifiedRelationships = r2t.conversions.unreifiedRelationships + (ur0 -> ur1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertUnreifiedRelationship: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining UnreifiedRelationship: $ur0")).left[OMLResolver2Text]
+                s" for defining UnreifiedRelationship: $ur0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -525,16 +582,16 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         s1 = terminologies.TerminologiesFactory.eINSTANCE.createStructure()
-        upd <- r2t.tboxLookup(t0) match {
+        upd <- r2t.conversions.tboxLookup(t0) match {
           case Some(t1) =>
             s1.setTbox(t1)
-            s1.setName(s0.name)
-            r2t.copy(structures = r2t.structures + (s0 -> s1)).right
+            s1.setName(normalizeName(s0.name))
+            r2t.copy(conversions = r2t.conversions.copy(structures = r2t.conversions.structures + (s0 -> s1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertStructure: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining Structure: $s0")).left[OMLResolver2Text]
+                s" for defining Structure: $s0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -548,16 +605,16 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         s1 = terminologies.TerminologiesFactory.eINSTANCE.createScalar()
-        upd <- r2t.tboxLookup(t0) match {
+        upd <- r2t.conversions.tboxLookup(t0) match {
           case Some(t1) =>
             s1.setTbox(t1)
-            s1.setName(s0.name)
-            r2t.copy(dataRanges = r2t.dataRanges + (s0 -> s1)).right
+            s1.setName(normalizeName(s0.name))
+            r2t.copy(conversions = r2t.conversions.copy(dataRanges = r2t.conversions.dataRanges + (s0 -> s1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertScalar: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining Scalar: $s0")).left[OMLResolver2Text]
+                s" for defining Scalar: $s0")).left
         }
       } yield upd
     case (acc, _) =>
@@ -580,7 +637,7 @@ object OMLResolver2Text {
     acc match {
       case \/-(r2t) =>
         val (dr0, t0) = drs.head
-        (r2t.tboxLookup(t0), r2t.dataRanges.get(dr0.restrictedRange)) match {
+        (r2t.conversions.tboxLookup(t0), r2t.conversions.dataRanges.get(dr0.restrictedRange)) match {
           case (Some(t1), Some(rr1)) =>
             val dr1 = dr0 match {
               case rdr0: api.BinaryScalarRestriction =>
@@ -633,10 +690,10 @@ object OMLResolver2Text {
                 rdr1
             }
             dr1.setTbox(t1)
-            dr1.setName(dr0.name)
+            dr1.setName(normalizeName(dr0.name))
             dr1.setRestrictedRange(rr1)
             convertRestrictedDataRanges(
-              r2t.copy(dataRanges = r2t.dataRanges + (dr0 -> dr1)).right[EMFProblems],
+              r2t.copy(conversions = r2t.conversions.copy(dataRanges = r2t.conversions.dataRanges + (dr0 -> dr1))).right[EMFProblems],
               drs.tail,
               queue)
           case (Some(t1), None) =>
@@ -644,7 +701,7 @@ object OMLResolver2Text {
           case (None, _) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertRestrictedDataRanges: Failed to resolve " +
-                s"tbox: $t0")).left[OMLResolver2Text]
+                s"tbox: $t0")).left[ConversionState]
         }
       case _ =>
         acc
@@ -657,17 +714,17 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         s1 = terminologies.TerminologiesFactory.eINSTANCE.createScalarOneOfLiteralAxiom()
-        upd <- (r2t.tboxLookup(t0), r2t.dataRanges.get(s0.axiom)) match {
+        upd <- (r2t.conversions.tboxLookup(t0), r2t.conversions.dataRanges.get(s0.axiom)) match {
           case (Some(t1), Some(a1: terminologies.ScalarOneOfRestriction)) =>
             s1.setTbox(t1)
             s1.setAxiom(a1)
             s1.setValue(s0.value)
-            r2t.copy(scalarOneOfLiterals = r2t.scalarOneOfLiterals + (s0 -> s1)).right
+            r2t.copy(conversions = r2t.conversions.copy(scalarOneOfLiterals = r2t.conversions.scalarOneOfLiterals + (s0 -> s1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertScalarOneOfLiteralAxiom: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining ScalarOneOfLiteralAxiom: $s0")).left[OMLResolver2Text]
+                s" for defining ScalarOneOfLiteralAxiom: $s0")).left[ConversionState]
         }
       } yield upd
     case (acc, _) =>
@@ -681,19 +738,19 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         dp1 = terminologies.TerminologiesFactory.eINSTANCE.createEntityScalarDataProperty()
-        upd <- (r2t.tboxLookup(t0), r2t.entityLookup(dp0.domain), r2t.dataRanges.get(dp0.range)) match {
+        upd <- (r2t.conversions.tboxLookup(t0), r2t.conversions.entityLookup(dp0.domain), r2t.conversions.dataRanges.get(dp0.range)) match {
           case (Some(t1), Some(e1), Some(r1)) =>
             dp1.setTbox(t1)
-            dp1.setName(dp0.name)
+            dp1.setName(normalizeName(dp0.name))
             dp1.setIsIdentityCriteria(dp0.isIdentityCriteria)
             dp1.setDomain(e1)
             dp1.setRange(r1)
-            r2t.copy(entityScalarDataProperties = r2t.entityScalarDataProperties + (dp0 -> dp1)).right
+            r2t.copy(conversions = r2t.conversions.copy(entityScalarDataProperties = r2t.conversions.entityScalarDataProperties + (dp0 -> dp1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertEntityScalarDataProperty: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining EntityScalarDataProperty: $dp0")).left[OMLResolver2Text]
+                s" for defining EntityScalarDataProperty: $dp0")).left[ConversionState]
         }
       } yield upd
     case (acc, _) =>
@@ -707,19 +764,19 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         dp1 = terminologies.TerminologiesFactory.eINSTANCE.createEntityStructuredDataProperty()
-        upd <- (r2t.tboxLookup(t0), r2t.entityLookup(dp0.domain), r2t.structures.get(dp0.range)) match {
+        upd <- (r2t.conversions.tboxLookup(t0), r2t.conversions.entityLookup(dp0.domain), r2t.conversions.structures.get(dp0.range)) match {
           case (Some(t1), Some(e1), Some(r1)) =>
             dp1.setTbox(t1)
-            dp1.setName(dp0.name)
+            dp1.setName(normalizeName(dp0.name))
             dp1.setIsIdentityCriteria(dp0.isIdentityCriteria)
             dp1.setDomain(e1)
             dp1.setRange(r1)
-            r2t.copy(entityStructuredDataProperties = r2t.entityStructuredDataProperties + (dp0 -> dp1)).right
+            r2t.copy(conversions = r2t.conversions.copy(entityStructuredDataProperties = r2t.conversions.entityStructuredDataProperties + (dp0 -> dp1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertEntityStructuredDataProperty: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining EntityStructuredDataProperty: $dp0")).left[OMLResolver2Text]
+                s" for defining EntityStructuredDataProperty: $dp0")).left[ConversionState]
         }
       } yield upd
     case (acc, _) =>
@@ -733,18 +790,18 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         dp1 = terminologies.TerminologiesFactory.eINSTANCE.createScalarDataProperty()
-        upd <- (r2t.tboxLookup(t0), r2t.structures.get(dp0.domain), r2t.dataRanges.get(dp0.range)) match {
+        upd <- (r2t.conversions.tboxLookup(t0), r2t.conversions.structures.get(dp0.domain), r2t.conversions.dataRanges.get(dp0.range)) match {
           case (Some(t1), Some(e1), Some(r1)) =>
             dp1.setTbox(t1)
-            dp1.setName(dp0.name)
+            dp1.setName(normalizeName(dp0.name))
             dp1.setDomain(e1)
             dp1.setRange(r1)
-            r2t.copy(scalarDataProperties = r2t.scalarDataProperties + (dp0 -> dp1)).right
+            r2t.copy(conversions = r2t.conversions.copy(scalarDataProperties = r2t.conversions.scalarDataProperties + (dp0 -> dp1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertScalarDataProperty: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining ScalarDataProperty: $dp0")).left[OMLResolver2Text]
+                s" for defining ScalarDataProperty: $dp0")).left[ConversionState]
         }
       } yield upd
     case (acc, _) =>
@@ -758,18 +815,18 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         dp1 = terminologies.TerminologiesFactory.eINSTANCE.createStructuredDataProperty()
-        upd <- (r2t.tboxLookup(t0), r2t.structures.get(dp0.domain), r2t.structures.get(dp0.range)) match {
+        upd <- (r2t.conversions.tboxLookup(t0), r2t.conversions.structures.get(dp0.domain), r2t.conversions.structures.get(dp0.range)) match {
           case (Some(t1), Some(e1), Some(r1)) =>
             dp1.setTbox(t1)
-            dp1.setName(dp0.name)
+            dp1.setName(normalizeName(dp0.name))
             dp1.setDomain(e1)
             dp1.setRange(r1)
-            r2t.copy(structuredDataProperties = r2t.structuredDataProperties + (dp0 -> dp1)).right
+            r2t.copy(conversions = r2t.conversions.copy(structuredDataProperties = r2t.conversions.structuredDataProperties + (dp0 -> dp1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertStructuredDataProperty: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining StructuredDataProperty: $dp0")).left[OMLResolver2Text]
+                s" for defining StructuredDataProperty: $dp0")).left[ConversionState]
         }
       } yield upd
     case (acc, _) =>
@@ -788,21 +845,21 @@ object OMLResolver2Text {
           case _: api.EntityUniversalRestrictionAxiom =>
             terminologies.TerminologiesFactory.eINSTANCE.createEntityUniversalRestrictionAxiom()
         }
-        upd <- (r2t.tboxLookup(t0),
-          r2t.entityLookup(er0.restrictedDomain),
-          r2t.entityRelationshipLookup(er0.restrictedRelation),
-          r2t.entityLookup(er0.restrictedRange)) match {
+        upd <- (r2t.conversions.tboxLookup(t0),
+          r2t.conversions.entityLookup(er0.restrictedDomain),
+          r2t.conversions.entityRelationshipLookup(er0.restrictedRelation),
+          r2t.conversions.entityLookup(er0.restrictedRange)) match {
           case (Some(t1), Some(d1), Some(rel1), Some(r1)) =>
             er1.setTbox(t1)
             er1.setRestrictedDomain(d1)
             er1.setRestrictedRelation(rel1)
             er1.setRestrictedRange(r1)
-            r2t.copy(termAxioms = r2t.termAxioms + (er0 -> er1)).right
+            r2t.copy(conversions = r2t.conversions.copy(termAxioms = r2t.conversions.termAxioms + (er0 -> er1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertEntityRestrictionAxiom: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining EntityRestrictionAxiom: $er0")).left[OMLResolver2Text]
+                s" for defining EntityRestrictionAxiom: $er0")).left[ConversionState]
         }
       } yield upd
     case (acc, _) =>
@@ -815,9 +872,9 @@ object OMLResolver2Text {
     case (acc, (er0: api.EntityScalarDataPropertyRestrictionAxiom, t0)) =>
       for {
         r2t <- acc
-        upd <- (r2t.tboxLookup(t0),
-          r2t.entityLookup(er0.restrictedEntity),
-          r2t.entityScalarDataProperties.get(er0.scalarProperty)) match {
+        upd <- (r2t.conversions.tboxLookup(t0),
+          r2t.conversions.entityLookup(er0.restrictedEntity),
+          r2t.conversions.entityScalarDataProperties.get(er0.scalarProperty)) match {
           case (Some(t1), Some(e1), Some(dp1)) =>
             val er1 = er0 match {
               case _: api.EntityScalarDataPropertyExistentialRestrictionAxiom =>
@@ -832,12 +889,12 @@ object OMLResolver2Text {
             er1.setTbox(t1)
             er1.setRestrictedEntity(e1)
             er1.setScalarProperty(dp1)
-            r2t.copy(termAxioms = r2t.termAxioms + (er0 -> er1)).right
+            r2t.copy(conversions = r2t.conversions.copy(termAxioms = r2t.conversions.termAxioms + (er0 -> er1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertEntityScalarDataPropertyRestrictionAxiom: Failed to resolve " +
                 s"tbox: $t0" +
-                s" for defining EntityScalarDataPropertyRestrictionAxiom: $er0")).left[OMLResolver2Text]
+                s" for defining EntityScalarDataPropertyRestrictionAxiom: $er0")).left[ConversionState]
         }
       } yield upd
     case (acc, _) =>
@@ -850,7 +907,7 @@ object OMLResolver2Text {
     case (acc, (ax0: api.SpecializationAxiom, t0)) =>
       for {
         r2t <- acc
-        ax1 <- (ax0, r2t.tboxLookup(t0), r2t.entityLookup(ax0.parent()), r2t.entityLookup(ax0.child())) match {
+        ax1 <- (ax0, r2t.conversions.tboxLookup(t0), r2t.conversions.entityLookup(ax0.parent()), r2t.conversions.entityLookup(ax0.child())) match {
           case (_: api.ConceptSpecializationAxiom,
           Some(t1),
           Some(sup: terminologies.Concept),
@@ -884,7 +941,7 @@ object OMLResolver2Text {
                 s"tbox: $t0" +
                 s" for defining SpecializationAxiom: $ax0")).left[terminologies.SpecializationAxiom]
         }
-      } yield r2t.copy(termAxioms = r2t.termAxioms + (ax0 -> ax1))
+      } yield r2t.copy(conversions = r2t.conversions.copy(termAxioms = r2t.conversions.termAxioms + (ax0 -> ax1)))
     case (acc, _) =>
       acc
   }
@@ -896,18 +953,18 @@ object OMLResolver2Text {
       for {
         r2t <- acc
         ax1 = bundles.BundlesFactory.eINSTANCE.createRootConceptTaxonomyAxiom()
-        upd <- (r2t.bs.get(b0), r2t.concepts.get(ax0.root)) match {
+        upd <- (r2t.conversions.bs.get(b0), r2t.conversions.concepts.get(ax0.root)) match {
           case (Some(b1), Some(r1)) =>
             ax1.setBundle(b1)
             ax1.setRoot(r1)
-            val next = r2t.copy(conceptTreeDisjunctions = r2t.conceptTreeDisjunctions + (ax0 -> ax1))
+            val next = r2t.copy(conversions = r2t.conversions.copy(conceptTreeDisjunctions = r2t.conversions.conceptTreeDisjunctions + (ax0 -> ax1)))
             val disjuncts = disjunctsForConceptTreeDisjunction(next, ax0, ax1)
             convertConceptTreeDisjunctions(next, disjuncts)
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertRootConceptTaxonomyAxiom: Failed to resolve " +
                 s"tbox: $b0" +
-                s" for defining RootConceptTaxonomyAxiom: $ax0")).left[OMLResolver2Text]
+                s" for defining RootConceptTaxonomyAxiom: $ax0")).left[ConversionState]
         }
       } yield upd
     case (acc, _) =>
@@ -915,13 +972,13 @@ object OMLResolver2Text {
   }
 
   protected def disjunctsForConceptTreeDisjunction
-  (r2t: OMLResolver2Text, ctd0: api.ConceptTreeDisjunction, ctd1: bundles.ConceptTreeDisjunction)
+  (r2t: ConversionState, ctd0: api.ConceptTreeDisjunction, ctd1: bundles.ConceptTreeDisjunction)
   : Seq[(api.DisjointUnionOfConceptsAxiom, bundles.ConceptTreeDisjunction)]
   = r2t.extent.disjunctions.getOrElse(ctd0, Set.empty).to[Seq].map(_ -> ctd1)
 
   @scala.annotation.tailrec
   protected def convertConceptTreeDisjunctions
-  (r2t: OMLResolver2Text, disjuncts: Seq[(api.DisjointUnionOfConceptsAxiom, bundles.ConceptTreeDisjunction)])
+  (r2t: ConversionState, disjuncts: Seq[(api.DisjointUnionOfConceptsAxiom, bundles.ConceptTreeDisjunction)])
   : ConversionResult
   = if (disjuncts.isEmpty)
     r2t.right
@@ -930,23 +987,23 @@ object OMLResolver2Text {
     dis0 match {
       case ax0: api.AnonymousConceptUnionAxiom =>
         val ax1 = bundles.BundlesFactory.eINSTANCE.createAnonymousConceptUnionAxiom()
-        ax1.setName(ax0.name)
-        val next = r2t.copy(disjointUnionOfConceptAxioms = r2t.disjointUnionOfConceptAxioms + (ax0 -> ax1))
+        ax1.setName(normalizeName(ax0.name))
+        val next = r2t.copy(conversions = r2t.conversions.copy(disjointUnionOfConceptAxioms = r2t.conversions.disjointUnionOfConceptAxioms + (ax0 -> ax1)))
         val children = disjunctsForConceptTreeDisjunction(next, ax0, ax1)
         convertConceptTreeDisjunctions(next, children ++ disjuncts.tail)
 
       case ax0: api.SpecificDisjointConceptAxiom =>
         val ax1 = bundles.BundlesFactory.eINSTANCE.createSpecificDisjointConceptAxiom()
-        r2t.concepts.get(ax0.disjointLeaf) match {
+        r2t.conversions.concepts.get(ax0.disjointLeaf) match {
           case Some(l1) =>
             ax1.setDisjointLeaf(l1)
             ax1.setDisjointTaxonomyParent(ctd1)
-            val next = r2t.copy(disjointUnionOfConceptAxioms = r2t.disjointUnionOfConceptAxioms + (ax0 -> ax1))
+            val next = r2t.copy(conversions = r2t.conversions.copy(disjointUnionOfConceptAxioms = r2t.conversions.disjointUnionOfConceptAxioms + (ax0 -> ax1)))
             convertConceptTreeDisjunctions(next, disjuncts.tail)
           case None =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertConceptTreeDisjunctions: Failed to resolve " +
-                s"tbox: ${ax0.disjointLeaf}")).left[OMLResolver2Text]
+                s"tbox: ${ax0.disjointLeaf}")).left[ConversionState]
         }
     }
   }

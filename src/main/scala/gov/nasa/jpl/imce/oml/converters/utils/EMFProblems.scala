@@ -31,6 +31,10 @@ case class EMFProblems
  warnings: Map[Resource, List[Resource.Diagnostic]] = Map.empty,
  exceptions: List[java.lang.Throwable] = List.empty[java.lang.Throwable]) {
 
+  def toThrowables
+  : Set[java.lang.Throwable]
+  = Set.empty
+  
   def this(exception: java.lang.Throwable) = {
     this(exceptions = exception :: Nil)
     exception.fillInStackTrace()
