@@ -1,0 +1,9 @@
+gov.nasa.jpl.imce.oml.converters 0.1.1.0 addresses issues found in 0.1.0.6
+
+## Issues Resolved
+
+- [#8 OML => OWL,Tables conversion needs to produce the graph of ontologies](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/8)
+
+- [#9 OWL => OML Conversion needs to handle all the public ontologies](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/9)
+
+- [#12 Create canned applications for OML conversion workflows](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/12)

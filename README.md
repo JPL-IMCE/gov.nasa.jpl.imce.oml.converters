@@ -2,6 +2,15 @@
 
 [![Build Status](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters.svg?branch=master)](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters)
 
+  
+## Copyrights
+
+[Caltech](copyrights/Caltech.md)
+
+## License
+
+[Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0)
+
 ## Building & Publishing
 
 - Building: [![Build Status](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters.svg?branch=master)](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters)
@@ -68,28 +77,95 @@ OML supports three canonical representations:
     
 ### Convert from OML textual concrete Syntax
 
-- `omlConverter -cat <oml.catalog.xml> <*.oml> ...`
+- `omlConverter -cat <oml.catalog.xml> [-out <oml.metadata.json>] <*.oml> ...`
     
     Use the `oml.catalog.xml` file to convert all `*.oml` files from the OML textual concrete syntax representation 
     to corresponding OML ontological (`*.owl`) and tabular representations (`*.oml.json.zip`).
     
+    If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
+    
 ### Convert from OML normalilzed tabular relational schema
 
-- `omlConverter -cat <oml.catalog.xml> <*.oml.json.zip> ....`
+- `omlConverter -cat <oml.catalog.xml> [-out <oml.metadata.json>] <*.oml.json.zip> ....`
     
    Use the `oml.catalog.xml` file to convert all `*.oml.json.zip` files from the OML tabular representation 
    to corresponding OML ontological (`*.owl`) and textual concrete syntax representations (`*.oml`).
-       
+    
+   If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
     
 ### Convert from OML ontologies
 
-- `omlConverter -cat <oml.catalog.xml> <IRI> ...`
+- `omlConverter -cat <oml.catalog.xml> [-out <oml.metadata.json>] <IRI> ...`
                      
   Use the `oml.catalog.xml` file to convert all OML ontological representations resolved from the `<IRI>` provided
   to corresponding OML textual concrete syntax (`*.oml`) and tabular representations (`*.oml.json.zip`).
       
-- `omlConverter -cat <oml.catalog.xml> <*.owl> ...`
+  If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
+    
+- `omlConverter -cat <oml.catalog.xml> [-out <oml.metadata.json>] <*.owl> ...`
                      
   Use the `oml.catalog.xml` file to convert all `*.owl` files from the OML ontological representation
   to corresponding OML textual concrete syntax (`*.oml`) and tabular representations (`*.oml.json.zip`).
       
+  If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
+  
+### OML Metadata Directed Graph
+
+Each graph node represents an OML Module that has been converted.
+Each directed graph edge corresponds to an OML ModuleEdge from an importing OML Module to an imported OML Module.
+
+Synopsis of an [OML Metadata Directed Graph](src/main/scala/gov/nasa/jpl/imce/oml/converters/metadata/OMLMetadataGraph.scala):
+
+```json
+{
+  "nodes": [<OML Converted Module>*],
+  "edges": [<OML Converted Module Edge>*]
+}
+```
+
+Synopsis of an [OML Converted Module](src/main/scala/gov/nasa/jpl/imce/oml/converters/metadata/OMLConvertedModule.scala):
+
+```json
+{
+  "iri" : "<OML Module IRI>",
+  "filename" : "<relative pathname from the directory location of the `oml.catalog.xml` file>",
+  "provenance" : "<OMLMetadataProvenance>"
+}
+```
+
+where [OMLMetadataProvenance](src/main/scala/gov/nasa/jpl/imce/oml/converters/metadata/OMLMetadataProvenance.scala) is be one of the following:
+
+- OMLBuiltinModuleProvenance
+
+    An OMLConvertedModule with OMLBuiltinModuleProvenance
+    corresponds to an OML TerminologyGraph ontology that defines either datatypes
+    that are part of the OWL2-DL datatype map or annotation properties
+    that are used in defining the OWL2-DL datatype map or the OWL2 vocabulary.
+    
+- OMLBundleModuleProvenance
+
+    An OMLConvertedModule with OMLBundleModuleProvenance
+    corresponds to an OML TerminologyBox
+    that is either an OML Bundle or an OML TerminologyBox that
+    is directly or indirectly imported by an OML Bundle.
+    
+- OMLExtensionModuleProvenance
+    
+    An OMLConvertedModule with OMLExtensionModuleProvenance
+    corresponds to an OML Module that directly or indirectly
+    imports an OML Bundle and is not directly or indirectly imported by an OML Bundle.
+    
+- OMLOtherModuleProvenance
+
+    An OMLConvertedModule with OMLOtherModuleProvenance
+    corresponds to an OML Module that is not OMLBuiltinModuleProvenance,
+    OMLBundleModuleProvenance or OMLExtensionModuleProvenance.
+
+Synopsis of an [OML Converted ModuleEdge](src/main/scala/gov/nasa/jpl/imce/oml/converters/metadata/OMLConvertedModuleEdge.scala):
+
+```json
+{
+  "importing" : "<IRI of the importing OML Converted Module>",
+  "imported" : "<IRI of the imported OML Converted Module>"
+}
+```

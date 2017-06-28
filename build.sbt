@@ -18,6 +18,9 @@ lazy val omlProductDir = settingKey[File](
 lazy val extractOMLProduct =
   taskKey[PathFinder]("Extract the OML platform update site to a folder")
 
+lazy val cleanOMLProduct =
+  taskKey[Unit]("Clean unecessary files from the OML Product")
+
 lazy val core = Project("omlConverters", file("."))
   .enablePlugins(IMCEGitPlugin)
   .enablePlugins(JavaAppPackaging)
@@ -150,6 +153,30 @@ lazy val core = Project("omlConverters", file("."))
           plugins ** "org.eclipse.emf.codegen_2.11.0.*.jar"
 
       jars
+    },
+    cleanOMLProduct := {
+      val upd: File = omlProductDir.value
+      val s = streams.value
+      if (upd.exists) {
+      	 val plugins = upd / "plugins"
+
+	 val jars =
+          plugins ** "org.eclipse.emf.cdo_4.5.0.*.jar" +++
+          plugins ** "org.eclipse.emf.cdo.common_4.5.0.*.jar" +++
+          plugins ** "org.eclipse.net4j.util_3.6.0.*.jar" +++
+          plugins ** "org.eclipse.emf.ecore.xcore_1.4.0.*.jar" +++
+          plugins ** "org.eclipse.emf.ecore.xcore.lib_1.1.0.*.jar" +++
+          plugins ** "org.eclipse.emf.codegen_2.11.0.*.jar"
+
+	 val other = ((upd ** "*") --- upd --- plugins --- jars).get
+	 s.log.info(s"other: ${other.size}")
+	 other.foreach { f =>
+	   if (f.isFile)
+	     IO.delete(f)
+	   s.log.info(s"=> $f")
+	 }
+	 
+      }
     },
     unmanagedJars in Compile := extractOMLProduct.value.classpath,
     unmanagedJars in (Compile, doc) := extractOMLProduct.value.classpath
