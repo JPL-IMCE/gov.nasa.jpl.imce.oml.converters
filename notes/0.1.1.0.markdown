@@ -7,3 +7,9 @@ gov.nasa.jpl.imce.oml.converters 0.1.1.0 addresses issues found in 0.1.0.6
 - [#9 OWL => OML Conversion needs to handle all the public ontologies](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/9)
 
 - [#12 Create canned applications for OML conversion workflows](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/12)
+
+## Issues Resolved in Dependencies
+
+- [#10 OML => OWL conversion of values need to specify the data range type in OWL](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/10)
+
+- [#11 OWL => OML Conversion typo for ReifiedRelationships](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/11)
