@@ -22,7 +22,7 @@ import gov.nasa.jpl.imce.oml.converters.OMLConverter
 import scala.{Array,Unit}
 import scala.Predef.String
 
-object CaesarOML2OWL {
+object PublicOWL2OML1 {
 
   def main(argv: Array[String]): Unit = {
     val args: Array[String] = Array[String](
@@ -30,23 +30,11 @@ object CaesarOML2OWL {
       "oml.catalog.xml",
       "-out",
       "oml.metadata.json",
-      "./imce.jpl.nasa.gov/discipline/mechanical/mechanical.oml",
-      "./imce.jpl.nasa.gov/discipline/mass-management/mass-management.oml",
-      "./imce.jpl.nasa.gov/foundation/annotation/annotation.oml",
-      "./imce.jpl.nasa.gov/foundation/analysis/analysis.oml",
-      "./imce.jpl.nasa.gov/foundation/base/base.oml",
-      "./imce.jpl.nasa.gov/foundation/mission/mission.oml",
-      "./imce.jpl.nasa.gov/foundation/project/project-bundle.oml",
-      "./imce.jpl.nasa.gov/foundation/project/project.oml",
-      "./imce.jpl.nasa.gov/projects/MassManagementDemonstration/DIMM.oml",
-      "./imce.jpl.nasa.gov/oml/provenance/MagicDraw.oml",
-      "./imce.jpl.nasa.gov/oml/oml.oml",
-      "./imce.jpl.nasa.gov/oml/runtime.oml",
-      "./imce.jpl.nasa.gov/oml/provenance/MagicDraw.oml",
-      "./purl.org/dc/elements/1.1.oml",
-      "./www.w3.org/1999/02/22-rdf-syntax-ns.oml",
-      "./www.w3.org/2000/01/rdf-schema.oml",
-      "./www.w3.org/2001/XMLSchema.oml"
+      "./imce.jpl.nasa.gov/foundation/annotation/annotation.owl",
+      "./imce.jpl.nasa.gov/foundation/base/base.owl",
+      "./imce.jpl.nasa.gov/foundation/mission/mission.owl",
+      "./imce.jpl.nasa.gov/oml/oml.owl",
+      "./purl.org/dc/elements/1.1.owl"
     )
 
     OMLConverter.main(args)
