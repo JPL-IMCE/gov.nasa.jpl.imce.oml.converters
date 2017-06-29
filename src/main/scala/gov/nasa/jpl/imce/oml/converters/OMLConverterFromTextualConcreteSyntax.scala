@@ -255,7 +255,12 @@ object OMLConverterFromTextualConcreteSyntax {
         else
           metadata.OMLMetadataProvenance.OMLOtherModuleProvenance
 
-        val filename = cat.resolveURI(m.iri).stripPrefix("file:").stripPrefix(catalogDir).stripPrefix("/")
+        val filename = cat
+          .resolveURI(m.iri)
+          .stripPrefix("file:")
+          .stripPrefix(catalogDir)
+          .stripPrefix("/")
+          .stripSuffix("/")
 
         metadata.OMLConvertedModule(
           iri = metadata.OMLMetadataString.ModuleIRI(m.iri),

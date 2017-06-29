@@ -250,7 +250,12 @@ object OMLConverterFromOntologySyntax {
 
           val catalogDir: String = catalogFile.getAbsoluteFile.getParent
 
-          val filename = cat.resolveURI(m.iri.toString).stripPrefix("file:").stripPrefix(catalogDir).stripPrefix("/")
+          val filename = cat
+            .resolveURI(m.iri.toString)
+            .stripPrefix("file:")
+            .stripPrefix(catalogDir)
+            .stripPrefix("/")
+            .stripSuffix("/")
 
           metadata.OMLConvertedModule(
             iri = metadata.OMLMetadataString.ModuleIRI(m.iri.toString),
