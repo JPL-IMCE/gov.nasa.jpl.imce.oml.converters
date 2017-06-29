@@ -7,6 +7,8 @@ import com.typesafe.sbt.packager.SettingsHelper
 import gov.nasa.jpl.imce.sbt._
 import gov.nasa.jpl.imce.sbt.ProjectHelper._
 
+import scala.languageFeature.postfixOps
+
 updateOptions := updateOptions.value.withCachedResolution(true)
 
 import scala.io.Source
@@ -18,9 +20,6 @@ lazy val omlProductDir = settingKey[File](
 lazy val extractOMLProduct =
   taskKey[PathFinder]("Extract the OML platform update site to a folder")
 
-lazy val cleanOMLProduct =
-  taskKey[Unit]("Clean unecessary files from the OML Product")
-
 lazy val core = Project("omlConverters", file("."))
   .enablePlugins(IMCEGitPlugin)
   .enablePlugins(JavaAppPackaging)
@@ -31,6 +30,8 @@ lazy val core = Project("omlConverters", file("."))
     IMCEKeys.organizationInfo := IMCEPlugin.Organizations.omf,
     // 'omlConverter' will be a command-line script to run
     // the single application, gov.nasa.jpl.imce.oml.converters.OMLConverter
+    mainClass in Compile := Some("gov.nasa.jpl.imce.oml.converters.OMLConverter"),
+
     executableScriptName := "omlConverter",
 
     // Needed to transitively get dependencies from the gov.nasa.jpl.imce:imce.third_party.* zip aggregates
@@ -78,6 +79,7 @@ lazy val core = Project("omlConverters", file("."))
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.dsl" % Versions_oml_core.version,
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.model" % Versions_oml_core.version,
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.platform.updatesite" % Versions_oml_core.version
+        % "provided"
         artifacts Artifact("gov.nasa.jpl.imce.oml.platform.updatesite", "zip", "zip"),
       "org.eclipse.platform" % "org.eclipse.core.runtime" % "3.12.0",
       "org.eclipse.platform" % "org.eclipse.core.resources" % "3.11.1",
@@ -110,6 +112,7 @@ lazy val core = Project("omlConverters", file("."))
     mappings in Universal := {
       val prev = (mappings in Universal).value
       prev.filterNot { case (f, n) =>
+        n.endsWith("-resource.jar") ||
         (f.name.endsWith("log4j-1.2.17.zip") && n == "lib/log4j.log4j-1.2.17.jar") ||
           n == "lib/ch.qos.logback.logback-classic-1.0.7.jar" ||
           n == "lib/ch.qos.logback.logback-core-1.0.7.jar"
@@ -124,7 +127,7 @@ lazy val core = Project("omlConverters", file("."))
         s.log.warn("Looking for OML product...")
         for {
           c <- update.value.configurations
-          if c.configuration == "compile"
+          if c.configuration == "provided"
           m <- c.modules
           (artifact, archive) <- m.artifacts
           if artifact.name.startsWith(
@@ -141,9 +144,6 @@ lazy val core = Project("omlConverters", file("."))
 
       val plugins = upd / "plugins"
 
-      // @see https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.tycho/issues/15
-      IO.delete((plugins / "org.eclipse.emf.cdo.ecore.retrofit*").get)
-
       val jars =
           plugins ** "org.eclipse.emf.cdo_4.5.0.*.jar" +++
           plugins ** "org.eclipse.emf.cdo.common_4.5.0.*.jar" +++
@@ -152,31 +152,16 @@ lazy val core = Project("omlConverters", file("."))
           plugins ** "org.eclipse.emf.ecore.xcore.lib_1.1.0.*.jar" +++
           plugins ** "org.eclipse.emf.codegen_2.11.0.*.jar"
 
-      jars
-    },
-    cleanOMLProduct := {
-      val upd: File = omlProductDir.value
-      val s = streams.value
-      if (upd.exists) {
-      	 val plugins = upd / "plugins"
-
-	 val jars =
-          plugins ** "org.eclipse.emf.cdo_4.5.0.*.jar" +++
-          plugins ** "org.eclipse.emf.cdo.common_4.5.0.*.jar" +++
-          plugins ** "org.eclipse.net4j.util_3.6.0.*.jar" +++
-          plugins ** "org.eclipse.emf.ecore.xcore_1.4.0.*.jar" +++
-          plugins ** "org.eclipse.emf.ecore.xcore.lib_1.1.0.*.jar" +++
-          plugins ** "org.eclipse.emf.codegen_2.11.0.*.jar"
-
-	 val other = ((upd ** "*") --- upd --- plugins --- jars).get
-	 s.log.info(s"other: ${other.size}")
-	 other.foreach { f =>
-	   if (f.isFile)
-	     IO.delete(f)
-	   s.log.info(s"=> $f")
-	 }
-	 
+      // Delete unused files.
+      val other = ((upd ** "*") --- upd --- plugins --- jars).get
+      s.log.info(s"other: ${other.size}")
+      other.foreach { f =>
+        if (f.isFile)
+          IO.delete(f)
+        s.log.info(s"=> $f")
       }
+
+      jars
     },
     unmanagedJars in Compile := extractOMLProduct.value.classpath,
     unmanagedJars in (Compile, doc) := extractOMLProduct.value.classpath
@@ -187,7 +172,7 @@ lazy val core = Project("omlConverters", file("."))
     Seq(
       "gov.nasa.jpl.imce" %% "gov.nasa.jpl.omf.scala.binding.owlapi"
         % Versions_omf_owlapi.version
-        % "compile" withSources)
+        % "compile" withSources())
   )
   .dependsOn(
     ProjectRef(uri("https://github.com/NicolasRouquette/scala-graph.git#5a9d477"), "Graph-misc")

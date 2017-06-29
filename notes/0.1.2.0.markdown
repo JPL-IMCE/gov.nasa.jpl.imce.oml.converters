@@ -1,0 +1,11 @@
+gov.nasa.jpl.imce.oml.converters 0.1.2.0 addresses issues found in 0.1.1.0
+
+## Issues Resolved
+
+- [#7 OWL => OML conversion must not attempt to read `owl.owl`](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/7)
+
+- [#13 Strip trailing '/' in OMLConvertedModule filename](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/13)
+
+- [#14 OML => OWL conversion looses bundle import](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/14)
+
+    Fixed in [OMF/OWLAPI v6.1.4](https://github.com/JPL-IMCE/gov.nasa.jpl.omf.scala.binding.owlapi/blob/master/notes/6.1.4.markdown)
