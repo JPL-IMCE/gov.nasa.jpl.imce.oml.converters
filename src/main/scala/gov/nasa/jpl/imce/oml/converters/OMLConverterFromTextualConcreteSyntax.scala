@@ -117,7 +117,7 @@ object OMLConverterFromTextualConcreteSyntax {
               case \/-(o2rMap) =>
                 val conversions = for {
                   _ <- o2rMap.foldLeft(Try.apply(())) {
-                    case (acc, (e, o2r)) =>
+                    case (acc, (_, o2r)) =>
                       for {
                         _ <- acc
                         apiExtent = o2r.rextent
@@ -306,6 +306,13 @@ object OMLConverterFromTextualConcreteSyntax {
         return Failure(errors.head)
     }
 
+    val drc = omfStore.loadBuiltinDatatypeMap() match {
+      case \/-(map) =>
+        map
+      case -\/(errors) =>
+        return Failure(errors.head)
+    }
+
     // map TerminologyBox
     val tbox2ont
     : Map[api.TerminologyBox, (api.Extent, OWLAPIMutableTerminologyBox)]
@@ -321,18 +328,22 @@ object OMLConverterFromTextualConcreteSyntax {
             case ClosedWorldDesignations =>
               TerminologyKind.isDesignation
           }
-          i = tbox.iri
-          m <- tbox match {
-            case tgraph: api.TerminologyGraph =>
-              ops.makeTerminologyGraph(tgraph.uuid,
-                LocalName(tgraph.name),
-                IRI.create(i),
-                k)
-            case tbundle: api.Bundle =>
-              ops.makeBundle(tbundle.uuid,
-                LocalName(tbundle.name),
-                IRI.create(i),
-                k)
+          i = IRI.create(tbox.iri)
+          bm = drc.lookupBuiltInModule(i).flatMap {
+            case mbox: OWLAPIMutableTerminologyGraph =>
+              Some(mbox)
+            case _ =>
+              None
+          }
+          m <- bm.fold {
+            tbox match {
+              case tgraph: api.TerminologyGraph =>
+                ops.makeTerminologyGraph(tgraph.uuid, LocalName(tgraph.name()), i, k)
+              case tbundle: api.Bundle =>
+                ops.makeBundle(tbundle.uuid, LocalName(tbundle.name()), i, k)
+            }
+          } { mbox =>
+            mbox.right[OMFError.Throwables]
           }
           next2 = prev2 + (tbox -> (o2r.rextent -> m))
         } yield next2
@@ -361,7 +372,7 @@ object OMLConverterFromTextualConcreteSyntax {
           }
           i = dbox.iri
           m <- ops.makeDescriptionBox(dbox.uuid,
-            LocalName(dbox.name),
+            LocalName(dbox.name()),
             IRI.create(i),
             k)
           next2 = prev2 + (dbox -> (o2r.rextent -> m))
@@ -417,18 +428,47 @@ object OMLConverterFromTextualConcreteSyntax {
               acc2.flatMap { prev =>
                 dr match {
                   case sc0: api.Scalar =>
-                    ops.addScalarDataType(mg, LocalName(sc0.name)).flatMap {
-                      sc1 =>
+                    val osc1
+                    : OMFError.Throwables \/ Option[OWLAPIDataRange]
+                    = sc0.iri() match {
+                      case Some(ti) =>
+                        val oi = IRI.create(ti)
+                        mg.lookupTerm(oi, recursively=false) match {
+                          case Some(sc1: OWLAPIDataRange) =>
+                            Some(sc1).right[OMFError.Throwables]
+                          case Some(sc1) =>
+                            Set[java.lang.Throwable](
+                              OMFError.omfError(
+                                s"OMF Schema table scalar $sc0 lookup should have produced an OWLAPIDataRange, got: $sc1"
+                              )).left
+                          case None =>
+                            None.right[OMFError.Throwables]
+                        }
+                      case None =>
+                        None.right[OMFError.Throwables]
+                    }
+
+                    osc1.flatMap {
+                      _.fold {
+                        ops.addScalarDataType(mg, LocalName(sc0.name)).flatMap {
+                          sc1 =>
+                            if (sc0.uuid == ops.getTermUUID(sc1))
+                              (prev + (sc0 -> sc1)).right
+                            else
+                              Set[java.lang.Throwable](
+                                OMFError.omfError(
+                                  s"OMF Schema table scalar $sc0 conversion " +
+                                    s"results in UUID mismatch: ${ops.getTermUUID(sc1)}")).left
+                        }
+                      } { sc1 =>
                         if (sc0.uuid == ops.getTermUUID(sc1))
                           (prev + (sc0 -> sc1)).right
                         else
                           Set[java.lang.Throwable](
                             OMFError.omfError(
                               s"OMF Schema table scalar $sc0 conversion " +
-                                s"results in UUID mismatch: ${
-                                  ops
-                                    .getTermUUID(sc1)
-                                }")).left
+                                s"results in UUID mismatch: ${ops.getTermUUID(sc1)}")).left
+                      }
                     }
                   case _ =>
                     // delay converting restricted data ranges until module edges have been converted
@@ -487,15 +527,25 @@ object OMLConverterFromTextualConcreteSyntax {
       _: api.TerminologyExtensionAxiom) =>
         val s = tbox2ont(es)._2
         val t = tbox2ont(et)._2
-        ops.addTerminologyExtension(extendingG = s, extendedG = t) match {
-          case \/-(_) =>
-            ()
-          case -\/(errors) =>
-            return Failure(errors.head)
+        s
+          .sig
+          .extensions
+          .find(_.extendedTerminology == t)
+          .fold {
+          ops.addTerminologyExtension(extendingG = s, extendedG = t) match {
+            case \/-(_) =>
+              ()
+            case -\/(errors) =>
+              return Failure(errors.head)
+          }
+        }{ _ =>
+          ()
         }
 
       // ModuleEdge (TerminologyNestingAxiom)
-      case ModuleGraphEdge((es: api.TerminologyBox, et: api.TerminologyGraph), ax: api.TerminologyNestingAxiom) =>
+      case ModuleGraphEdge(
+      (es: api.TerminologyBox, et: api.TerminologyGraph),
+      ax: api.TerminologyNestingAxiom) =>
         val s = tbox2ont(es)._2.asInstanceOf[OWLAPIMutableTerminologyGraph]
         val t = tbox2ont(et)._2.asInstanceOf[OWLAPIMutableTerminologyGraph]
         val c = terms1(ax.nestingContext).asInstanceOf[OWLAPIConcept]
@@ -510,7 +560,9 @@ object OMLConverterFromTextualConcreteSyntax {
         }
 
       // ModuleEdge (ConceptDesignationTerminologyAxiom)
-      case ModuleGraphEdge((es: api.TerminologyGraph, et: api.TerminologyBox), ax: api.ConceptDesignationTerminologyAxiom) =>
+      case ModuleGraphEdge(
+      (es: api.TerminologyGraph, et: api.TerminologyBox),
+      ax: api.ConceptDesignationTerminologyAxiom) =>
         val s = tbox2ont(es)._2.asInstanceOf[OWLAPIMutableTerminologyGraph]
         val t = tbox2ont(et)._2
         val c = terms1(ax.designatedConcept).asInstanceOf[OWLAPIConcept]
@@ -525,7 +577,9 @@ object OMLConverterFromTextualConcreteSyntax {
         }
 
       // ModuleEdge (BundledTerminologyAxiom)
-      case ModuleGraphEdge((es: api.Bundle, et: api.TerminologyBox), ax: api.BundledTerminologyAxiom) =>
+      case ModuleGraphEdge(
+      (es: api.Bundle, et: api.TerminologyBox),
+      _: api.BundledTerminologyAxiom) =>
         val s = tbox2ont(es)._2.asInstanceOf[OWLAPIMutableBundle]
         val t = tbox2ont(et)._2
         ops.addBundledTerminologyAxiom(terminologyBundle = s, bundledTerminology = t) match {
@@ -536,7 +590,9 @@ object OMLConverterFromTextualConcreteSyntax {
         }
 
       // ModuleEdge (DescriptionBoxExtendsClosedWorldDefinitions)
-      case ModuleGraphEdge((es: api.DescriptionBox, et: api.TerminologyBox), ax: api.DescriptionBoxExtendsClosedWorldDefinitions) =>
+      case ModuleGraphEdge(
+      (es: api.DescriptionBox, et: api.TerminologyBox),
+      _: api.DescriptionBoxExtendsClosedWorldDefinitions) =>
         val s = dbox2ont(es)._2
         val t = tbox2ont(et)._2
         ops.addDescriptionBoxExtendsClosedWorldDefinitions(dbox = s, closedWorldDefinitions = t) match {
@@ -547,7 +603,9 @@ object OMLConverterFromTextualConcreteSyntax {
         }
 
       // ModuleEdge (DescriptionBoxRefinement)
-      case ModuleGraphEdge((es: api.DescriptionBox, et: api.DescriptionBox), ax: api.DescriptionBoxRefinement) =>
+      case ModuleGraphEdge(
+      (es: api.DescriptionBox, et: api.DescriptionBox),
+      _: api.DescriptionBoxRefinement) =>
         val s = dbox2ont(es)._2
         val t = dbox2ont(et)._2
         ops.addDescriptionBoxRefinement(refiningDescriptionBox = s, refinedDescriptionBox = t) match {
@@ -592,7 +650,7 @@ object OMLConverterFromTextualConcreteSyntax {
       tbox.entityScalarDataProperties.foldLeft(acc1) { case (acc2, e2sc0) =>
         for {
           prev <- acc2
-          next <- (terms3.get(e2sc0.source), terms3.get(e2sc0.range)) match {
+          next <- (terms3.get(e2sc0.source()), terms3.get(e2sc0.range)) match {
             case (Some(s: OWLAPIEntity), Some(t: OWLAPIDataRange)) =>
               ops
                 .addEntityScalarDataProperty(mg,
@@ -611,7 +669,7 @@ object OMLConverterFromTextualConcreteSyntax {
             case (s, t) =>
               Set[java.lang.Throwable](OMFError.omfError(
                 s"OMF Schema table EntityScalarDataProperty $e2sc0 conversion " +
-                  s.fold(s" failed to resolve conceptual entity: ${e2sc0.source.abbrevIRI()}")(_ => "") +
+                  s.fold(s" failed to resolve conceptual entity: ${e2sc0.source().abbrevIRI()}")(_ => "") +
                   t.fold(s" failed to resolve data range: ${e2sc0.range.abbrevIRI()}")(_ => "")
               )).left
           }
@@ -633,7 +691,7 @@ object OMLConverterFromTextualConcreteSyntax {
       tbox.entityStructuredDataProperties.foldLeft(acc1) { case (acc2, e2st0) =>
         for {
           prev <- acc2
-          next <- (terms3.get(e2st0.source), terms3.get(e2st0.range)) match {
+          next <- (terms3.get(e2st0.source()), terms3.get(e2st0.range)) match {
             case (Some(s: OWLAPIEntity), Some(t: OWLAPIStructure)) =>
               ops
                 .addEntityStructuredDataProperty(mg,
@@ -652,7 +710,7 @@ object OMLConverterFromTextualConcreteSyntax {
             case (s, t) =>
               Set[java.lang.Throwable](OMFError.omfError(
                 s"OMF Schema table EntityStructuredDataProperty $e2st0 conversion " +
-                  s.fold(s" failed to resolve conceptual entity: ${e2st0.source.abbrevIRI()}")(_ => "") +
+                  s.fold(s" failed to resolve conceptual entity: ${e2st0.source().abbrevIRI()}")(_ => "") +
                   t.fold(s" failed to resolve structure: ${e2st0.range.abbrevIRI()}")(_ => "")
               )).left
           }
@@ -674,7 +732,7 @@ object OMLConverterFromTextualConcreteSyntax {
       tbox.scalarDataProperties.foldLeft(acc1) { case (acc2, s2sc0) =>
         for {
           prev <- acc2
-          next <- (terms3.get(s2sc0.source), terms3.get(s2sc0.range)) match {
+          next <- (terms3.get(s2sc0.source()), terms3.get(s2sc0.range)) match {
             case (Some(s: OWLAPIStructure), Some(t: OWLAPIDataRange)) =>
               ops
                 .addScalarDataProperty(mg,
@@ -692,7 +750,7 @@ object OMLConverterFromTextualConcreteSyntax {
             case (s, t) =>
               Set[java.lang.Throwable](OMFError.omfError(
                 s"OMF Schema table ScalarDataProperty $s2sc0 conversion " +
-                  s.fold(s" failed to resolve structure: ${s2sc0.source.abbrevIRI()}")(_ => "") +
+                  s.fold(s" failed to resolve structure: ${s2sc0.source().abbrevIRI()}")(_ => "") +
                   t.fold(s" failed to resolve data range: ${s2sc0.range.abbrevIRI()}")(_ => "")
               )).left
           }
@@ -714,7 +772,7 @@ object OMLConverterFromTextualConcreteSyntax {
       tbox.structuredDataProperties.foldLeft(acc1) { case (acc2, s2st0) =>
         for {
           prev <- acc2
-          next <- (terms3.get(s2st0.source), terms3.get(s2st0.range)) match {
+          next <- (terms3.get(s2st0.source()), terms3.get(s2st0.range)) match {
             case (Some(s: OWLAPIStructure), Some(t: OWLAPIStructure)) =>
               ops
                 .addStructuredDataProperty(mg,
@@ -732,7 +790,7 @@ object OMLConverterFromTextualConcreteSyntax {
             case (s, t) =>
               Set[java.lang.Throwable](OMFError.omfError(
                 s"OMF Schema table StructuredDataProperty $s2st0 conversion " +
-                  s.fold(s" failed to resolve structure: ${s2st0.source.abbrevIRI()}")(_ => "") +
+                  s.fold(s" failed to resolve structure: ${s2st0.source().abbrevIRI()}")(_ => "") +
                   t.fold(s" failed to resolve structure: ${s2st0.range.abbrevIRI()}")(_ => "")
               )).left
           }
@@ -1014,18 +1072,21 @@ object OMLConverterFromTextualConcreteSyntax {
                   om.right[OMFError.Throwables]
                 else
                   Set[java.lang.Throwable](
-                    OMFError.omfError(s"tbox2ont.addAnnotation: the tbox, $mtbox, is not the expected: $om instead of $md")
+                    OMFError.omfError(
+                      s"tbox2ont.addAnnotation: the tbox, $mtbox, is not the expected: $om instead of $md")
                   ).left
               case None =>
                 Set[java.lang.Throwable](
-                  OMFError.omfError(s"tbox2ont.addAnnotation: the tbox, $mtbox, is not mapped to the expected: $md")
+                  OMFError.omfError(
+                    s"tbox2ont.addAnnotation: the tbox, $mtbox, is not mapped to the expected: $md")
                 ).left
             }
-            _ <- addModuleAnnotations(allTboxElements, ont_mtbox, as)
+            _ <- addModuleAnnotations(allTboxElementsWithAxioms, ont_mtbox, as)
           } yield ()
         case (_, (m, _)) =>
           Set[java.lang.Throwable](
-            OMFError.omfError(s"tbox2ont.addAnnotation: the module should have been a TBOX: $m")
+            OMFError.omfError(
+              s"tbox2ont.addAnnotation: the module should have been a TBOX: $m")
           ).left
       }
     } match {
@@ -1298,7 +1359,7 @@ object OMLConverterFromTextualConcreteSyntax {
             prev <- acc
             (convs, m2i) = prev
             next <- tbox2ont.get(m) match {
-              case Some((e, mg)) =>
+              case Some((_, mg)) =>
                 System.out.println(s"... Converting terminology ${mg.sig.kind}: ${mg.iri}")
                 ops.asImmutableTerminologyBox(mg, m2i).map { case (conv, m2iWithConv) =>
                   Tuple2(convs :+ (m -> conv), m2iWithConv)
@@ -1335,7 +1396,7 @@ object OMLConverterFromTextualConcreteSyntax {
             prev <- acc
             (convs, m2i) = prev
             next <- dbox2ont.get(m) match {
-              case Some((e, mg)) =>
+              case Some((_, mg)) =>
                 System.out.println(s"... Converting description ${mg.sig.kind}: ${mg.iri}")
                 ops.asImmutableDescription(mg, m2i).map { case (conv, m2iWithConv) =>
                   Tuple2(convs :+ (m -> conv), m2iWithConv)
@@ -1553,145 +1614,181 @@ object OMLConverterFromTextualConcreteSyntax {
       convertDataRanges(terms, queue)
   } else {
     val (dr, rdr0, _, e, mg) = drs.head
-    terms.get(dr) match {
-      case Some(r: OWLAPIDataRange) =>
-        val conv = rdr0 match {
-          case sr: api.BinaryScalarRestriction =>
-            ops
-              .addBinaryScalarRestriction(mg,
-                LocalName(sr.name),
-                r,
-                sr.length,
-                sr.minLength,
-                sr.maxLength)
-              .flatMap { osr =>
-                if (sr.uuid == ops.getTermUUID(osr)) osr.right
-                else
-                  Set[java.lang.Throwable](OMFError.omfError(
-                    s"OMF Schema table BinaryScalarRestriction $sr conversion " +
-                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-              }
-          case sr: api.IRIScalarRestriction =>
-            ops
-              .addIRIScalarRestriction(mg,
-                LocalName(sr.name),
-                r,
-                sr.length,
-                sr.minLength,
-                sr.maxLength,
-                sr.pattern.map(Pattern(_)))
-              .flatMap { osr =>
-                if (sr.uuid == ops.getTermUUID(osr)) osr.right
-                else
-                  Set[java.lang.Throwable](OMFError.omfError(
-                    s"OMF Schema table IRIScalarRestriction $sr conversion " +
-                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-              }
-          case sr: api.NumericScalarRestriction =>
-            ops
-              .addNumericScalarRestriction(
-                mg,
-                LocalName(sr.name),
-                r,
-                sr.minInclusive.map(LexicalValue(_)),
-                sr.maxInclusive.map(LexicalValue(_)),
-                sr.minExclusive.map(LexicalValue(_)),
-                sr.maxExclusive.map(LexicalValue(_))
-              )
-              .flatMap { osr =>
-                if (sr.uuid == ops.getTermUUID(osr)) osr.right
-                else
-                  Set[java.lang.Throwable](OMFError.omfError(
-                    s"OMF Schema table NumericScalarRestriction $sr conversion " +
-                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-              }
-          case sr: api.PlainLiteralScalarRestriction =>
-            ops
-              .addPlainLiteralScalarRestriction(
-                mg,
-                LocalName(sr.name),
-                r,
-                sr.length,
-                sr.minLength,
-                sr.maxLength,
-                sr.pattern.map(Pattern(_)))
-              .flatMap { osr =>
-                if (sr.uuid == ops.getTermUUID(osr)) osr.right
-                else
-                  Set[java.lang.Throwable](OMFError.omfError(
-                    s"OMF Schema table PlainLiteralScalarRestriction $sr conversion " +
-                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-              }
-          case sr: api.ScalarOneOfRestriction =>
-            ops
-              .addScalarOneOfRestriction(mg, LocalName(sr.name), r)
-              .flatMap { osr =>
-                if (sr.uuid == ops.getTermUUID(osr)) osr.right
-                else
-                  Set[java.lang.Throwable](OMFError.omfError(
-                    s"OMF Schema table ScalarOneOfRestriction $sr conversion " +
-                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-              }
-          case sr: api.StringScalarRestriction =>
-            ops
-              .addStringScalarRestriction(mg,
-                LocalName(sr.name),
-                r,
-                sr.length,
-                sr.minLength,
-                sr.maxLength,
-                sr.pattern.map(Pattern(_)))
-              .flatMap { osr =>
-                if (sr.uuid == ops.getTermUUID(osr)) osr.right
-                else
-                  Set[java.lang.Throwable](OMFError.omfError(
-                    s"OMF Schema table StringScalarRestriction $sr conversion " +
-                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-              }
-          case sr: api.SynonymScalarRestriction =>
-            ops
-              .addSynonymScalarRestriction(mg,
-                LocalName(sr.name),
-                r)
-              .flatMap { osr =>
-                if (sr.uuid == ops.getTermUUID(osr)) osr.right
-                else
-                  Set[java.lang.Throwable](OMFError.omfError(
-                    s"OMF Schema table SynonymScalarRestriction $sr conversion " +
-                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-              }
-          case sr: api.TimeScalarRestriction =>
-            ops
-              .addTimeScalarRestriction(
-                mg,
-                LocalName(sr.name),
-                r,
-                sr.minInclusive.map(LexicalValue(_)),
-                sr.maxInclusive.map(LexicalValue(_)),
-                sr.minExclusive.map(LexicalValue(_)),
-                sr.maxExclusive.map(LexicalValue(_))
-              )
-              .flatMap { osr =>
-                if (sr.uuid == ops.getTermUUID(osr)) osr.right
-                else
-                  Set[java.lang.Throwable](OMFError.omfError(
-                    s"OMF Schema table TimeScalarRestriction $sr conversion " +
-                      s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
-              }
-        }
-        conv match {
-          case -\/(errors) =>
+    val ordr1
+    : OMFError.Throwables \/ Option[OWLAPIDataRange]
+    = rdr0.iri()(e) match {
+      case Some(ti) =>
+        val oi = IRI.create(ti)
+        mg.lookupTerm(oi, recursively=false) match {
+          case Some(rdr1: OWLAPIDataRange) =>
+            Some(rdr1).right[OMFError.Throwables]
+          case Some(rdr1) =>
             Set[java.lang.Throwable](
-              OMFError.omfException("Errors in convertDataRanges",
-                errors)).left
-          case \/-(rdr1) =>
-            convertDataRanges(
-              terms + (rdr0 -> rdr1),
-              drs.tail,
-              queue, 1 + progress)
+              OMFError.omfError(
+                s"OMF Schema table scalar $rdr0 lookup should have produced an OWLAPIDataRange, got: $rdr1"
+              )).left
+          case None =>
+            None.right[OMFError.Throwables]
         }
-      case _ =>
-        convertDataRanges(terms, drs.tail, queue :+ drs.head, progress)
+      case None =>
+        None.right[OMFError.Throwables]
+    }
+
+    ordr1 match {
+      case \/-(None) =>
+        terms.get(dr) match {
+          case Some(r: OWLAPIDataRange) =>
+            val conv = rdr0 match {
+              case sr: api.BinaryScalarRestriction =>
+                ops
+                  .addBinaryScalarRestriction(mg,
+                    LocalName(sr.name),
+                    r,
+                    sr.length,
+                    sr.minLength,
+                    sr.maxLength)
+                  .flatMap { osr =>
+                    if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                    else
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"OMF Schema table BinaryScalarRestriction $sr conversion " +
+                          s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+                  }
+              case sr: api.IRIScalarRestriction =>
+                ops
+                  .addIRIScalarRestriction(mg,
+                    LocalName(sr.name),
+                    r,
+                    sr.length,
+                    sr.minLength,
+                    sr.maxLength,
+                    sr.pattern.map(Pattern(_)))
+                  .flatMap { osr =>
+                    if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                    else
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"OMF Schema table IRIScalarRestriction $sr conversion " +
+                          s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+                  }
+              case sr: api.NumericScalarRestriction =>
+                ops
+                  .addNumericScalarRestriction(
+                    mg,
+                    LocalName(sr.name),
+                    r,
+                    sr.minInclusive.map(LexicalValue(_)),
+                    sr.maxInclusive.map(LexicalValue(_)),
+                    sr.minExclusive.map(LexicalValue(_)),
+                    sr.maxExclusive.map(LexicalValue(_))
+                  )
+                  .flatMap { osr =>
+                    if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                    else
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"OMF Schema table NumericScalarRestriction $sr conversion " +
+                          s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+                  }
+              case sr: api.PlainLiteralScalarRestriction =>
+                ops
+                  .addPlainLiteralScalarRestriction(
+                    mg,
+                    LocalName(sr.name),
+                    r,
+                    sr.length,
+                    sr.minLength,
+                    sr.maxLength,
+                    sr.pattern.map(Pattern(_)))
+                  .flatMap { osr =>
+                    if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                    else
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"OMF Schema table PlainLiteralScalarRestriction $sr conversion " +
+                          s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+                  }
+              case sr: api.ScalarOneOfRestriction =>
+                ops
+                  .addScalarOneOfRestriction(mg, LocalName(sr.name), r)
+                  .flatMap { osr =>
+                    if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                    else
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"OMF Schema table ScalarOneOfRestriction $sr conversion " +
+                          s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+                  }
+              case sr: api.StringScalarRestriction =>
+                ops
+                  .addStringScalarRestriction(mg,
+                    LocalName(sr.name),
+                    r,
+                    sr.length,
+                    sr.minLength,
+                    sr.maxLength,
+                    sr.pattern.map(Pattern(_)))
+                  .flatMap { osr =>
+                    if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                    else
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"OMF Schema table StringScalarRestriction $sr conversion " +
+                          s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+                  }
+              case sr: api.SynonymScalarRestriction =>
+                ops
+                  .addSynonymScalarRestriction(mg,
+                    LocalName(sr.name),
+                    r)
+                  .flatMap { osr =>
+                    if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                    else
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"OMF Schema table SynonymScalarRestriction $sr conversion " +
+                          s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+                  }
+              case sr: api.TimeScalarRestriction =>
+                ops
+                  .addTimeScalarRestriction(
+                    mg,
+                    LocalName(sr.name),
+                    r,
+                    sr.minInclusive.map(LexicalValue(_)),
+                    sr.maxInclusive.map(LexicalValue(_)),
+                    sr.minExclusive.map(LexicalValue(_)),
+                    sr.maxExclusive.map(LexicalValue(_))
+                  )
+                  .flatMap { osr =>
+                    if (sr.uuid == ops.getTermUUID(osr)) osr.right
+                    else
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"OMF Schema table TimeScalarRestriction $sr conversion " +
+                          s"results in UUID mismatch: ${ops.getTermUUID(osr)}")).left
+                  }
+            }
+            conv match {
+              case -\/(errors) =>
+                Set[java.lang.Throwable](
+                  OMFError.omfException("Errors in convertDataRanges",
+                    errors)).left
+              case \/-(rdr1) =>
+                convertDataRanges(
+                  terms + (rdr0 -> rdr1),
+                  drs.tail,
+                  queue, 1 + progress)
+            }
+          case _ =>
+            convertDataRanges(terms, drs.tail, queue :+ drs.head, progress)
+        }
+      case \/-(Some(rdr1)) =>
+        if (rdr0.uuid == ops.getTermUUID(rdr1))
+          convertDataRanges(
+            terms + (rdr0 -> rdr1),
+            drs.tail,
+            queue, 1 + progress)
+        else
+          Set[java.lang.Throwable](
+            OMFError.omfError(
+              s"OMF Schema table scalar $rdr0 conversion " +
+                s"results in UUID mismatch: ${ops.getTermUUID(rdr1)}")).left
+      case -\/(errors) =>
+        -\/(errors)
     }
   }
 
@@ -1711,7 +1808,7 @@ object OMLConverterFromTextualConcreteSyntax {
     else
       convertReifiedRelationships(terms, queue)
     } else {
-    val (rs, rt, rr0, _, e, mg) = rrs.head
+    val (rs, rt, rr0, _, _, mg) = rrs.head
     (terms.get(rs), terms.get(rt)) match {
       case (Some(s: OWLAPIEntity), Some(t: OWLAPIEntity)) =>
         ops.addReifiedRelationship(
