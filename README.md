@@ -1,8 +1,5 @@
 # Converters among the canonical representations of OML models
 
-[![Build Status](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters.svg?branch=master)](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters)
-
-  
 ## Copyrights
 
 [Caltech](copyrights/Caltech.md)
@@ -14,7 +11,12 @@
 ## Building & Publishing
 
 - Building: [![Build Status](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters.svg?branch=master)](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters)
-- Publishing: Included in the docker image published from [gov.nasa.jpl.imce.ontologies.processor](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.ontologies.processor)
+  (Note: Travis-CI builds are currently failing because the [OML Workbench](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.tycho) is too large to publish on Bintray)
+
+
+- Publishing:
+    - Command-line application: [ ![Download](https://api.bintray.com/packages/jpl-imce/gov.nasa.jpl.imce/gov.nasa.jpl.imce.oml.converters/images/download.svg) ](https://bintray.com/jpl-imce/gov.nasa.jpl.imce/gov.nasa.jpl.imce.oml.converters/_latestVersion)
+    - Also bundled in the docker image published from [gov.nasa.jpl.imce.ontologies.processor](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.ontologies.processor)
 
 ## Description
 
