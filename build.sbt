@@ -20,7 +20,7 @@ lazy val omlProductDir = settingKey[File](
 lazy val extractOMLProduct =
   taskKey[PathFinder]("Extract the OML platform update site to a folder")
 
-lazy val core = Project("omlConverters", file("."))
+lazy val omlConverters = Project("omlConverters", file("."))
   .enablePlugins(IMCEGitPlugin)
   .enablePlugins(JavaAppPackaging)
   .enablePlugins(UniversalPlugin)
@@ -174,6 +174,62 @@ lazy val core = Project("omlConverters", file("."))
         % Versions_omf_owlapi.version
         % "compile" withSources())
   )
-  .dependsOn(
-    ProjectRef(uri("https://github.com/NicolasRouquette/scala-graph.git#5a9d477"), "Graph-misc")
+  .dependsOn(graphMisc % "compile")
+
+// temporary, see: https://github.com/scala-graph/scala-graph/issues/74
+
+val graph_isSnapshot = false
+val graph_snapshot = if (graph_isSnapshot) "-SNAPSHOT" else ""
+val graph_major = "1.11"
+val graph_all         = s"$graph_major.0$graph_snapshot"
+val graph_core        = s"$graph_major.5$graph_snapshot"
+val graph_constrained = s"$graph_major.0$graph_snapshot"
+val graph_dot         = s"$graph_major.5$graph_snapshot"
+val graph_json        = s"$graph_major.0$graph_snapshot"
+val graph_misc        = s"$graph_major.0$graph_snapshot"
+
+lazy val graph_defaultSettings = Defaults.coreDefaultSettings ++ Seq(
+  organization := "org.scala-graph",
+  parallelExecution in Test := false,
+  scalaVersion := "2.11.8",
+  scalacOptions in(Compile, doc) ++=
+    Opts.doc.title(name.value) ++
+      Opts.doc.version(version.value),
+  // prevents sbteclipse from including java source directories
+  unmanagedSourceDirectories in Compile := (scalaSource in Compile) (Seq(_)).value,
+  unmanagedSourceDirectories in Test := (scalaSource in Test) (Seq(_)).value,
+  scalacOptions in(Compile, doc) ++= List("-diagrams", "-implicits"),
+  scalacOptions in(Compile, doc) ++= (baseDirectory map { d =>
+    Seq("-doc-root-content", d / "rootdoc.txt" getPath)
+  }).value,
+  autoAPIMappings := true,
+
+  resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases",
+  scalacOptions += "-Xplugin-disable:artima-supersafe",
+
+  testOptions in Test := Seq(Tests.Filter(s => s.endsWith("Test"))),
+  libraryDependencies ++= Seq(
+    "junit" % "junit" % "4.12" % "test",
+    "org.scalatest" %% "scalatest" % "3.0.1" % "test",
+    "org.scala-lang.modules" %% "scala-xml" % "1.0.5" % "test")
+)
+
+lazy val graphCore = Project(
+  id = "Graph-core",
+  base = file("scala-graph/core"),
+  settings = graph_defaultSettings ++ Seq(
+    name := "Graph Core",
+    version := graph_core,
+    libraryDependencies += "org.scalacheck" %% "scalacheck" % "1.13.4" % "optional;provided"
   )
+)
+
+lazy val graphMisc = Project(
+  id = "Graph-misc",
+  base = file("scala-graph/misc"),
+  settings = graph_defaultSettings ++ Seq(
+    name := "Graph Miscellaneous",
+    version := graph_misc,
+    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.0.7"
+  )
+) dependsOn graphCore
