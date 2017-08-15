@@ -16,8 +16,104 @@
 
 - Publishing:
     - Command-line application: [ ![Download](https://api.bintray.com/packages/jpl-imce/gov.nasa.jpl.imce/gov.nasa.jpl.imce.oml.converters/images/download.svg) ](https://bintray.com/jpl-imce/gov.nasa.jpl.imce/gov.nasa.jpl.imce.oml.converters/_latestVersion)
-    - Also bundled in the docker image published from [gov.nasa.jpl.imce.ontologies.processor](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.ontologies.processor)
+  
+## Using OML Libraries
 
+The OML Converter includes a self-contained application published as a tarball.
+
+With SBT, add a dependency on [Coursier](http://get-coursier.io/).
+This can be done in one of two ways:
+
+### 1) Coursier as an SBT library dependency
+
+In `project`, add a file: `coursier.sbt` with the following:
+```sbt
+libraryDependencies ++= Seq(
+  "io.get-coursier" %% "coursier" % "1.0.0-RC10",
+  "io.get-coursier" %% "coursier-cache" % "1.0.0-RC10"
+)
+```
+
+### 2) Coursier as an SBT plugin dependency
+
+In `project`, add a file: `coursier.sbt` with the following:
+```sbt
+addSbtPlugin("io.get-coursier" % "sbt-coursier" % "1.0.0-RC10")
+```
+
+The two approaches have pros/cons:
+
+| Coursier dependency | Pros/Cons | 
+|---------------------|-----------|
+| Library dependency (1) | + Does not affect the SBT project build |
+|                        | - None of the Coursier functionality is available in the SBT shell |
+| plugin dependency (2)  | - May interfere with the SBT project build |
+|                        | + All the Coursier functionality is available in the SBT shell |
+
+### Downloading & Installing OML Converter & libraries via SBT
+
+```sbtshell
+
+lazy val downloadOMLConverter = taskKey[PathFinder]("Download & install the OML Converter; if the OML libraries are needed for compilation, add `unmanagedJars in Compile := downloadOMLConverter.value.classpath`")
+
+// Somwhere in a project settings context:
+
+      downloadOMLConverter := {
+
+        val omlDir: File = baseDirectory.value / "target" / "omlConverter"
+
+        import scalaz.{\/,-\/,\/-}
+        import scalaz.concurrent.Task
+
+        val slog = streams.value.log
+
+        val start = coursier.Resolution(
+          Set(
+            coursier.Dependency(
+              coursier.Module("gov.nasa.jpl.imce", "gov.nasa.jpl.imce.oml.converters_2.11"),
+              "0.1.2.0"
+            )
+          )
+        )
+
+        val repositories = Seq(
+          coursier.MavenRepository("https://dl.bintray.com/jpl-imce/gov.nasa.jpl.imce")
+        )
+
+        val fetch = coursier.Fetch.from(repositories, coursier.Cache.fetch())
+
+        val resolution = start.process.run(fetch).unsafePerformSync
+
+        val localArtifacts: Seq[coursier.FileError \/ File] = Task.gatherUnordered(
+          resolution
+            .classifiersArtifacts(Seq("resource"))
+            .flatMap {
+              case a if
+              a.url.contains("gov.nasa.jpl.imce.oml.converters") &&
+                a.url.endsWith("-resource.tgz") =>
+                Some(coursier.Cache.file(a).run)
+              case a =>
+                None
+            }
+        ).unsafePerformSync
+
+        localArtifacts.foreach {
+          case -\/(fileError) =>
+            slog.error(fileError.describe)
+          case \/-(file) =>
+            if (!omlDir.exists) {
+              omlDir.mkdirs()
+              slog.info(s"Installing OML Converter from local artifact: $file")
+              s"tar --strip-components 1 -C $omlDir -zxvf $file" !
+            }
+
+        }
+
+        val jars = omlDir / "lib" ** "*.jar"
+
+        jars
+      }
+```
 ## Description
 
 OML supports three canonical representations:
