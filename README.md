@@ -8,13 +8,12 @@
 
 [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0)
 
-## Building & Publishing
+## Building & Downloads
 
 - Building: [![Build Status](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters.svg?branch=master)](https://travis-ci.org/JPL-IMCE/gov.nasa.jpl.imce.oml.converters)
-  (Note: Travis-CI builds are currently failing because the [OML Workbench](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.tycho) is too large to publish on Bintray)
+  
 
-
-- Publishing:
+- Download:
     - Command-line application: [ ![Download](https://api.bintray.com/packages/jpl-imce/gov.nasa.jpl.imce/gov.nasa.jpl.imce.oml.converters/images/download.svg) ](https://bintray.com/jpl-imce/gov.nasa.jpl.imce/gov.nasa.jpl.imce.oml.converters/_latestVersion)
   
 ## Using OML Libraries
@@ -151,61 +150,60 @@ OML supports three canonical representations:
    
 ## Usage:
 
-- Download the [IMCE Ontologies Processor docker image](https://hub.docker.com/r/jplimce/gov.nasa.jpl.imce.ontologies.processor/tags/)
-
-
-  ```
-  docker pull jplimce/gov.nasa.jpl.imce.ontologies.processor:<version>
+- Get the OML Converter command-line application: [ ![Download](https://api.bintray.com/packages/jpl-imce/gov.nasa.jpl.imce/gov.nasa.jpl.imce.oml.converters/images/download.svg) ](https://bintray.com/jpl-imce/gov.nasa.jpl.imce/gov.nasa.jpl.imce.oml.converters/_latestVersion)
+           
+  ```bash
+  tar zxf gov.nasa.jpl.imce.oml.converters_2.11-<version>-resource.tgz
   ```
   
-  This image includes the `omlConverter` as `/imce/tools/
+  This tarball contains a folder, `OMLConverter` with two sub-folders:
+  - `OMLConverter/bin`: platform-specific scripts to launch the command-line application on Linux, MacOSX and Windows.
+  - `OMLConverter/lib`: shared libraries used by the converter application.
 
-- Run the image with a local folder that is the root of an OML ontology tree mapped as `/imce/ontologies`
+- Print OML Converter usage information
 
+  ```bash
+  $ OMLConverter/bin/omlDirectoryConverter
+  #
+  # Usage:
+  # 
+  # 1) Convert all OML textual concrete syntax files *.oml
+  # omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
+  # 
+  # 2) Convert all OWL2-DL ontology syntax files *.owl
+  # omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
+  # 
+  # 3) Convert all normalized tabular syntax files *.oml.json.zip
+  # omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
+  # 
+  # where:
+  # <oml.catalog.xml> is an OASIS XML catalog file named 'oml.catalog.xml' for resolving OML IRIs to OML files
+  # <out.dir> is a new directory that will be created as long as it does not exist (-out) or
+  #           will be deleted if it exists and created again (-d)
   ```
-  docker run -t -v `pwd`:/imce/ontologies -i jplimce/gov.nasa.jpl.imce.ontologies.processor:<version> /bin/bash
-  ```
-
-- Inside the image, the `omlConverter` is available as: `/imce/tools/omlConverter/bin/omlConverter`
-
-- `omlConverter`
-
-    This will show command line usage information about three different modes,
-    one for converting OML models from one of each canonical representations to the other two.
-    
+ 
 ### Convert from OML textual concrete Syntax
 
-- `omlConverter -cat <oml.catalog.xml> [-out <oml.metadata.json>] <*.oml> ...`
+- `omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d <dir>] -text`
     
     Use the `oml.catalog.xml` file to convert all `*.oml` files from the OML textual concrete syntax representation 
-    to corresponding OML ontological (`*.owl`) and tabular representations (`*.oml.json.zip`).
+    to corresponding OML representations in all 3 formats.
     
     If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
     
 ### Convert from OML normalilzed tabular relational schema
 
-- `omlConverter -cat <oml.catalog.xml> [-out <oml.metadata.json>] <*.oml.json.zip> ....`
-    
+- `omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d <dir>] -json`
+       
    Use the `oml.catalog.xml` file to convert all `*.oml.json.zip` files from the OML tabular representation 
-   to corresponding OML ontological (`*.owl`) and textual concrete syntax representations (`*.oml`).
-    
-   If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
+   to corresponding OML representations in all 3 formats.
     
 ### Convert from OML ontologies
 
-- `omlConverter -cat <oml.catalog.xml> [-out <oml.metadata.json>] <IRI> ...`
-                     
+- `omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d <dir>] -owl`
+                       
   Use the `oml.catalog.xml` file to convert all OML ontological representations resolved from the `<IRI>` provided
-  to corresponding OML textual concrete syntax (`*.oml`) and tabular representations (`*.oml.json.zip`).
-      
-  If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
-    
-- `omlConverter -cat <oml.catalog.xml> [-out <oml.metadata.json>] <*.owl> ...`
-                     
-  Use the `oml.catalog.xml` file to convert all `*.owl` files from the OML ontological representation
-  to corresponding OML textual concrete syntax (`*.oml`) and tabular representations (`*.oml.json.zip`).
-      
-  If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
+  to corresponding OML representations in all 3 formats.
   
 ### OML Metadata Directed Graph
 

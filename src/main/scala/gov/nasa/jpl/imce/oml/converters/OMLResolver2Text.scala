@@ -155,7 +155,7 @@ object OMLResolver2Text {
           s" got ${gs.size} TerminologyGraphs, ${bs.size} Bundles, ${ds.size} DescriptionBoxes")).left
     }
 
-    _ = java.lang.System.out.println(s"==> OMLResolver2Text: $iri")
+    _ = java.lang.System.out.println(s"==> OMLResolver2Text converting: $iri")
 
     c00 <- ConversionState(
       iri,
@@ -231,11 +231,14 @@ object OMLResolver2Text {
     // Data Property Values
     // @TODO
 
+    // Annotations
+
     // Finished!
     cDone = c60
 
     result = cDone.conversions
 
+    _ = java.lang.System.out.println(s"==> OMLResolver2Text  converted: $iri")
   } yield result
 
   def normalizeName(n: String): String = n.replaceAll("[.]","_")
@@ -642,51 +645,51 @@ object OMLResolver2Text {
             val dr1 = dr0 match {
               case rdr0: api.BinaryScalarRestriction =>
                 val rdr1 = terminologies.TerminologiesFactory.eINSTANCE.createBinaryScalarRestriction()
-                rdr0.length.foreach(rdr1.setLength)
-                rdr0.minLength.foreach(rdr1.setMinLength)
-                rdr0.maxLength.foreach(rdr1.setMaxLength)
+                rdr0.length.foreach(v => rdr1.setLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.minLength.foreach(v => rdr1.setMinLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.maxLength.foreach(v => rdr1.setMaxLength(new datatypes.PositiveIntegerValue(v)))
                 rdr1
               case rdr0: api.IRIScalarRestriction =>
                 val rdr1 = terminologies.TerminologiesFactory.eINSTANCE.createIRIScalarRestriction()
-                rdr0.length.foreach(rdr1.setLength)
-                rdr0.minLength.foreach(rdr1.setMinLength)
-                rdr0.maxLength.foreach(rdr1.setMaxLength)
-                rdr0.pattern.foreach(rdr1.setPattern)
+                rdr0.length.foreach(v => rdr1.setLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.minLength.foreach(v => rdr1.setMinLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.maxLength.foreach(v => rdr1.setMaxLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.pattern.foreach(v => rdr1.setPattern(new datatypes.PatternValue(v)))
                 rdr1
               case rdr0: api.NumericScalarRestriction =>
                 val rdr1 = terminologies.TerminologiesFactory.eINSTANCE.createNumericScalarRestriction()
-                rdr0.minInclusive.foreach(rdr1.setMinInclusive)
-                rdr0.maxInclusive.foreach(rdr1.setMaxInclusive)
-                rdr0.minExclusive.foreach(rdr1.setMinExclusive)
-                rdr0.maxExclusive.foreach(rdr1.setMaxExclusive)
+                rdr0.minInclusive.foreach(v => rdr1.setMinInclusive(tables2emf(v)))
+                rdr0.maxInclusive.foreach(v => rdr1.setMaxInclusive(tables2emf(v)))
+                rdr0.minExclusive.foreach(v => rdr1.setMinExclusive(tables2emf(v)))
+                rdr0.maxExclusive.foreach(v => rdr1.setMaxExclusive(tables2emf(v)))
                 rdr1
               case rdr0: api.PlainLiteralScalarRestriction =>
                 val rdr1 = terminologies.TerminologiesFactory.eINSTANCE.createPlainLiteralScalarRestriction()
-                rdr0.length.foreach(rdr1.setLength)
-                rdr0.minLength.foreach(rdr1.setMinLength)
-                rdr0.maxLength.foreach(rdr1.setMaxLength)
-                rdr0.pattern.foreach(rdr1.setPattern)
-                rdr0.langRange.foreach(rdr1.setLangRange)
+                rdr0.length.foreach(v => rdr1.setLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.minLength.foreach(v => rdr1.setMinLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.maxLength.foreach(v => rdr1.setMaxLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.pattern.foreach(v => rdr1.setPattern(new datatypes.PatternValue(v)))
+                rdr0.langRange.foreach(v => rdr1.setLangRange(new datatypes.LanguageTagValue(v)))
                 rdr1
               case _: api.ScalarOneOfRestriction =>
                 val rdr1 = terminologies.TerminologiesFactory.eINSTANCE.createScalarOneOfRestriction()
                 rdr1
               case rdr0: api.StringScalarRestriction =>
                 val rdr1 = terminologies.TerminologiesFactory.eINSTANCE.createStringScalarRestriction()
-                rdr0.length.foreach(rdr1.setLength)
-                rdr0.minLength.foreach(rdr1.setMinLength)
-                rdr0.maxLength.foreach(rdr1.setMaxLength)
-                rdr0.pattern.foreach(rdr1.setPattern)
+                rdr0.length.foreach(v => rdr1.setLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.minLength.foreach(v => rdr1.setMinLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.maxLength.foreach(v => rdr1.setMaxLength(new datatypes.PositiveIntegerValue(v)))
+                rdr0.pattern.foreach(v => rdr1.setPattern(new datatypes.PatternValue(v)))
                 rdr1
               case _: api.SynonymScalarRestriction =>
                 val rdr1 = terminologies.TerminologiesFactory.eINSTANCE.createSynonymScalarRestriction()
                 rdr1
               case rdr0: api.TimeScalarRestriction =>
                 val rdr1 = terminologies.TerminologiesFactory.eINSTANCE.createTimeScalarRestriction()
-                rdr0.minInclusive.foreach(rdr1.setMinInclusive)
-                rdr0.maxInclusive.foreach(rdr1.setMaxInclusive)
-                rdr0.minExclusive.foreach(rdr1.setMinExclusive)
-                rdr0.maxExclusive.foreach(rdr1.setMaxExclusive)
+                rdr0.minInclusive.foreach(v => rdr1.setMinInclusive(tables2emf(v)))
+                rdr0.maxInclusive.foreach(v => rdr1.setMaxInclusive(tables2emf(v)))
+                rdr0.minExclusive.foreach(v => rdr1.setMinExclusive(tables2emf(v)))
+                rdr0.maxExclusive.foreach(v => rdr1.setMaxExclusive(tables2emf(v)))
                 rdr1
             }
             dr1.setTbox(t1)
@@ -718,7 +721,7 @@ object OMLResolver2Text {
           case (Some(t1), Some(a1: terminologies.ScalarOneOfRestriction)) =>
             s1.setTbox(t1)
             s1.setAxiom(a1)
-            s1.setValue(s0.value)
+            s1.setValue(tables2emf(s0.value))
             r2t.copy(conversions = r2t.conversions.copy(scalarOneOfLiterals = r2t.conversions.scalarOneOfLiterals + (s0 -> s1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -883,7 +886,7 @@ object OMLResolver2Text {
                 terminologies.TerminologiesFactory.eINSTANCE.createEntityScalarDataPropertyUniversalRestrictionAxiom()
               case ep0: api.EntityScalarDataPropertyParticularRestrictionAxiom =>
                 val ep1 = terminologies.TerminologiesFactory.eINSTANCE.createEntityScalarDataPropertyParticularRestrictionAxiom()
-                ep1.setLiteralValue(ep0.literalValue)
+                ep1.setLiteralValue(tables2emf(ep0.literalValue))
                 ep1
             }
             er1.setTbox(t1)
@@ -1007,4 +1010,5 @@ object OMLResolver2Text {
         }
     }
   }
+
 }

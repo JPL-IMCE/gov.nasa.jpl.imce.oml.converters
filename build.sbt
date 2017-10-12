@@ -14,6 +14,10 @@ updateOptions := updateOptions.value.withCachedResolution(true)
 import scala.io.Source
 import scala.util.control.Exception._
 
+lazy val omlProductRepo = settingKey[String](
+  "Location of the repository where to resolve the OML Product linux.gtk.x86_64.tar.gz"
+)
+
 lazy val omlProductDir = settingKey[File](
   "Location of the gov.nasa.jpl.imce.oml.runtime.platform.updatesite's plugin folder")
 
@@ -28,14 +32,25 @@ lazy val omlConverters = Project("omlConverters", file("."))
   .settings(
     IMCEKeys.licenseYearOrRange := "2017",
     IMCEKeys.organizationInfo := IMCEPlugin.Organizations.omf,
-    // 'omlConverter' will be a command-line script to run
-    // the single application, gov.nasa.jpl.imce.oml.converters.OMLConverter
-    mainClass in Compile := Some("gov.nasa.jpl.imce.oml.converters.OMLConverter"),
 
-    executableScriptName := "omlConverter",
+    omlProductRepo := Option.apply(System.getProperty("OML_PRODUCT_REPO")).getOrElse("https://dl.bintray.com/jpl-imce/gov.nasa.jpl.imce.oml"),
+
+    scalaVersion := Versions.scala,
+
+    topLevelDirectory := Some("OMLConverter"),
+
+    // 'omlDirectoryConverter' will be a command-line script to run
+    // the single application, gov.nasa.jpl.imce.oml.converters.OMLDirectoryConverter
+    mainClass in Compile := Some("gov.nasa.jpl.imce.oml.converters.OMLDirectoryConverter"),
+
+    executableScriptName := "omlDirectoryConverter",
+
+    // skip doc on stage
+    mappings in (Compile, packageDoc) := Seq(),
 
     // Needed to transitively get dependencies from the gov.nasa.jpl.imce:imce.third_party.* zip aggregates
     classpathTypes += "zip",
+    classpathTypes += "linux.gtk.x86_64.tar.gz",
 
     SettingsHelper.makeDeploymentSettings(Universal, packageZipTarball in Universal, "tgz"),
 
@@ -67,8 +82,10 @@ lazy val omlConverters = Project("omlConverters", file("."))
     },
     IMCEKeys.targetJDK := IMCEKeys.jdk18.value,
     git.baseVersion := Versions.version,
+
     resolvers += Resolver.bintrayRepo("jpl-imce", "gov.nasa.jpl.imce"),
-    resolvers += Resolver.bintrayRepo("tiwg", "org.omg.tiwg"),
+    resolvers += Resolver.bintrayRepo("jpl-imce", "gov.nasa.jpl.imce.oml"),
+
     resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases",
     scalacOptions in (Compile, compile) += s"-P:artima-supersafe:config-file:${baseDirectory.value}/project/supersafe.cfg",
     scalacOptions in (Test, compile) += s"-P:artima-supersafe:config-file:${baseDirectory.value}/project/supersafe.cfg",
@@ -78,17 +95,11 @@ lazy val omlConverters = Project("omlConverters", file("."))
     libraryDependencies ++= Seq(
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.dsl" % Versions_oml_core.version,
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.model" % Versions_oml_core.version,
-      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.platform.updatesite" % Versions_oml_core.version
-        % "provided"
-        artifacts Artifact("gov.nasa.jpl.imce.oml.platform.updatesite", "zip", "zip"),
-      "org.eclipse.platform" % "org.eclipse.core.runtime" % "3.12.0",
-      "org.eclipse.platform" % "org.eclipse.core.resources" % "3.11.1",
-      "org.eclipse.emf" % "org.eclipse.emf.codegen.ecore" % "2.12.0",
-      "org.eclipse.emf" % "org.eclipse.emf.codegen.ecore.xtext" % "1.2.0",
-      "org.eclipse.emf" % "org.eclipse.emf.mwe2.runtime" % "2.9.+",
-      "org.eclipse.xtext" % "org.eclipse.xtext.ecore" % "2.11.0",
-      "org.eclipse.xtext" % "org.eclipse.xtext.xbase" % "2.11.0",
-      "org.eclipse.xtext" % "org.eclipse.xtext.xbase.lib" % "2.11.0"
+      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.product" % Versions_oml_core.version
+        artifacts
+        Artifact("gov.nasa.jpl.imce.oml.product", "linux.gtk.x86_64.tar.gz", "linux.gtk.x86_64.tar.gz")
+          .withUrl(Some(url(
+            s"${omlProductRepo.value}/gov/nasa/jpl/imce/oml/gov.nasa.jpl.imce.oml.product/${Versions_oml_core.version}/gov.nasa.jpl.imce.oml.product-${Versions_oml_core.version}-linux.gtk.x86_64.tar.gz")))
     ),
 
     addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.patch),
@@ -110,12 +121,18 @@ lazy val omlConverters = Project("omlConverters", file("."))
       }
     },
     mappings in Universal := {
+      val s = streams.value
       val prev = (mappings in Universal).value
       prev.filterNot { case (f, n) =>
-        n.endsWith("-resource.jar") ||
-        (f.name.endsWith("log4j-1.2.17.zip") && n == "lib/log4j.log4j-1.2.17.jar") ||
+        val ok = f.name.endsWith(".tar.gz") ||
+          f.name.endsWith("-resource.zip") ||
+          n.contains("test") ||
+          (f.name.endsWith("log4j-1.2.17.zip") && n == "lib/log4j.log4j-1.2.17.jar") ||
           n == "lib/ch.qos.logback.logback-classic-1.0.7.jar" ||
           n == "lib/ch.qos.logback.logback-core-1.0.7.jar"
+        s.log.warn(s"Filter?=$ok f=$f")
+        s.log.warn(s"Filter?=$ok n=$n")
+        ok
       }
     },
     omlProductDir := baseDirectory.value / "target" / "omlProduct",
@@ -125,19 +142,34 @@ lazy val omlConverters = Project("omlConverters", file("."))
 
       if (!upd.exists) {
         s.log.warn("Looking for OML product...")
+
         for {
           c <- update.value.configurations
-          if c.configuration == "provided"
+          if c.configuration == "compile"
           m <- c.modules
+          if m.module.organization == "gov.nasa.jpl.imce.oml"
+          _ = s.log.warn(s"${c.configuration} ${m.module.organization} % ${m.module.name} => ${m.artifacts.size} artifacts")
           (artifact, archive) <- m.artifacts
-          if artifact.name.startsWith(
-            "gov.nasa.jpl.imce.oml.platform.updatesite")
-          if artifact.extension == "zip"
+          _ = s.log.warn(s"${c.configuration}: artifact: name=${artifact.name} cls=${artifact.classifier} ext=${artifact.extension}")
+          if artifact.name.startsWith("gov.nasa.jpl.imce.oml.product")
+          if artifact.extension.contains("gz")
+          url <- artifact.url
         } yield {
-          s.log.warn("... found! Extracting.")
-          val files = IO.unzip(archive, upd)
-          require(files.nonEmpty)
-          s.log.warn(s"Extracted ${files.size} files from $archive")
+          s.log.warn(s"url protocol:${url.getProtocol} path:${url.getPath}")
+          s.log.warn(s"artifact: ${archive.getAbsolutePath}")
+          val artifactPath = if ("file" == url.getProtocol)
+            url.getPath
+          else
+            archive.getAbsolutePath
+
+          s.log.warn(s"... found! Extracting from $artifactPath")
+          upd.mkdirs()
+          Process(Seq("tar", "-zxf", artifactPath), Some(upd)).! match {
+            case 0 =>
+              s.log.warn(s"=> Extracted ${artifact.name} from $artifactPath")
+            case n =>
+              sys.error(s"Error extracting $artifactPath; exit code: $n")
+          }
           ()
         }
       }
@@ -145,21 +177,51 @@ lazy val omlConverters = Project("omlConverters", file("."))
       val plugins = upd / "plugins"
 
       val jars =
-          plugins ** "org.eclipse.emf.cdo_4.5.0.*.jar" +++
-          plugins ** "org.eclipse.emf.cdo.common_4.5.0.*.jar" +++
-          plugins ** "org.eclipse.net4j.util_3.6.0.*.jar" +++
-          plugins ** "org.eclipse.emf.ecore.xcore_1.4.0.*.jar" +++
-          plugins ** "org.eclipse.emf.ecore.xcore.lib_1.1.0.*.jar" +++
-          plugins ** "org.eclipse.emf.codegen_2.11.0.*.jar"
+        plugins ** "org.antlr.runtime_3.2.*.jar" +++
+          plugins ** "org.eclipse.core.runtime_*.jar" +++
+          plugins ** "org.eclipse.core.contenttype_*.jar" +++
+          plugins ** "org.eclipse.core.jobs_*.jar" +++
+          plugins ** "org.eclipse.core.resources_*.jar" +++
+          plugins ** "org.eclipse.core.runtime_*.jar" +++
+          plugins ** "org.eclipse.equinox.common_*.jar" +++
+          plugins ** "org.eclipse.equinox.registry_*.jar" +++
+          plugins ** "org.eclipse.emf.cdo.common_*.jar" +++
+          plugins ** "org.eclipse.emf.cdo_*.jar" +++
+          plugins ** "org.eclipse.emf.codegen.ecore.xtext_*.jar" +++
+          plugins ** "org.eclipse.emf.codegen.ecore_*.jar" +++
+          plugins ** "org.eclipse.emf.codegen_*.jar" +++
+          plugins ** "org.eclipse.emf.common_*.jar" +++
+          plugins ** "org.eclipse.emf.ecore.change_*.jar" +++
+          plugins ** "org.eclipse.emf.ecore.xcore.lib_*.jar" +++
+          plugins ** "org.eclipse.emf.ecore.xcore_*.jar" +++
+          plugins ** "org.eclipse.emf.ecore.xmi_*.jar" +++
+          plugins ** "org.eclipse.emf.ecore_*.jar" +++
+          plugins ** "org.eclipse.emf.mwe.core_*.jar" +++
+          plugins ** "org.eclipse.emf.mwe.util_*.jar" +++
+          plugins ** "org.eclipse.emf.mwe2.language_*.jar" +++
+          plugins ** "org.eclipse.emf.mwe2.launch_*.jar" +++
+          plugins ** "org.eclipse.emf.mwe2.lib_*.jar" +++
+          plugins ** "org.eclipse.emf.mwe2.runtime_*.jar" +++
+          plugins ** "org.eclipse.net4j.util_*.jar" +++
+          plugins ** "org.eclipse.osgi_*.jar" +++
+          plugins ** "org.eclipse.xtemd.lib.macro_*.jar" +++
+          plugins ** "org.eclipse.xtemd.lib_*.jar" +++
+          plugins ** "org.eclipse.xtext.common.types*.jar" +++
+          plugins ** "org.eclipse.xtext.ecore_*.jar" +++
+          plugins ** "org.eclipse.xtext.util_*.jar" +++
+          plugins ** "org.eclipse.xtext.xbase.lib_*.jar" +++
+          plugins ** "org.eclipse.xtext.xbase_*.jar" +++
+          plugins ** "org.eclipse.xtext.generator_*.jar" +++
+          plugins ** "org.eclipse.xtext_*.jar"
 
       // Delete unused files.
-      val other = ((upd ** "*") --- upd --- plugins --- jars).get
-      s.log.info(s"other: ${other.size}")
-      other.foreach { f =>
-        if (f.isFile)
-          IO.delete(f)
-        s.log.info(s"=> $f")
-      }
+//      val other = ((upd ** "*") --- upd --- plugins --- jars).get
+//      s.log.info(s"other: ${other.size}")
+//      other.foreach { f =>
+//        if (f.isFile)
+//          IO.delete(f)
+//        s.log.info(s"=> $f")
+//      }
 
       jars
     },
@@ -174,62 +236,3 @@ lazy val omlConverters = Project("omlConverters", file("."))
         % Versions_omf_owlapi.version
         % "compile" withSources())
   )
-  .dependsOn(graphMisc % "compile")
-
-// temporary, see: https://github.com/scala-graph/scala-graph/issues/74
-
-val graph_isSnapshot = false
-val graph_snapshot = if (graph_isSnapshot) "-SNAPSHOT" else ""
-val graph_major = "1.11"
-val graph_all         = s"$graph_major.0$graph_snapshot"
-val graph_core        = s"$graph_major.5$graph_snapshot"
-val graph_constrained = s"$graph_major.0$graph_snapshot"
-val graph_dot         = s"$graph_major.5$graph_snapshot"
-val graph_json        = s"$graph_major.0$graph_snapshot"
-val graph_misc        = s"$graph_major.0$graph_snapshot"
-
-lazy val graph_defaultSettings = Defaults.coreDefaultSettings ++ Seq(
-  organization := "org.scala-graph",
-  parallelExecution in Test := false,
-  scalaVersion := "2.11.8",
-  scalacOptions in(Compile, doc) ++=
-    Opts.doc.title(name.value) ++
-      Opts.doc.version(version.value),
-  // prevents sbteclipse from including java source directories
-  unmanagedSourceDirectories in Compile := (scalaSource in Compile) (Seq(_)).value,
-  unmanagedSourceDirectories in Test := (scalaSource in Test) (Seq(_)).value,
-  scalacOptions in(Compile, doc) ++= List("-diagrams", "-implicits"),
-  scalacOptions in(Compile, doc) ++= (baseDirectory map { d =>
-    Seq("-doc-root-content", d / "rootdoc.txt" getPath)
-  }).value,
-  autoAPIMappings := true,
-
-  resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases",
-  scalacOptions += "-Xplugin-disable:artima-supersafe",
-
-  testOptions in Test := Seq(Tests.Filter(s => s.endsWith("Test"))),
-  libraryDependencies ++= Seq(
-    "junit" % "junit" % "4.12" % "test",
-    "org.scalatest" %% "scalatest" % "3.0.1" % "test",
-    "org.scala-lang.modules" %% "scala-xml" % "1.0.5" % "test")
-)
-
-lazy val graphCore = Project(
-  id = "Graph-core",
-  base = file("scala-graph/core"),
-  settings = graph_defaultSettings ++ Seq(
-    name := "Graph Core",
-    version := graph_core,
-    libraryDependencies += "org.scalacheck" %% "scalacheck" % "1.13.4" % "optional;provided"
-  )
-)
-
-lazy val graphMisc = Project(
-  id = "Graph-misc",
-  base = file("scala-graph/misc"),
-  settings = graph_defaultSettings ++ Seq(
-    name := "Graph Miscellaneous",
-    version := graph_misc,
-    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.0.7"
-  )
-) dependsOn graphCore

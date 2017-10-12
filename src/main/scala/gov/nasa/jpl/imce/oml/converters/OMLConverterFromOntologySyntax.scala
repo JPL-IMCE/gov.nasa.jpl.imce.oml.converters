@@ -29,6 +29,7 @@ import gov.nasa.jpl.imce.oml.resolver.impl.OMLResolvedFactoryImpl
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.imce.oml.uuid.JVMUUIDGenerator
 import gov.nasa.jpl.omf.scala.binding.owlapi.OWLAPIOMFLoader
+import gov.nasa.jpl.omf.scala.binding.owlapi.common.ImmutableModule
 import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{ImmutableBundle, ImmutableTerminologyGraph}
 import gov.nasa.jpl.omf.scala.binding.owlapi.{OWLAPIOMF, OWLAPIOMFGraphStore, OWLAPIOMFModule, emptyMutable2ImmutableModuleMap}
@@ -43,11 +44,10 @@ import org.semanticweb.owlapi.model.{IRI, OWLOntologyAlreadyExistsException, OWL
 import scalax.collection.Graph
 import scalax.collection.GraphEdge._
 import scalax.collection.GraphPredef._
-
 import scala.collection.immutable._
 import scala.util.control.Exception._
-import scala.{Boolean, None, Option, Some, StringContext, Unit}
-import scala.Predef.{augmentString,ArrowAssoc,String}
+import scala.{Boolean, Int, None, Option, Ordering, Some, StringContext, Unit}
+import scala.Predef.{ArrowAssoc, String, augmentString}
 import scalaz._
 import Scalaz._
 
@@ -148,6 +148,10 @@ object OMLConverterFromOntologySyntax {
   (implicit omfStore: OWLAPIOMFGraphStore)
   : OMFError.Throwables \/ Unit
   = {
+    implicit val mOrder = new Ordering[ImmutableModule] {
+      override def compare(x: ImmutableModule, y: ImmutableModule): Int = x.iri.toString.compareTo(y.iri.toString)
+    }
+
     implicit val ops = omfStore.ops
 
     val convertibleIRIs = omlIRIs.filterNot(omfStore.isBuiltInIRI)

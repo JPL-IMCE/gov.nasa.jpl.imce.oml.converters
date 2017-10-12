@@ -35,7 +35,7 @@ import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{MutableTermino
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.{Term => OWLAPITerm}
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terms.{Concept => OWLAPIConcept, ConceptualEntity => OWLAPIConceptualEntity, DataRange => OWLAPIDataRange, Entity => OWLAPIEntity, EntityScalarDataProperty => OWLAPIEntityScalarDataProperty, EntityStructuredDataProperty => OWLAPIEntityStructuredDataProperty, ReifiedRelationship => OWLAPIReifiedRelationship, ScalarDataProperty => OWLAPIScalarDataProperty, Structure => OWLAPIStructure, StructuredDataProperty => OWLAPIStructuredDataProperty, UnreifiedRelationship => OWLAPIUnreifiedRelationship}
 import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.{ConceptInstance => OWLAPIConceptInstance, ConceptualEntitySingletonInstance => OWLAPIConceptualEntitySingletonInstance, ImmutableDescriptionBox => OWLAPIImmutableDescriptionBox, MutableDescriptionBox => OWLAPIMutableDescriptionBox, ReifiedRelationshipInstance => OWLAPIReifiedRelationshipInstance, SingletonInstanceScalarDataPropertyValue => OWLAPISingletonInstanceScalarDataPropertyValue, SingletonInstanceStructuredDataPropertyContext => OWLAPISingletonInstanceStructuredDataPropertyContext}
-import gov.nasa.jpl.omf.scala.core.{OMFError, OMLString, RelationshipCharacteristics, TerminologyKind}
+import gov.nasa.jpl.omf.scala.core.{OMFError, RelationshipCharacteristics, TerminologyKind}
 import gov.nasa.jpl.omf.scala.core.OMLString._
 import org.apache.xml.resolver.tools.CatalogResolver
 import org.eclipse.emf.common.util.URI
@@ -324,9 +324,9 @@ object OMLConverterFromTextualConcreteSyntax {
           prev2 <- acc2
           k = tbox.kind match {
             case OpenWorldDefinitions =>
-              TerminologyKind.isDefinition
+              TerminologyKind.isOpenWorld
             case ClosedWorldDesignations =>
-              TerminologyKind.isDesignation
+              TerminologyKind.isClosedWorld
           }
           i = IRI.create(tbox.iri)
           bm = drc.lookupBuiltInModule(i).flatMap {
@@ -338,9 +338,9 @@ object OMLConverterFromTextualConcreteSyntax {
           m <- bm.fold {
             tbox match {
               case tgraph: api.TerminologyGraph =>
-                ops.makeTerminologyGraph(tgraph.uuid, LocalName(tgraph.name()), i, k)
+                ops.makeTerminologyGraph(i, k)
               case tbundle: api.Bundle =>
-                ops.makeBundle(tbundle.uuid, LocalName(tbundle.name()), i, k)
+                ops.makeBundle(i, k)
             }
           } { mbox =>
             mbox.right[OMFError.Throwables]
@@ -371,7 +371,7 @@ object OMLConverterFromTextualConcreteSyntax {
               gov.nasa.jpl.omf.scala.core.DescriptionKind.isPartial
           }
           i = dbox.iri
-          m <- ops.makeDescriptionBox(dbox.uuid,
+          m <- ops.makeDescriptionBox(
             LocalName(dbox.name()),
             IRI.create(i),
             k)
@@ -887,7 +887,17 @@ object OMLConverterFromTextualConcreteSyntax {
                     s"ScalarOneOfLiteralAxiom axiom: ${ax.axiom} conversion"
                   )).left
               }
-              ont_ax <- ops.addScalarOneOfLiteralAxiom(ont_tbox, ont_r, ax.value)
+              ont_vt <- ax.valueType match {
+                case Some(vt: types.terms.DataRange) =>
+                  Some(vt).right
+                case Some(_) =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"ScalarOneOfLiteralAxiom axiom: ${ax.axiom} conversion"
+                  )).left
+                case None =>
+                  None.right
+              }
+              ont_ax <- ops.addScalarOneOfLiteralAxiom(ont_tbox, ont_r, ax.value, ont_vt)
               next = prev + (ax -> ont_ax)
             } yield next
           case ax: api.EntityScalarDataPropertyExistentialRestrictionAxiom =>
@@ -939,7 +949,17 @@ object OMLConverterFromTextualConcreteSyntax {
                     s"EntityScalarDataPropertyExistentialRestrictionAxiom scalarProperty: ${ax.scalarProperty} conversion"
                   )).left
               }
-              ont_ax <- ops.addEntityScalarDataPropertyParticularRestrictionAxiom(ont_tbox, ont_e, ont_dp, OMLString.LexicalValue(ax.literalValue))
+              ont_vt <- ax.valueType match {
+                case Some(vt: types.terms.DataRange) =>
+                  Some(vt).right
+                case Some(_) =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"ScalarOneOfLiteralAxiom axiom: ${ax.valueType} conversion"
+                  )).left
+                case None =>
+                  None.right
+              }
+              ont_ax <- ops.addEntityScalarDataPropertyParticularRestrictionAxiom(ont_tbox, ont_e, ont_dp, ax.literalValue, ont_vt)
               next = prev + (ax -> ont_ax)
             } yield next
           case ax: api.EntityScalarDataPropertyUniversalRestrictionAxiom =>
@@ -1060,34 +1080,14 @@ object OMLConverterFromTextualConcreteSyntax {
         return Failure(errors.head)
     }
 
-    tbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (_, (e, md))) =>
-      implicit val ext: api.Extent = e
-      e.annotations.foldLeft(acc1) {
-        case (acc2, (mtbox: api.TerminologyBox, as)) =>
+    tbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (_, (extent, md))) =>
+      implicit val ext: api.Extent = extent
+      ext.annotations.foldLeft(acc1) {
+        case (acc2, (elt: api.Element, as: Set[api.AnnotationPropertyValue])) =>
           for {
             _ <- acc2
-            ont_mtbox <- tbox2ont.get(mtbox) match {
-              case Some((_, om)) =>
-                if (om == md)
-                  om.right[OMFError.Throwables]
-                else
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(
-                      s"tbox2ont.addAnnotation: the tbox, $mtbox, is not the expected: $om instead of $md")
-                  ).left
-              case None =>
-                Set[java.lang.Throwable](
-                  OMFError.omfError(
-                    s"tbox2ont.addAnnotation: the tbox, $mtbox, is not mapped to the expected: $md")
-                ).left
-            }
-            _ <- addModuleAnnotations(allTboxElementsWithAxioms, ont_mtbox, as)
+            _ <- addElementAnnotations(allTboxElementsWithAxioms, md, elt, as)
           } yield ()
-        case (_, (m, _)) =>
-          Set[java.lang.Throwable](
-            OMFError.omfError(
-              s"tbox2ont.addAnnotation: the module should have been a TBOX: $m")
-          ).left
       }
     } match {
       case \/-(_) =>
@@ -1274,7 +1274,7 @@ object OMLConverterFromTextualConcreteSyntax {
         e.singletonScalarDataPropertyValues.getOrElse(dbox, Set.empty).foldLeft(acc1) { case (acc2, scv0) =>
           for {
             prev <- acc2
-            scv1 <- convertEntitySingletonInstanceScalarDataPropertyValue(e2sc, conceptualInstances, e, md, scv0)
+            scv1 <- convertEntitySingletonInstanceScalarDataPropertyValue(prev, e2sc, conceptualInstances, e, md, scv0)
             next = prev + (scv0 -> scv1)
           } yield next
         }
@@ -1317,26 +1317,13 @@ object OMLConverterFromTextualConcreteSyntax {
         return Failure(errors.head)
     }
 
-    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (_, (e, md))) =>
-      implicit val ext: api.Extent = e
-      e.annotations.foldLeft(acc1) {
-        case (acc2, (mdbox: api.DescriptionBox, as)) =>
+    dbox2ont.foldLeft(().right[OMFError.Throwables]) { case (acc1, (_, (extent, md))) =>
+      implicit val ext: api.Extent = extent
+      ext.annotations.foldLeft(acc1) {
+        case (acc2, (e: api.Element, as: Set[api.AnnotationPropertyValue])) =>
           for {
             _ <- acc2
-            ont_mdbox <- dbox2ont.get(mdbox) match {
-              case Some((_, om)) =>
-                if (om == md)
-                  om.right[OMFError.Throwables]
-                else
-                  Set[java.lang.Throwable](
-                    OMFError.omfError(s"dbox2ont.addAnnotation: the dbox, $mdbox, is not the expected: $om instead of $md")
-                  ).left
-              case None =>
-                Set[java.lang.Throwable](
-                  OMFError.omfError(s"dbox2ont.addAnnotation: the dbox, $mdbox, is not mapped to the expected: $md")
-                ).left
-            }
-            _ <- addModuleAnnotations(allDboxElements5, ont_mdbox, as)
+            _ <- addElementAnnotations(allDboxElements5, md, e, as)
           } yield ()
         case (_, (m, _)) =>
           Set[java.lang.Throwable](
@@ -1426,10 +1413,11 @@ object OMLConverterFromTextualConcreteSyntax {
     Success(())
   }
 
-  final protected def addModuleAnnotations
+  final protected def addElementAnnotations
   (allTboxElements: Map[api.Element, common.Element],
    md: OWLAPIMutableTerminologyBox,
-   as: Set[api.Annotation])
+   e: api.Element,
+   as: Set[api.AnnotationPropertyValue])
   (implicit ext: api.Extent, store: OWLAPIOMFGraphStore)
   : OMFError.Throwables \/ Unit
   = as.foldLeft(().right[OMFError.Throwables]) { case (acc, a) =>
@@ -1437,22 +1425,23 @@ object OMLConverterFromTextualConcreteSyntax {
       _ <- acc
       ap = a.property
       tap = TAnnotationProperty(ap.uuid.toString, ap.iri, ap.abbrevIRI)
-      ont_subject <- allTboxElements.get(a.subject) match {
+      ont_subject <- allTboxElements.get(e) match {
         case Some(e) =>
           e.right[OMFError.Throwables]
         case None =>
           Set[java.lang.Throwable](
-            OMFError.omfError(s"addModuleAnnotations(tbox: ${md.iri}) missing element mapping for ${a.subject}")
+            OMFError.omfError(s"addModuleAnnotations(tbox: ${md.iri}) missing element mapping for $e")
           ).left
       }
       _ <- md.addAnnotation(ont_subject, tap, a.value)
     } yield ()
   }
 
-  final protected def addModuleAnnotations
+  final protected def addElementAnnotations
   (allDboxElements: Map[api.Element, common.Element],
    md: OWLAPIMutableDescriptionBox,
-   as: Set[api.Annotation])
+   e: api.Element,
+   as: Set[api.AnnotationPropertyValue])
   (implicit ext: api.Extent, store: OWLAPIOMFGraphStore)
   : OMFError.Throwables \/ Unit
   = as.foldLeft(().right[OMFError.Throwables]) { case (acc, a) =>
@@ -1460,13 +1449,12 @@ object OMLConverterFromTextualConcreteSyntax {
       _ <- acc
       ap = a.property
       tap = TAnnotationProperty(ap.uuid.toString, ap.iri, ap.abbrevIRI)
-      aSubject = a.subject
-      ont_subject <- allDboxElements.get(aSubject) match {
+      ont_subject <- allDboxElements.get(e) match {
         case Some(e) =>
           e.right[OMFError.Throwables]
         case None =>
           Set[java.lang.Throwable](
-            OMFError.omfError(s"addModuleAnnotations(dbox: ${md.iri}) missing element mapping for ${a.subject}")
+            OMFError.omfError(s"addModuleAnnotations(dbox: ${md.iri}) missing element mapping for $e")
           ).left
       }
       _ <- ont_subject match {
@@ -1480,7 +1468,8 @@ object OMLConverterFromTextualConcreteSyntax {
   }
 
   final protected def convertEntitySingletonInstanceScalarDataPropertyValue
-  (e2sc: Map[api.EntityScalarDataProperty, OWLAPIEntityScalarDataProperty],
+  (prev: Map[api.Element, common.Element],
+   e2sc: Map[api.EntityScalarDataProperty, OWLAPIEntityScalarDataProperty],
    conceptualInstances: Map[api.ConceptualEntitySingletonInstance, OWLAPIConceptualEntitySingletonInstance],
    e: api.Extent,
    md: OWLAPIMutableDescriptionBox,
@@ -1500,8 +1489,21 @@ object OMLConverterFromTextualConcreteSyntax {
               scv.scalarDataProperty.abbrevIRI()
           )).left
       }
+      ont_vt <- scv.valueType match {
+        case Some(vt: api.DataRange) =>
+          prev.get(vt) match {
+            case Some(vtr: types.terms.DataRange) =>
+              Some(vtr).right
+            case _ =>
+              Set[java.lang.Throwable](OMFError.omfError(
+                s"convertEntitySingletonInstanceScalarDataPropertyValue value type: ${scv.valueType} conversion"
+              )).left
+          }
+        case None =>
+          None.right
+      }
       ont_s = conceptualInstances(scv.singletonInstance)
-      ont_scv <- ops.addSingletonInstanceScalarDataPropertyValue(md, ont_s, ont_scp, LexicalValue(scv.scalarPropertyValue))
+      ont_scv <- ops.addSingletonInstanceScalarDataPropertyValue(md, ont_s, ont_scp, scv.scalarPropertyValue, ont_vt)
     } yield ont_scv
   }
 
@@ -1593,7 +1595,20 @@ object OMLConverterFromTextualConcreteSyntax {
               sdv.scalarDataProperty.abbrevIRI()
           )).left
       }
-      ont_sdv <- ops.makeScalarDataPropertyValue(md, ont_context, ont_st2sc, LexicalValue(sdv.scalarPropertyValue))
+      ont_vt <- sdv.valueType match {
+        case Some(vt: api.DataRange) =>
+          e2e.get(vt) match {
+            case Some(vtr: types.terms.DataRange) =>
+              Some(vtr).right
+            case _ =>
+              Set[java.lang.Throwable](OMFError.omfError(
+                s"convertSingletonInstanceScalarDataPropertyValues value type: ${sdv.valueType} conversion"
+              )).left
+          }
+        case None =>
+          None.right
+      }
+      ont_sdv <- ops.makeScalarDataPropertyValue(md, ont_context, ont_st2sc, sdv.scalarPropertyValue, ont_vt)
     } yield prev + (sdv -> ont_sdv)
   }
 
@@ -1676,10 +1691,10 @@ object OMLConverterFromTextualConcreteSyntax {
                     mg,
                     LocalName(sr.name),
                     r,
-                    sr.minInclusive.map(LexicalValue(_)),
-                    sr.maxInclusive.map(LexicalValue(_)),
-                    sr.minExclusive.map(LexicalValue(_)),
-                    sr.maxExclusive.map(LexicalValue(_))
+                    sr.minInclusive,
+                    sr.maxInclusive,
+                    sr.minExclusive,
+                    sr.maxExclusive
                   )
                   .flatMap { osr =>
                     if (sr.uuid == ops.getTermUUID(osr)) osr.right
@@ -1749,10 +1764,10 @@ object OMLConverterFromTextualConcreteSyntax {
                     mg,
                     LocalName(sr.name),
                     r,
-                    sr.minInclusive.map(LexicalValue(_)),
-                    sr.maxInclusive.map(LexicalValue(_)),
-                    sr.minExclusive.map(LexicalValue(_)),
-                    sr.maxExclusive.map(LexicalValue(_))
+                    sr.minInclusive,
+                    sr.maxInclusive,
+                    sr.minExclusive,
+                    sr.maxExclusive
                   )
                   .flatMap { osr =>
                     if (sr.uuid == ops.getTermUUID(osr)) osr.right

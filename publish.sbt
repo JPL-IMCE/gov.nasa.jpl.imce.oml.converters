@@ -12,9 +12,9 @@ pomAllRepositories := false
 // make sure no repositories show up in the POM file
 pomIncludeRepository := { _ => false }
 
-// include *.zip and *.tgz artifacts in the POM dependency section
+// include *.zip and *.gz artifacts in the POM dependency section
 makePomConfiguration :=
-  makePomConfiguration.value.copy(includeTypes = Set(Artifact.DefaultType, Artifact.PomType, "zip", "tgz"))
+  makePomConfiguration.value.copy(includeTypes = Set(Artifact.DefaultType, Artifact.PomType, "zip", "gz"))
 
 // publish Maven POM metadata (instead of Ivy);
 // this is important for the UpdatesPlugin's ability to find available updates.

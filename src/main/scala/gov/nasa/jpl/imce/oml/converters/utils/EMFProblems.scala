@@ -33,8 +33,23 @@ case class EMFProblems
 
   def toThrowables
   : Set[java.lang.Throwable]
-  = Set.empty
-  
+  = Set.empty[java.lang.Throwable] ++
+    errors.map { case (r, ds) =>
+      new java.lang.IllegalArgumentException(
+        s"${ds.size} errors in ${r.getURI}: " +
+          ds
+            .map(d => s"${d.getLine}:${d.getColumn} in ${d.getLocation}: ${d.getMessage}")
+            .mkString("\n#", "\n#", "\n"))
+    } ++
+    errors.map { case (r, ds) =>
+      new java.lang.IllegalArgumentException(
+        s"${ds.size} warnings in ${r.getURI}: " +
+          ds
+            .map(d => s"${d.getLine}:${d.getColumn} in ${d.getLocation}: ${d.getMessage}")
+            .mkString("\n#", "\n#", "\n"))
+    } ++
+    exceptions.to[Set]
+
   def this(exception: java.lang.Throwable) = {
     this(exceptions = exception :: Nil)
     exception.fillInStackTrace()

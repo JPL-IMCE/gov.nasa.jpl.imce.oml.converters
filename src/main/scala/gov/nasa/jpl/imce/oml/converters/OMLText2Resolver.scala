@@ -700,40 +700,40 @@ object OMLText2Resolver {
                   extent = o2ri.rextent,
                   tbox = tboxj,
                   restrictedRange = rsj,
-                  length = Option.apply(rri.getLength),
-                  minLength = Option.apply(rri.getMinLength),
-                  maxLength = Option.apply(rri.getMaxLength),
+                  length = Option.apply(rri.getLength).map(emf2tables),
+                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
                   name = rri.name)
               case rri: IRIScalarRestriction =>
                 f.createIRIScalarRestriction(
                   extent = o2ri.rextent,
                   tbox = tboxj,
                   restrictedRange = rsj,
-                  length = Option.apply(rri.getLength),
-                  minLength = Option.apply(rri.getMinLength),
-                  maxLength = Option.apply(rri.getMaxLength),
-                  pattern = Option.apply(rri.getPattern),
+                  length = Option.apply(rri.getLength).map(emf2tables),
+                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                  pattern = Option.apply(rri.getPattern).map(_.value),
                   name = rri.name)
               case rri: NumericScalarRestriction =>
                 f.createNumericScalarRestriction(
                   extent = o2ri.rextent,
                   tbox = tboxj,
                   restrictedRange = rsj,
-                  minExclusive = Option.apply(rri.getMinExclusive),
-                  minInclusive = Option.apply(rri.getMinInclusive),
-                  maxExclusive = Option.apply(rri.getMaxExclusive),
-                  maxInclusive = Option.apply(rri.getMaxInclusive),
+                  minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
+                  minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
+                  maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
+                  maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
                   name = rri.name)
               case rri: PlainLiteralScalarRestriction =>
                 f.createPlainLiteralScalarRestriction(
                   extent = o2ri.rextent,
                   tbox = tboxj,
                   restrictedRange = rsj,
-                  length = Option.apply(rri.getLength),
-                  minLength = Option.apply(rri.getMinLength),
-                  maxLength = Option.apply(rri.getMaxLength),
-                  pattern = Option.apply(rri.getPattern),
-                  langRange = Option.apply(rri.getLangRange),
+                  length = Option.apply(rri.getLength).map(emf2tables),
+                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                  pattern = Option.apply(rri.getPattern).map(emf2tables),
+                  langRange = Option.apply(rri.getLangRange).map(emf2tables),
                   name = rri.name)
               case rri: ScalarOneOfRestriction =>
                 f.createScalarOneOfRestriction(
@@ -746,10 +746,10 @@ object OMLText2Resolver {
                   extent = o2ri.rextent,
                   tbox = tboxj,
                   restrictedRange = rsj,
-                  length = Option.apply(rri.getLength),
-                  minLength = Option.apply(rri.getMinLength),
-                  maxLength = Option.apply(rri.getMaxLength),
-                  pattern = Option.apply(rri.getPattern),
+                  length = Option.apply(rri.getLength).map(emf2tables),
+                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                  pattern = Option.apply(rri.getPattern).map(emf2tables),
                   name = rri.name)
               case rri: SynonymScalarRestriction =>
                 f.createSynonymScalarRestriction(
@@ -762,10 +762,10 @@ object OMLText2Resolver {
                   extent = o2ri.rextent,
                   tbox = tboxj,
                   restrictedRange = rsj,
-                  minExclusive = Option.apply(rri.getMinExclusive),
-                  minInclusive = Option.apply(rri.getMinInclusive),
-                  maxExclusive = Option.apply(rri.getMaxExclusive),
-                  maxInclusive = Option.apply(rri.getMaxInclusive),
+                  minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
+                  minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
+                  maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
+                  maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
                   name = rri.name)
             }
             o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (rdri -> rdrj)).right
@@ -798,15 +798,18 @@ object OMLText2Resolver {
         o2ri = prev(e)
         tboxi = li.getTbox
         dri = li.getAxiom
+        vti = li.getValueType
         o2rj <-
         (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
-          prev.get(dri.getTbox.getExtent).flatMap(_.dataRanges.get(dri))) match {
-          case (Some(tboxj), Some(drj: api.ScalarOneOfRestriction)) =>
+          prev.get(dri.getTbox.getExtent).flatMap(_.dataRanges.get(dri)),
+          prev.get(vti.getTbox.getExtent).flatMap(_.dataRanges.get(vti))) match {
+          case (Some(tboxj), Some(drj: api.ScalarOneOfRestriction), Some(vtj: api.DataRange)) =>
             val (rj, lj) = f.createScalarOneOfLiteralAxiom(
               extent = o2ri.rextent,
               tbox = tboxj,
               axiom = drj,
-              value = li.getValue)
+              value = emf2tables(li.getValue),
+              valueType = Some(vtj))
             o2ri.copy(
               rextent = rj,
               scalarOneOfLiterals = o2ri.scalarOneOfLiterals + (li -> lj),
@@ -1062,10 +1065,20 @@ object OMLText2Resolver {
           case (Some(tboxj), Some(ej), Some(dpj)) =>
             val (rj, axj: \/[EMFProblems, api.EntityScalarDataPropertyRestrictionAxiom]) = axi match {
               case axpi: EntityScalarDataPropertyParticularRestrictionAxiom =>
-                f
-                  .createEntityScalarDataPropertyParticularRestrictionAxiom(
-                    o2ri.rextent, tboxj, ej, dpj, axpi.getLiteralValue) match {
-                  case (rk, ak) => rk -> ak.right
+                val vti = axpi.getValueType
+                prev.get(vti.getTbox.getExtent).flatMap(_.dataRanges.get(vti)) match {
+                  case Some(vtj) =>
+                    f
+                      .createEntityScalarDataPropertyParticularRestrictionAxiom(
+                        o2ri.rextent, tboxj, ej, dpj,
+                        emf2tables(axpi.getLiteralValue), Some(vtj)) match {
+                      case (rk, ak) => rk -> ak.right
+                    }
+                  case _ =>
+                    o2ri.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"convertEntityScalarDataPropertyRestrictionAxioms: " +
+                        s"Cannot find ValueType: ${vti.abbrevIRI()}"
+                    )).left
                 }
               case axui: EntityScalarDataPropertyExistentialRestrictionAxiom =>
                 val dri = axui.getScalarRestriction
@@ -1473,20 +1486,25 @@ object OMLText2Resolver {
         dboxi = di.descriptionBox()
         si = di.getSingletonInstance
         dpi = di.getScalarDataProperty
+        vti = di.getValueType
         o2rj <-
         (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
           prev.get(si.descriptionBox().getExtent).flatMap(_.conceptualEntitySingletonInstances.get(si)),
-          prev.get(dpi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(dpi))) match {
-          case (Some(dboxj), Some(sj), Some(dpj)) =>
-            val (rj, dj) = f.createSingletonInstanceScalarDataPropertyValue(o2ri.rextent, dboxj, sj, dpj, di.getScalarPropertyValue)
+          prev.get(dpi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(dpi)),
+          prev.get(vti.getTbox.getExtent).flatMap(_.dataRanges.get(vti))) match {
+          case (Some(dboxj), Some(sj), Some(dpj), Some(vtj)) =>
+            val (rj, dj) = f.createSingletonInstanceScalarDataPropertyValue(
+              o2ri.rextent, dboxj, sj, dpj,
+              emf2tables(di.getScalarPropertyValue), Some(vtj))
             o2ri.copy(
               rextent = rj,
               singletonInstanceScalarDataPropertyValues = o2ri.singletonInstanceScalarDataPropertyValues + (di -> dj)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertSingletonScalarDataPropertyValues: Cannot find: " +
-                s"singleton instance: ${si.abbrevIRI}" +
-                s"entity scalar data property: ${dpi.abbrevIRI}"
+              s"convertSingletonScalarDataPropertyValues: Cannot find:" +
+                s" singleton instance: ${si.abbrevIRI}" +
+                s" entity scalar data property: ${dpi.abbrevIRI}" +
+                s" value type: ${vti.abbrevIRI}"
             )).left
         }
         next = prev.updated(e, o2rj)
@@ -1564,11 +1582,32 @@ object OMLText2Resolver {
     val ((ctx, sci), sct) = (scs.head, scs.tail)
     o2r.dataRelationshipToScalarLookup(sci.getScalarDataProperty) match {
       case Some(sck) =>
-        val (rj, scj) = f.createScalarDataPropertyValue(o2r.rextent, sck, sci.getScalarPropertyValue, ctx)
-        val next = o2r.copy(
-          rextent = rj,
-          scalarDataPropertyValues = o2r.scalarDataPropertyValues + (sci -> scj))
-        convertSingletonInstanceStructuredDataPropertyContext(next, sct, Nil)
+        val evtj = Option.apply(sci.getValueType) match {
+          case Some(vti) =>
+            o2r.dataRanges.get(vti) match {
+              case Some(vtj) =>
+                Some(vtj).right
+              case _ =>
+                new EMFProblems(new java.lang.IllegalArgumentException(
+                  s"convertSingletonInstanceStructuredDataPropertyContext: Cannot find: " +
+                    s"value type: ${vti.abbrevIRI}"
+                )).left
+            }
+          case None =>
+            None.right
+        }
+        evtj match {
+          case \/-(vtj) =>
+            val (rj, scj) = f.createScalarDataPropertyValue(
+              o2r.rextent, sck,
+              emf2tables(sci.getScalarPropertyValue), ctx, vtj)
+            val next = o2r.copy(
+              rextent = rj,
+              scalarDataPropertyValues = o2r.scalarDataPropertyValues + (sci -> scj))
+            convertSingletonInstanceStructuredDataPropertyContext(next, sct, Nil)
+          case -\/(errors) =>
+            -\/(errors)
+        }
       case _ =>
         new EMFProblems(new java.lang.IllegalArgumentException(
           s"convertSingletonInstanceStructuredDataPropertyContext: Cannot find: " +
@@ -1587,73 +1626,36 @@ object OMLText2Resolver {
     val (e, _) = entry
     e.getModules.asScala.to[Set].foldLeft(state) {
       case (acc1, mi) =>
-        mi match {
-          case tboxi: TerminologyBox =>
+        for {
+          prev <- acc1
+          allO2Rs = prev.values
+          annotationProperties = allO2Rs.flatMap(_.aps).toMap
+          o2ri = prev(e)
+          o2rj <- mi.getAnnotations.asScala.foldLeft(o2ri.right[EMFProblems]) { case (acc2, a0) =>
             for {
-              prev <- acc1
-              allO2Rs = prev.values
-              annotationProperties = allO2Rs.flatMap(_.aps).toMap
-              o2ri = prev(e)
-              o2rj <- tboxi.getAnnotations.asScala.foldLeft(o2ri.right[EMFProblems]) { case (acc2, a0) =>
-                for {
-                  o2rk <- acc2
-                  aSubject <- allO2Rs.flatMap(_.elementLookup(a0.getSubject)).headOption match {
-                    case Some(aSubject) =>
-                      aSubject.right
-                    case None =>
-                      new EMFProblems(new java.lang.IllegalArgumentException(
-                        s"convertAnnotations: Cannot find: ${a0.getSubject} "
-                      )).left
-                  }
-                  aProperty <- annotationProperties.get(a0.getProperty) match {
-                    case Some(aProperty) =>
-                      aProperty.right
-                    case None =>
-                      new EMFProblems(new java.lang.IllegalArgumentException(
-                        s"convertAnnotations: Cannot find: ${a0.getProperty} "
-                      )).left
-                  }
-                  tboxk = o2rk.tboxes(tboxi)
-                  (el, _) = f.createAnnotation(o2rk.rextent, tboxk, aSubject, aProperty, a0.getValue)
-                  o2rl = o2rk.copy(rextent = el)
-                } yield o2rl
+              o2rk <- acc2
+              aSubject <- allO2Rs.flatMap(_.elementLookup(a0.getSubject)).headOption match {
+                case Some(aSubject) =>
+                  aSubject.right
+                case None =>
+                  new EMFProblems(new java.lang.IllegalArgumentException(
+                    s"convertAnnotations: Cannot find: ${a0.getSubject} "
+                  )).left
               }
-              next = prev.updated(e, o2rj)
-            } yield next
-
-          case dboxi: DescriptionBox =>
-            for {
-              prev <- acc1
-              allO2Rs = prev.values
-              annotationProperties = allO2Rs.flatMap(_.aps).toMap
-              o2ri = prev(e)
-              o2rj <- dboxi.getAnnotations.asScala.foldLeft(o2ri.right[EMFProblems]) { case (acc2, a0) =>
-                for {
-                  o2rk <- acc2
-                  aSubject <- allO2Rs.flatMap(_.elementLookup(a0.getSubject)).headOption match {
-                    case Some(aSubject) =>
-                      aSubject.right
-                    case None =>
-                      new EMFProblems(new java.lang.IllegalArgumentException(
-                        s"convertAnnotations: Cannot find: ${a0.getSubject} "
-                      )).left
-                  }
-                  aProperty <- annotationProperties.get(a0.getProperty) match {
-                    case Some(aProperty) =>
-                      aProperty.right
-                    case None =>
-                      new EMFProblems(new java.lang.IllegalArgumentException(
-                        s"convertAnnotations: Cannot find: ${a0.getProperty} "
-                      )).left
-                  }
-                  dboxk = o2rk.dboxes(dboxi)
-                  (el, _) = f.createAnnotation(o2rk.rextent, dboxk, aSubject, aProperty, a0.getValue)
-                  o2rl = o2rk.copy(rextent = el)
-                } yield o2rl
+              aProperty <- annotationProperties.get(a0.getProperty) match {
+                case Some(aProperty) =>
+                  aProperty.right
+                case None =>
+                  new EMFProblems(new java.lang.IllegalArgumentException(
+                    s"convertAnnotations: Cannot find: ${a0.getProperty} "
+                  )).left
               }
-              next = prev.updated(e, o2rj)
-            } yield next
-        }
+              (el, _) = f.createAnnotationPropertyValue(o2rk.rextent, aSubject, aProperty, a0.getValue.value)
+              o2rl = o2rk.copy(rextent = el)
+            } yield o2rl
+          }
+          next = prev.updated(e, o2rj)
+        } yield next
     }
   }
 

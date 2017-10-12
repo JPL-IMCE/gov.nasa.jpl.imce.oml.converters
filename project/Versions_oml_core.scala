@@ -1,4 +1,4 @@
 object Versions_oml_core {
 
-  val version="0.7.1.+"
+  val version="0.9.0.0-M09"
 }
