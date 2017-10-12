@@ -24,6 +24,8 @@ lazy val omlProductDir = settingKey[File](
 lazy val extractOMLProduct =
   taskKey[PathFinder]("Extract the OML platform update site to a folder")
 
+val owlapiLibs = taskKey[Seq[Attributed[File]]]("OWLAPI libraries")
+
 lazy val omlConverters = Project("omlConverters", file("."))
   .enablePlugins(IMCEGitPlugin)
   .enablePlugins(JavaAppPackaging)
@@ -225,8 +227,33 @@ lazy val omlConverters = Project("omlConverters", file("."))
 
       jars
     },
-    unmanagedJars in Compile := extractOMLProduct.value.classpath,
-    unmanagedJars in (Compile, doc) := extractOMLProduct.value.classpath
+
+    owlapiLibs := {
+      val s = streams.value
+      val owlapiDir = baseDirectory.value / "target" / "owlapi"
+      if (owlapiDir.exists()) {
+        s.log.warn(s"*** Skip extracting to folder: $owlapiDir")
+      } else {
+        owlapiDir.mkdirs()
+        for {
+          c <- update.value.configurations
+          if c.configuration == "compile"
+          m <- c.modules
+          (artifact, archive) <- m.artifacts
+          if artifact.name.startsWith("imce.third_party.owlapi_libraries")
+          if artifact.extension.contains("zip")
+          _ = s.log.info(s"*** Artifact=$archive")
+          files = IO.unzip(archive, owlapiDir)
+        } yield ()
+      }
+
+      val jars = (owlapiDir ** "lib" * "*.jar").get.map(Attributed.blank)
+      s.log.warn(s"=> Adding ${jars.size} unmanaged jars for the owlapi")
+
+      jars
+    },
+    unmanagedJars in Compile := extractOMLProduct.value.classpath ++ owlapiLibs.value,
+    unmanagedJars in (Compile, doc) := extractOMLProduct.value.classpath ++ owlapiLibs.value
   )
   .dependsOnSourceProjectOrLibraryArtifacts(
     "omf-scala-binding-owlapi",
