@@ -1,6 +1,5 @@
-import sbt.Keys._
+import sbt.Keys.{artifacts, _}
 import sbt._
-import com.typesafe.sbt.packager.SettingsHelper._
 import java.lang.System
 
 import com.typesafe.sbt.packager.SettingsHelper
@@ -26,10 +25,12 @@ lazy val extractOMLProduct =
 
 val owlapiLibs = taskKey[Seq[Attributed[File]]]("OWLAPI libraries")
 
+val resources: Configuration = Configurations.config("resources")
+
 lazy val omlConverters = Project("omlConverters", file("."))
-  .enablePlugins(IMCEGitPlugin)
   .enablePlugins(JavaAppPackaging)
-  .enablePlugins(UniversalPlugin)
+  .enablePlugins(UniversalDeployPlugin)
+  .enablePlugins(IMCEGitPlugin)
   .settings(IMCEPlugin.strictScalacFatalWarningsSettings)
   .settings(
     IMCEKeys.licenseYearOrRange := "2017",
@@ -56,23 +57,6 @@ lazy val omlConverters = Project("omlConverters", file("."))
 
     SettingsHelper.makeDeploymentSettings(Universal, packageZipTarball in Universal, "tgz"),
 
-    SettingsHelper.makeDeploymentSettings(UniversalDocs, packageXzTarball in UniversalDocs, "tgz"),
-
-    packagedArtifacts in publish += {
-      val p = (packageZipTarball in Universal).value
-      val n = (name in Universal).value
-      Artifact(n, "tgz", "tgz", Some("resource"), Seq(), None, Map()) -> p
-    },
-    packagedArtifacts in publishLocal += {
-      val p = (packageZipTarball in Universal).value
-      val n = (name in Universal).value
-      Artifact(n, "tgz", "tgz", Some("resource"), Seq(), None, Map()) -> p
-    },
-    packagedArtifacts in publishM2 += {
-      val p = (packageZipTarball in Universal).value
-      val n = (name in Universal).value
-      Artifact(n, "tgz", "tgz", Some("resource"), Seq(), None, Map()) -> p
-    },
     buildInfoPackage := "gov.nasa.jpl.imce.oml.converters",
     buildInfoKeys ++= Seq[BuildInfoKey](BuildInfoKey.action("buildDateUTC") {
       buildUTCDate.value
@@ -125,17 +109,21 @@ lazy val omlConverters = Project("omlConverters", file("."))
     mappings in Universal := {
       val s = streams.value
       val prev = (mappings in Universal).value
-      prev.filterNot { case (f, n) =>
+      s.log.warn(s"universal:mappings => ${prev.size} entries...")
+      var oks: Int = 0
+      var exs: Int = 0
+      val result = prev.filterNot { case (f, n) =>
         val ok = f.name.endsWith(".tar.gz") ||
           f.name.endsWith("-resource.zip") ||
           n.contains("test") ||
           (f.name.endsWith("log4j-1.2.17.zip") && n == "lib/log4j.log4j-1.2.17.jar") ||
           n == "lib/ch.qos.logback.logback-classic-1.0.7.jar" ||
           n == "lib/ch.qos.logback.logback-core-1.0.7.jar"
-        s.log.warn(s"Filter?=$ok f=$f")
-        s.log.warn(s"Filter?=$ok n=$n")
+        if (ok) exs += 1 else oks += 1
         ok
       }
+      s.log.warn(s"universal:mappings => ${prev.size} entries (kept $oks; removed $exs) => ${result.size} filtered")
+      result
     },
     omlProductDir := baseDirectory.value / "target" / "omlProduct",
     extractOMLProduct := {
@@ -217,13 +205,13 @@ lazy val omlConverters = Project("omlConverters", file("."))
           plugins ** "org.eclipse.xtext_*.jar"
 
       // Delete unused files.
-//      val other = ((upd ** "*") --- upd --- plugins --- jars).get
-//      s.log.info(s"other: ${other.size}")
-//      other.foreach { f =>
-//        if (f.isFile)
-//          IO.delete(f)
-//        s.log.info(s"=> $f")
-//      }
+      val other = ((upd ** "*") --- upd --- plugins --- jars).get
+      s.log.info(s"other: ${other.size}")
+      other.foreach { f =>
+        if (f.isFile)
+          IO.delete(f)
+        s.log.info(s"=> $f")
+      }
 
       jars
     },

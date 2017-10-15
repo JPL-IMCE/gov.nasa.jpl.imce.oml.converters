@@ -1,3 +1,5 @@
+import com.typesafe.sbt.pgp.PgpKeys
+
 enablePlugins(SignedAetherPlugin)
 
 disablePlugins(AetherPlugin)
@@ -33,3 +35,4 @@ pgpPublicRing := file("local.pubring.gpg")
 git.baseVersion := Versions.version
 
 versionWithGit
+
