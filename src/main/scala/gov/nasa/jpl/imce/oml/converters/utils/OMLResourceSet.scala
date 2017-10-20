@@ -18,8 +18,11 @@
 
 package gov.nasa.jpl.imce.oml.converters.utils
 
+import ammonite.ops.{Path,RelPath}
+
 import gov.nasa.jpl.imce.oml.model.common.Extent
 import gov.nasa.jpl.imce.oml.dsl.OMLStandaloneSetup
+import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager, OMLExtensions}
 import org.eclipse.emf.common.util.URI
 import org.eclipse.emf.ecore.resource.Resource
 import org.eclipse.emf.ecore.util.EcoreUtil
@@ -29,9 +32,10 @@ import org.eclipse.xtext.resource.XtextResourceSet
 import scala.collection.JavaConverters._
 import scala.collection.immutable._
 import scala.util.control.Exception._
-import scala.{StringContext,Unit}
-import scala.Predef.String
-import scalaz._, Scalaz._
+import scala.{Option, Some, StringContext, Unit}
+import scala.Predef.{ArrowAssoc, String}
+import scalaz._
+import Scalaz._
 
 object OMLResourceSet {
 
@@ -39,6 +43,24 @@ object OMLResourceSet {
     XcoreStandaloneSetup.doSetup()
     OMLStandaloneSetup.doSetup()
     new XtextResourceSet()
+  }
+
+  def initializeResourceSetWithCatalog(catalogFile: Path)
+  : EMFProblems \/ (XtextResourceSet, OMLCatalogManager, OMLCatalog)
+  = {
+    val rs = initializeResourceSet()
+    (
+      Option.apply(OMLExtensions.getOrCreateCatalogManager(rs)),
+      Option.apply(OMLExtensions.getCatalog(rs))
+    ) match {
+      case (Some(cm: OMLCatalogManager), Some(cat: OMLCatalog)) =>
+        cat.parseCatalog(catalogFile.toIO.toURI.toURL)
+        (rs, cm, cat).right
+      case _ =>
+        new EMFProblems(new java.lang.IllegalArgumentException(
+          s"Failed to create an OASIS Catalog"
+        )).left
+    }
   }
 
   def getOMLExtents(rs: XtextResourceSet)
@@ -108,4 +130,40 @@ object OMLResourceSet {
     _ <- EMFProblems.nonFatalCatch[Unit](EcoreUtil.resolveAll(rs))
     e <- getOMLResourceExtent(r)
   } yield e
+
+  def loadOMLResources(rs: XtextResourceSet, dir: Path, omlFiles: Seq[Path])
+  : EMFProblems \/ Map[Extent, RelPath]
+  = omlFiles.foldLeft(Map.empty[Extent, RelPath].right[EMFProblems]) {
+    case (acc, f) =>
+      for {
+        extents <- acc
+        omlFile <- {
+          if (f.toIO.exists() && f.toIO.canRead)
+            \/-(f)
+          else
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"loadOMLResources: Cannot read OML textual concrete syntax file: " +
+                f
+            )).left
+        }
+        relFile = omlFile.relativeTo(dir)
+        extent <- OMLResourceSet.loadOMLResource(
+          rs,
+          URI.createFileURI(omlFile.toString))
+        _ <- {
+          val nbModules = extent.getModules.size
+          if (1 == nbModules)
+            ().right
+          else if (nbModules > 1)
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"loadOMLResources: read $nbModules instead of 1 modules for $omlFile"
+            )).left
+          else
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"loadOMLResources: no module read for $omlFile"
+            )).left
+        }
+      } yield extents + (extent -> relFile)
+  }
+
 }

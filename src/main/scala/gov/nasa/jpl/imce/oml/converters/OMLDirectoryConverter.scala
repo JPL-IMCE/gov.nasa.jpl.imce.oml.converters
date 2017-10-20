@@ -18,15 +18,16 @@
 
 package gov.nasa.jpl.imce.oml.converters
 
-import java.io.{File, FileInputStream, FileOutputStream}
 import java.lang.{IllegalArgumentException, System}
 import java.util.Locale
 
-import gov.nasa.jpl.imce.oml.converters.utils.FileUtils
+import ammonite.ops.{cp,mkdir,rm,up,Path}
+
+import gov.nasa.jpl.imce.oml.filesystem
 import gov.nasa.jpl.omf.scala.core.OMFError
 
 import scala.collection.immutable._
-import scala.{Array, Long, StringContext, Unit}
+import scala.{Array, StringContext, Unit}
 import scala.Predef.{String, augmentString, refArrayOps}
 import scala.util.control.Exception.nonFatalCatch
 import scalaz.{-\/, \/, \/-}
@@ -34,17 +35,21 @@ import scalaz.{-\/, \/, \/-}
 object OMLDirectoryConverter {
 
   def main(argv: Array[String]): Unit = {
-    if (argv.length != 5)
+    if (argv.length != 5) {
+      System.out.println(s"argv has ${argv.length} arguments:")
+      argv.foreach { arg =>
+        System.out.println(s"# arg: $arg")
+      }
       System.out.println(usage())
-    else {
+    } else {
       val (_ :: cat :: flag :: out :: cmd :: Nil) = argv.to[List]
       val result: OMFError.Throwables \/ Unit = for {
         inCatalog <- checkCatalogFile(cat)
-        inputDir = inCatalog.getParentFile
-        outPair <- makeOutputDirectoryAndCopyCatalog(flag, out, inCatalog)
-        (outputDir, outCatalog) = outPair
+        inputDir = inCatalog / up
+        outputDir = Path(out)
+        outCatalog <- makeOutputDirectoryAndCopyCatalog(flag, outputDir, inCatalog)
         conversion <- checkConversionCommand(cmd)
-        inputFiles <- FileUtils.listFilesRecursively(inputDir, conversion.filePredicate)
+        inputFiles = filesystem.lsRecOML(inputDir, conversion.filePredicate)
         _ <- conversion.convert(inCatalog, inputFiles, outputDir, outCatalog)
       } yield ()
       result match {
@@ -62,18 +67,18 @@ object OMLDirectoryConverter {
   }
 
   def checkCatalogFile(cat: String)
-  : OMFError.Throwables \/ File
+  : OMFError.Throwables \/ Path
   = {
-    val catalog = new File(cat)
-    if (cat.endsWith(".catalog.xml") && catalog.exists() && catalog.canRead)
-      \/-(catalog)
+    val catalog = new java.io.File(cat)
+    if (cat.endsWith(".catalog.xml") && catalog.exists() && catalog.canRead && catalog.isAbsolute)
+      \/-(Path(catalog))
     else
-      -\/(Set(new IllegalArgumentException(s"Invalid OASIS XML catalog file: $cat")))
+      -\/(Set(new IllegalArgumentException(s"Invalid OASIS XML catalog absolute file: $cat")))
   }
 
-  def makeOutputDirectoryAndCopyCatalog(flag: String, out: String, catalog: File)
-  : OMFError.Throwables \/ (File, File)
-  = nonFatalCatch[OMFError.Throwables \/ (File, File)]
+  def makeOutputDirectoryAndCopyCatalog(flag: String, outDir: Path, inCatalog: Path)
+  : OMFError.Throwables \/ Path
+  = nonFatalCatch[OMFError.Throwables \/ Path]
     .withApply {
       (t: java.lang.Throwable) =>
         -\/(Set(t))
@@ -90,72 +95,19 @@ object OMLDirectoryConverter {
               s"Invalid output flag: $other\n$usage()"
             )))
         }
-        outDir = new File(out)
-        _ <- if (outDir.exists()) {
+        _ <- if (outDir.toIO.exists()) {
           if (deleteIfExists) {
-            deleteRecursively(outDir)
+            rm(outDir)
+            \/-(())
           } else
-            -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Output directory already exists: $out")))
+            -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Output directory already exists: $outDir")))
         } else
           \/-(())
-        result <- {
-          if (outDir.mkdirs()) {
-            val outCatalog = outDir.toPath.resolve(catalog.getName).toFile
-            new FileOutputStream(outCatalog)
-              .getChannel
-              .transferFrom(new FileInputStream(catalog).getChannel, 0, Long.MaxValue)
-            \/-((outDir, outCatalog))
-          } else
-            -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Cannot create output directory: $out")))
-        }
-      } yield result
+        _ = mkdir(outDir)
+        outCatalog = outDir / inCatalog.segments.last
+        _ = cp(inCatalog, outCatalog)
+      } yield outCatalog
     }
-
-
-  def deleteRecursively(dir: File): OMFError.Throwables \/ Unit
-  = {
-
-    def deleteRecursively(files: Seq[File]): OMFError.Throwables \/ Unit
-    = if (files.isEmpty)
-      \/-(())
-    else {
-      val (f, fs) = (files.head, files.tail)
-      if (f.isDirectory) {
-        if (!f.canExecute)
-          -\/(Set[java.lang.Throwable](new IllegalArgumentException(
-            s"While deleting $dir, cannot delete $f because it is not a directory with execute permissions"
-          )))
-        else {
-          val subs = f.listFiles().to[Seq]
-          if (subs.isEmpty) {
-            val confirmed = f.delete()
-            if (confirmed)
-              deleteRecursively(fs)
-            else
-              -\/(Set[java.lang.Throwable](new IllegalArgumentException(
-                s"While deleting $dir, failed to delete $f"
-              )))
-          } else
-            deleteRecursively(subs ++ files)
-        }
-      } else {
-        val confirmed = f.delete()
-        if (confirmed)
-          deleteRecursively(fs)
-        else
-          -\/(Set[java.lang.Throwable](new IllegalArgumentException(
-            s"While deleting $dir, failed to delete $f"
-          )))
-      }
-    }
-
-    if (dir.isDirectory && dir.exists() && dir.canExecute)
-      deleteRecursively(Seq(dir))
-    else
-      -\/(Set[java.lang.Throwable](new IllegalArgumentException(
-        s"Cannot delete $dir because it is not a directory with execute permissions"
-      )))
-  }
 
   def checkConversionCommand(cmd: String)
   : OMFError.Throwables \/ ConversionCommand

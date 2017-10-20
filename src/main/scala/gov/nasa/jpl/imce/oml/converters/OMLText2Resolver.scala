@@ -18,7 +18,7 @@
 
 package gov.nasa.jpl.imce.oml.converters
 
-import java.io.File
+import ammonite.ops.RelPath
 
 import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model.bundles._
@@ -38,7 +38,7 @@ import scalaz._
 import Scalaz._
 
 case class OMLText2Resolver
-(omlFile: File,
+(omlFile: RelPath,
  rextent: api.Extent,
 
  tboxes: Map[TerminologyBox, api.TerminologyBox] = Map.empty,
@@ -108,7 +108,11 @@ case class OMLText2Resolver
  : Map[StructuredDataPropertyTuple, api.StructuredDataPropertyTuple]
  = Map.empty) {
 
-  def toOMLTablesFile: File = new File(omlFile.getPath.stripSuffix(".oml")+".oml.json.zip")
+  def toOMLTablesFile
+  : RelPath
+  = omlFile.copy(segments =
+    omlFile.segments.dropRight(1) :+
+      omlFile.segments.last.stripSuffix(".oml")+".oml.json.zip")
 
   def allAccessibleModules: Map[Module, api.Module] =
     tboxes ++ dboxes
@@ -1660,7 +1664,7 @@ object OMLText2Resolver {
   }
 
   def convert
-  (fileExtents: Map[Extent, File])
+  (fileExtents: Map[Extent, RelPath])
   (implicit factory: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = for {

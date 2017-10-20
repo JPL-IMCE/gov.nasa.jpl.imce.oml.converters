@@ -50,9 +50,9 @@ case class EMFProblems
     } ++
     exceptions.to[Set]
 
-  def this(exception: java.lang.Throwable) = {
-    this(exceptions = exception :: Nil)
-    exception.fillInStackTrace()
+  def this(e: java.lang.Throwable) = {
+    this(exceptions = e :: Nil)
+    e.fillInStackTrace()
   }
 
   require(errors.nonEmpty || warnings.nonEmpty || exceptions.nonEmpty)

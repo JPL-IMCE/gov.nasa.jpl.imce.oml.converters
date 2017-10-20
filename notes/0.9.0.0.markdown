@@ -1,0 +1,9 @@
+gov.nasa.jpl.imce.oml.converters 0.9.0.0 is a build based on OML 0.9
+
+# Issues Resolved:
+
+- [#15 Add support for typed OML LiteralValues](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/15)
+
+- [#16 Convert OML files found recursively from an OML catalog file's directory](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/16)
+
+

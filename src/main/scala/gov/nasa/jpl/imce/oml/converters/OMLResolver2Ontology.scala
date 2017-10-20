@@ -29,7 +29,7 @@ import gov.nasa.jpl.omf.scala.binding.owlapi
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.{terminologies => owlapiterminologies}
 import gov.nasa.jpl.omf.scala.binding.owlapi.{descriptions => owlapidescriptions}
 import gov.nasa.jpl.omf.scala.core
-import org.semanticweb.owlapi.model.IRI
+import org.semanticweb.owlapi.model.{IRI}
 
 import scala.collection.immutable.{::, Iterable, List, Map, Nil, Seq, Set}
 import scala.{Boolean, Function, None, Option, Some, StringContext}
@@ -53,7 +53,7 @@ object OMLResolver2Ontology {
       extent.bundles.toList,
       extent.descriptionBoxes.toList) match {
       case (g :: Nil, Nil, Nil) =>
-        Function.tupled(prev.convertTerminologyBox _)(g)
+        Function.tupled(prev.convertTerminologyGraph _)(g)
       case (Nil, b :: Nil, Nil) =>
         Function.tupled(prev.convertBundle _)(b)
       case (Nil, Nil, d :: Nil) =>
@@ -157,22 +157,26 @@ object OMLResolver2Ontology {
     cA1 <- extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(cA0.right[Throwables])(convertRootConceptTaxonomyAxiom(extent))
     cAN = cA1
 
-    // ConceptualEntityInstances & UnreifiedRelationshipInstanceTuples
     cB0 = cAN
-    cB1 <- extent.descriptionBoxOfConceptInstance.foldLeft(cB0.right[Throwables])(convertConceptInstances(extent))
-    cB2 <- extent.descriptionBoxOfReifiedRelationshipInstance.foldLeft(cB1.right[Throwables])(convertReifiedRelationshipInstances(extent))
-    cB3 <- extent.descriptionBoxOfReifiedRelationshipInstanceDomain.foldLeft(cB2.right[Throwables])(convertReifiedRelationshipInstanceDomains(extent))
-    cB4 <- extent.descriptionBoxOfReifiedRelationshipInstanceRange.foldLeft(cB3.right[Throwables])(convertReifiedRelationshipInstanceRanges(extent))
-    cB5 <- extent.descriptionBoxOfUnreifiedRelationshipInstanceTuple.foldLeft(cB4.right[Throwables])(convertUnreifiedReifiedRelationshipInstanceTuples(extent))
-    cBN = cB5
+    cB1 <- extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(cA0.right[Throwables])(convertChainRule(extent))
+    cBN = cB1
+
+    // ConceptualEntityInstances & UnreifiedRelationshipInstanceTuples
+    cC0 = cBN
+    cC1 <- extent.descriptionBoxOfConceptInstance.foldLeft(cC0.right[Throwables])(convertConceptInstances(extent))
+    cC2 <- extent.descriptionBoxOfReifiedRelationshipInstance.foldLeft(cC1.right[Throwables])(convertReifiedRelationshipInstances(extent))
+    cC3 <- extent.descriptionBoxOfReifiedRelationshipInstanceDomain.foldLeft(cC2.right[Throwables])(convertReifiedRelationshipInstanceDomains(extent))
+    cC4 <- extent.descriptionBoxOfReifiedRelationshipInstanceRange.foldLeft(cC3.right[Throwables])(convertReifiedRelationshipInstanceRanges(extent))
+    cC5 <- extent.descriptionBoxOfUnreifiedRelationshipInstanceTuple.foldLeft(cC4.right[Throwables])(convertUnreifiedReifiedRelationshipInstanceTuples(extent))
+    cCN = cC5
 
     // Data Property Values
-    cC0 = cBN
-    cC1 <- extent.descriptionBoxOfSingletonInstanceScalarDataPropertyValue.foldLeft(cC0.right[Throwables])(convertSingletonInstanceScalarDataPropertyValues(extent))
-    cC2 <- extent.descriptionBoxOfSingletonInstanceStructuredDataPropertyValue.foldLeft(cC1.right[Throwables])(convertSingletonInstanceStructuredDataPropertyValues(extent))
-    cC3 <- extent.structuredPropertyTuples.foldLeft(cC2.right[Throwables])(convertStructuredPropertyTuples(extent))
-    cC4 <- extent.descriptionBoxOfSingletonInstanceScalarDataPropertyValue.foldLeft(cC3.right[Throwables])(convertSingletonInstanceScalarDataPropertyValues(extent))
-    cCN = cC4
+    cD0 = cBN
+    cD1 <- extent.descriptionBoxOfSingletonInstanceScalarDataPropertyValue.foldLeft(cD0.right[Throwables])(convertSingletonInstanceScalarDataPropertyValues(extent))
+    cD2 <- extent.descriptionBoxOfSingletonInstanceStructuredDataPropertyValue.foldLeft(cD1.right[Throwables])(convertSingletonInstanceStructuredDataPropertyValues(extent))
+    cD3 <- extent.structuredPropertyTuples.foldLeft(cD2.right[Throwables])(convertStructuredPropertyTuples(extent))
+    cD4 <- extent.descriptionBoxOfSingletonInstanceScalarDataPropertyValue.foldLeft(cD3.right[Throwables])(convertSingletonInstanceScalarDataPropertyValues(extent))
+    cDN = cD4
     // Annotations
 
     // Finished!
@@ -183,7 +187,7 @@ object OMLResolver2Ontology {
 //    result = c7N
 //    result = c8N
 //    result = c9N
-    result = cBN
+    result = cDN
 
     _ = java.lang.System.out.println(s"==> OMLResolver2Ontology  converted: $iri")
   } yield result
@@ -781,6 +785,139 @@ object OMLResolver2Ontology {
     }
   }
 
+  // ChainRules
+
+  protected def convertChainRule(implicit ext: api.Extent)
+  : (ResolverResult, (api.TerminologyBoxStatement, api.TerminologyBox)) => ResolverResult
+  = {
+    case (acc, (ax0: api.ChainRule, t0: api.TerminologyGraph)) =>
+      for {
+        r2o <- acc
+        t1 <- r2o.getGbox(t0)
+        h1 <- r2o.lookupUnreifiedRelationship(ax0.head)
+        ax1 <- r2o.ops.addChainRule(t1, h1, core.OMLString.LocalName(ax0.name))(r2o.omfStore)
+        _ <- ext.lookupFirstSegment(ax0) match {
+          case Some(s0) =>
+            convertRuleBodySegment(r2o.copy(chainRules = r2o.chainRules + (ax0 -> ax1)), ext, s0, t1, Some(ax1), None)
+          case None =>
+            Set[java.lang.Throwable](new IllegalArgumentException(
+              s"OMLResolver2Ontology.convertChainRule: Missing first segment for rule: $ax0")).left
+        }
+        _ <- r2o.ops.makeChainRule(t1, ax1)(r2o.omfStore)
+      } yield r2o
+    case (acc, _) =>
+      acc
+  }
+
+  @scala.annotation.tailrec
+  protected def convertRuleBodySegment
+  (r2o: OMLResolver2Ontology,
+   ext: api.Extent,
+   s0: api.RuleBodySegment,
+   t1: owlapi.types.terminologies.MutableTerminologyGraph,
+   chainRule: Option[owlapi.types.terms.ChainRule],
+   previousSegment: Option[owlapi.types.terms.RuleBodySegment])
+  : ResolverResult
+  = ext.predicate.get(s0) match {
+    case Some(p0) =>
+      r2o.ops.addRuleBodySegment(t1, chainRule, previousSegment)(r2o.omfStore) match {
+        case \/-(s1) =>
+          val conv
+          : Throwables \/ (OMLResolver2Ontology, owlapi.types.terms.SegmentPredicate)
+          = p0 match {
+            case p0: api.AspectPredicate =>
+              r2o.lookupAspect(p0.aspect)(ext).flatMap { a1 =>
+                r2o.ops.addAspectPredicate(t1, s1, a1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(aspectPredicates = r2o.aspectPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case p0: api.ConceptPredicate =>
+              r2o.lookupConcept(p0.concept)(ext).flatMap { c1 =>
+                r2o.ops.addConceptPredicate(t1, s1, c1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(conceptPredicates = r2o.conceptPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case p0: api.ReifiedRelationshipPredicate =>
+              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addReifiedRelationshipPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(reifiedRelationshipPredicates = r2o.reifiedRelationshipPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case p0: api.ReifiedRelationshipPropertyPredicate =>
+              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addReifiedRelationshipPropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(reifiedRelationshipPropertyPredicates = r2o.reifiedRelationshipPropertyPredicates + (p0 -> p1)), p1)
+                }
+              }
+            case p0: api.ReifiedRelationshipInversePropertyPredicate =>
+              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addReifiedRelationshipInversePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(reifiedRelationshipInversePropertyPredicates = r2o.reifiedRelationshipInversePropertyPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case p0: api.ReifiedRelationshipSourcePropertyPredicate =>
+              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addReifiedRelationshipSourcePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(reifiedRelationshipSourcePropertyPredicates = r2o.reifiedRelationshipSourcePropertyPredicates + (p0 -> p1)), p1)
+                }
+              }
+            case p0: api.ReifiedRelationshipSourceInversePropertyPredicate =>
+              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addReifiedRelationshipSourceInversePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(reifiedRelationshipSourceInversePropertyPredicates = r2o.reifiedRelationshipSourceInversePropertyPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case p0: api.ReifiedRelationshipTargetPropertyPredicate =>
+              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addReifiedRelationshipTargetPropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(reifiedRelationshipTargetPropertyPredicates = r2o.reifiedRelationshipTargetPropertyPredicates + (p0 -> p1)), p1)
+                }
+              }
+            case p0: api.ReifiedRelationshipTargetInversePropertyPredicate =>
+              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addReifiedRelationshipTargetInversePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(reifiedRelationshipTargetInversePropertyPredicates = r2o.reifiedRelationshipTargetInversePropertyPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case p0: api.UnreifiedRelationshipPropertyPredicate =>
+              r2o.lookupUnreifiedRelationship(p0.unreifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addUnreifiedRelationshipPropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(unreifiedRelationshipPropertyPredicates = r2o.unreifiedRelationshipPropertyPredicates + (p0 -> p1)), p1)
+                }
+              }
+            case p0: api.UnreifiedRelationshipInversePropertyPredicate =>
+              r2o.lookupUnreifiedRelationship(p0.unreifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addUnreifiedRelationshipInversePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
+                  (r2o.copy(unreifiedRelationshipInversePropertyPredicates = r2o.unreifiedRelationshipInversePropertyPredicates + (p0 -> p1)), p1)
+                }
+              }
+          }
+          conv match {
+            case \/-((updated, p1)) =>
+              val next = updated.copy(ruleBodySegments = updated.ruleBodySegments + (s0 -> s1))
+              ext.lookupNextSegment(s0) match {
+                case Some(n0) =>
+                  convertRuleBodySegment(next, ext, n0, t1, None, Some(s1))
+                case None =>
+                  next.right
+              }
+            case -\/(errors) =>
+              -\/(errors)
+          }
+        case -\/(errors) =>
+          -\/(errors)
+      }
+    case None =>
+      Set[java.lang.Throwable](new IllegalArgumentException(
+        s"OMLResolver2Ontology.convertRuleBodySegment: Missing predicate for segment: $s0")).left
+  }
+
   // ConceptualEntityInstances
 
   protected def convertConceptInstances(implicit ext: api.Extent)
@@ -909,47 +1046,175 @@ case class OMLResolver2Ontology
  extents: Seq[api.Extent] = Seq.empty,
 
  // Modules
- modules: Seq[api.Module] = Seq.empty,
- gs: Map[api.TerminologyGraph, owlapiterminologies.MutableTerminologyGraph] = Map.empty,
- bs: Map[api.Bundle, owlapiterminologies.MutableBundle] = Map.empty,
- ds: Map[api.DescriptionBox, owlapidescriptions.MutableDescriptionBox] = Map.empty,
+ modules
+ : Seq[api.Module]
+ = Seq.empty,
+
+ gs
+ : Map[api.TerminologyGraph, owlapiterminologies.MutableTerminologyGraph]
+ = Map.empty,
+
+ bs
+ : Map[api.Bundle, owlapiterminologies.MutableBundle]
+ = Map.empty,
+
+ ds
+ : Map[api.DescriptionBox, owlapidescriptions.MutableDescriptionBox]
+ = Map.empty,
 
  // AnnotationProperties
- aps: Map[api.AnnotationProperty, tables.AnnotationProperty] = Map.empty,
+ aps
+ : Map[api.AnnotationProperty, tables.AnnotationProperty]
+ = Map.empty,
 
  // ModuleEdges
- edges: Map[api.ModuleEdge, owlapi.common.ModuleEdge] = Map.empty,
+ edges
+ : Map[api.ModuleEdge, owlapi.common.ModuleEdge]
+ = Map.empty,
 
- aspects: Map[api.Aspect, owlapi.types.terms.Aspect] = Map.empty,
+ aspects
+ : Map[api.Aspect, owlapi.types.terms.Aspect]
+ = Map.empty,
 
- concepts: Map[api.Concept, owlapi.types.terms.Concept] = Map.empty,
- reifiedRelationships: Map[api.ReifiedRelationship, owlapi.types.terms.ReifiedRelationship] = Map.empty,
- unreifiedRelationships: Map[api.UnreifiedRelationship, owlapi.types.terms.UnreifiedRelationship] = Map.empty,
+ concepts
+ : Map[api.Concept, owlapi.types.terms.Concept]
+ = Map.empty,
 
- dataRanges: Map[api.DataRange, owlapi.types.terms.DataRange] = Map.empty,
- structures: Map[api.Structure, owlapi.types.terms.Structure] = Map.empty,
- scalarOneOfLiterals: Map[api.ScalarOneOfLiteralAxiom, owlapi.types.termAxioms.ScalarOneOfLiteralAxiom] = Map.empty,
+ reifiedRelationships
+ : Map[api.ReifiedRelationship, owlapi.types.terms.ReifiedRelationship]
+ = Map.empty,
 
- entityScalarDataProperties: Map[api.EntityScalarDataProperty, owlapi.types.terms.EntityScalarDataProperty] = Map.empty,
- entityStructuredDataProperties: Map[api.EntityStructuredDataProperty, owlapi.types.terms.EntityStructuredDataProperty] = Map.empty,
- scalarDataProperties: Map[api.ScalarDataProperty, owlapi.types.terms.ScalarDataProperty] = Map.empty,
- structuredDataProperties: Map[api.StructuredDataProperty, owlapi.types.terms.StructuredDataProperty] = Map.empty,
+ unreifiedRelationships
+ : Map[api.UnreifiedRelationship, owlapi.types.terms.UnreifiedRelationship]
+ = Map.empty,
 
- termAxioms: Map[api.TermAxiom, owlapi.types.termAxioms.TermAxiom] = Map.empty,
- conceptTreeDisjunctions: Map[api.ConceptTreeDisjunction, owlapi.types.bundleStatements.ConceptTreeDisjunction] = Map.empty,
- disjointUnionOfConceptAxioms: Map[api.DisjointUnionOfConceptsAxiom, owlapi.types.bundleStatements.DisjointUnionOfConceptsAxiom] = Map.empty,
+ dataRanges
+ : Map[api.DataRange, owlapi.types.terms.DataRange]
+ = Map.empty,
 
- conceptualEntitySingletonInstances: Map[api.ConceptualEntitySingletonInstance, owlapi.descriptions.ConceptualEntitySingletonInstance] = Map.empty,
- reifiedRelationshipInstanceDomains: Map[api.ReifiedRelationshipInstanceDomain, owlapi.descriptions.ReifiedRelationshipInstanceDomain] = Map.empty,
- reifiedRelationshipInstanceRanges: Map[api.ReifiedRelationshipInstanceRange, owlapi.descriptions.ReifiedRelationshipInstanceRange] = Map.empty,
- unreifiedRelationshipInstanceTuples: Map[api.UnreifiedRelationshipInstanceTuple, owlapi.descriptions.UnreifiedRelationshipInstanceTuple] = Map.empty,
+ structures
+ : Map[api.Structure, owlapi.types.terms.Structure]
+ = Map.empty,
 
- singletonScalarDataPropertyValues: Map[api.SingletonInstanceScalarDataPropertyValue, owlapi.descriptions.SingletonInstanceScalarDataPropertyValue] = Map.empty,
- singletonStructuredDataPropertyValues: Map[api.SingletonInstanceStructuredDataPropertyValue, owlapi.descriptions.SingletonInstanceStructuredDataPropertyValue] = Map.empty,
- structuredPropertyTuples: Map[api.StructuredDataPropertyTuple, owlapi.descriptions.StructuredDataPropertyTuple] = Map.empty,
- scalarDataPropertyValues: Map[api.ScalarDataPropertyValue, owlapi.descriptions.ScalarDataPropertyValue] = Map.empty,
+ scalarOneOfLiterals
+ : Map[api.ScalarOneOfLiteralAxiom, owlapi.types.termAxioms.ScalarOneOfLiteralAxiom]
+ = Map.empty,
 
- singletonInstanceStructuredDataPropertyContexts: Map[api.SingletonInstanceStructuredDataPropertyContext, owlapi.descriptions.SingletonInstanceStructuredDataPropertyContext] = Map.empty
+ entityScalarDataProperties
+ : Map[api.EntityScalarDataProperty, owlapi.types.terms.EntityScalarDataProperty]
+ = Map.empty,
+
+ entityStructuredDataProperties
+ : Map[api.EntityStructuredDataProperty, owlapi.types.terms.EntityStructuredDataProperty]
+ = Map.empty,
+
+ scalarDataProperties
+ : Map[api.ScalarDataProperty, owlapi.types.terms.ScalarDataProperty]
+ = Map.empty,
+
+ structuredDataProperties
+ : Map[api.StructuredDataProperty, owlapi.types.terms.StructuredDataProperty]
+ = Map.empty,
+
+ termAxioms
+ : Map[api.TermAxiom, owlapi.types.termAxioms.TermAxiom]
+ = Map.empty,
+
+ conceptTreeDisjunctions
+ : Map[api.ConceptTreeDisjunction, owlapi.types.bundleStatements.ConceptTreeDisjunction]
+ = Map.empty,
+
+ disjointUnionOfConceptAxioms
+ : Map[api.DisjointUnionOfConceptsAxiom, owlapi.types.bundleStatements.DisjointUnionOfConceptsAxiom]
+ = Map.empty,
+
+ chainRules
+ : Map[api.ChainRule, owlapi.types.terms.ChainRule]
+ = Map.empty,
+
+ ruleBodySegments
+ : Map[api.RuleBodySegment, owlapi.types.terms.RuleBodySegment]
+ = Map.empty,
+
+ aspectPredicates
+ : Map[api.AspectPredicate, owlapi.types.terms.AspectPredicate]
+ = Map.empty,
+
+ conceptPredicates
+ : Map[api.ConceptPredicate, owlapi.types.terms.ConceptPredicate]
+ = Map.empty,
+
+ reifiedRelationshipPredicates
+ : Map[api.ReifiedRelationshipPredicate, owlapi.types.terms.ReifiedRelationshipPredicate]
+ = Map.empty,
+
+ reifiedRelationshipPropertyPredicates
+ : Map[api.ReifiedRelationshipPropertyPredicate, owlapi.types.terms.ReifiedRelationshipPropertyPredicate]
+ = Map.empty,
+
+ reifiedRelationshipInversePropertyPredicates
+ : Map[api.ReifiedRelationshipInversePropertyPredicate, owlapi.types.terms.ReifiedRelationshipInversePropertyPredicate]
+ = Map.empty,
+
+ reifiedRelationshipSourcePropertyPredicates
+ : Map[api.ReifiedRelationshipSourcePropertyPredicate, owlapi.types.terms.ReifiedRelationshipSourcePropertyPredicate]
+ = Map.empty,
+
+ reifiedRelationshipSourceInversePropertyPredicates
+ : Map[api.ReifiedRelationshipSourceInversePropertyPredicate, owlapi.types.terms.ReifiedRelationshipSourceInversePropertyPredicate]
+ = Map.empty,
+
+ reifiedRelationshipTargetPropertyPredicates
+ : Map[api.ReifiedRelationshipTargetPropertyPredicate, owlapi.types.terms.ReifiedRelationshipTargetPropertyPredicate]
+ = Map.empty,
+
+ reifiedRelationshipTargetInversePropertyPredicates
+ : Map[api.ReifiedRelationshipTargetInversePropertyPredicate, owlapi.types.terms.ReifiedRelationshipTargetInversePropertyPredicate]
+ = Map.empty,
+
+ unreifiedRelationshipPropertyPredicates
+ : Map[api.UnreifiedRelationshipPropertyPredicate, owlapi.types.terms.UnreifiedRelationshipPropertyPredicate]
+ = Map.empty,
+
+ unreifiedRelationshipInversePropertyPredicates
+ : Map[api.UnreifiedRelationshipInversePropertyPredicate, owlapi.types.terms.UnreifiedRelationshipInversePropertyPredicate]
+ = Map.empty,
+
+ conceptualEntitySingletonInstances
+ : Map[api.ConceptualEntitySingletonInstance, owlapi.descriptions.ConceptualEntitySingletonInstance]
+ = Map.empty,
+
+ reifiedRelationshipInstanceDomains
+ : Map[api.ReifiedRelationshipInstanceDomain, owlapi.descriptions.ReifiedRelationshipInstanceDomain]
+ = Map.empty,
+
+ reifiedRelationshipInstanceRanges
+ : Map[api.ReifiedRelationshipInstanceRange, owlapi.descriptions.ReifiedRelationshipInstanceRange]
+ = Map.empty,
+
+ unreifiedRelationshipInstanceTuples
+ : Map[api.UnreifiedRelationshipInstanceTuple, owlapi.descriptions.UnreifiedRelationshipInstanceTuple]
+ = Map.empty,
+
+ singletonScalarDataPropertyValues
+ : Map[api.SingletonInstanceScalarDataPropertyValue, owlapi.descriptions.SingletonInstanceScalarDataPropertyValue]
+ = Map.empty,
+
+ singletonStructuredDataPropertyValues
+ : Map[api.SingletonInstanceStructuredDataPropertyValue, owlapi.descriptions.SingletonInstanceStructuredDataPropertyValue]
+ = Map.empty,
+
+ structuredPropertyTuples
+ : Map[api.StructuredDataPropertyTuple, owlapi.descriptions.StructuredDataPropertyTuple]
+ = Map.empty,
+
+ scalarDataPropertyValues
+ : Map[api.ScalarDataPropertyValue, owlapi.descriptions.ScalarDataPropertyValue]
+ = Map.empty,
+
+ singletonInstanceStructuredDataPropertyContexts
+ : Map[api.SingletonInstanceStructuredDataPropertyContext, owlapi.descriptions.SingletonInstanceStructuredDataPropertyContext]
+ = Map.empty
 
 ) {
   def withBuiltIn
@@ -1060,6 +1325,15 @@ case class OMLResolver2Ontology
       Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
         s"OMLResolver2Ontology.lookupDbox(iri=$iri) Not found!"
       )).left
+  }
+
+  def lookupAspect(a0: api.Aspect)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.Aspect
+  = aspects.get(a0) match {
+    case Some(a1) =>
+      a1.right
+    case None =>
+      Set[java.lang.Throwable](new IllegalArgumentException(
+        s"OMLResolver2Ontology.lookupAspect(a=${a0.iri()}) failed")).left
   }
 
   def lookupConcept(c0: api.Concept)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.Concept
@@ -1208,7 +1482,7 @@ case class OMLResolver2Ontology
 
   val ops: owlapi.OWLAPIOMFOps = omfStore.ops
 
-  protected def convertTerminologyBox(uuid: UUID, g0: api.TerminologyGraph)
+  protected def convertTerminologyGraph(uuid: UUID, g0: api.TerminologyGraph)
   : core.OMFError.Throwables \/ (OMLResolver2Ontology, api.Module, OMLResolver2Ontology.MutableTboxOrDbox, IRI)
   = {
     val k = OMLResolver2Ontology.convertTerminologyKind(g0.kind)

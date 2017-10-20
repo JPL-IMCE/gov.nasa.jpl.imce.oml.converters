@@ -1,11 +1,29 @@
+/*
+ * Copyright 2017 California Institute of Technology ("Caltech").
+ * U.S. Government sponsorship acknowledged.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * License Terms
+ */
+
 package gov.nasa.jpl.imce.oml.converters
 
-import java.io.File
-import java.lang.{IllegalArgumentException, System}
+import java.lang.System
 import java.nio.file.Paths
 
+import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.OMLResourceSet
-import gov.nasa.jpl.imce.oml.resolver
+import gov.nasa.jpl.imce.oml.{filesystem, resolver}
 import gov.nasa.jpl.imce.oml.resolver.impl.OMLResolvedFactoryImpl
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.imce.oml.uuid.JVMUUIDGenerator
@@ -13,16 +31,14 @@ import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.binding.owlapi.common.ImmutableModule
 import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{ImmutableBundle, ImmutableTerminologyBox, ImmutableTerminologyGraph}
-import gov.nasa.jpl.omf.scala.core.{OMFError}
+import gov.nasa.jpl.omf.scala.core.OMFError
 import gov.nasa.jpl.omf.scala.core.tables.OMFTabularExport
-import org.apache.xml.resolver.{Catalog, CatalogManager}
-import org.apache.xml.resolver.tools.CatalogResolver
+import org.apache.xml.resolver.Catalog
 import org.eclipse.emf.common.util.{URI => EURI}
-import org.semanticweb.owlapi.apibinding.OWLManager
 
-import scala.collection.immutable.{Seq, Set, Vector}
+import scala.collection.immutable.{Seq, Set}
 import scala.util.control.Exception.nonFatalCatch
-import scala.{Boolean, Int, None, Option, Ordering, Some, StringContext, Unit}
+import scala.{Int, None, Option, Ordering, Some, StringContext, Unit}
 import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
@@ -32,56 +48,14 @@ import scalax.collection.GraphPredef.EdgeAssoc
 
 case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
-  override def filePredicate(f: File): Boolean = f.isFile && f.getName.endsWith(".owl")
+  override val filePredicate = filesystem.omlOWLFilePredicate _
 
-  def createOMFStoreAndLoadCatalog(catalogFile: File)
-  : OMFError.Throwables \/ (OWLAPIOMFGraphStore, Catalog)
-  = nonFatalCatch[OMFError.Throwables \/ (OWLAPIOMFGraphStore, Catalog)]
-    .withApply {
-      t: java.lang.Throwable =>
-        -\/(Set[java.lang.Throwable](t))
-    }
-    .apply {
-      val cm = new CatalogManager()
-      cm.setUseStaticCatalog(false)
-      val cr = new CatalogResolver(cm)
-      val cat = cm.getPrivateCatalog
-
-      val omfStore: OWLAPIOMFGraphStore
-      = OWLAPIOMFGraphStore.initGraphStore(
-        OWLAPIOMFModule
-          .owlAPIOMFModule(cm, withOMFMetadata = false)
-          .valueOr { (errors: Set[java.lang.Throwable]) =>
-            val message = s"${errors.size} errors" + errors
-              .map(_.getMessage)
-              .toList
-              .mkString("\n => ", "\n => ", "\n")
-            throw new IllegalArgumentException(message)
-          },
-        OWLManager.createOWLOntologyManager(),
-        cr,
-        cat
-      )
-
-      omfStore.catalogIRIMapper
-        .parseCatalog(catalogFile.toURI)
-        .valueOr { (errors: Set[java.lang.Throwable]) =>
-          val message = s"${errors.size} errors" + errors
-            .map(_.getMessage)
-            .toList
-            .mkString("\n => ", "\n => ", "\n")
-          throw new IllegalArgumentException(message)
-        }
-
-      \/-(omfStore -> cat)
-    }
-
-  override def convert(inCatalog: File, inputFiles: Vector[File], outputDir: File, outCatalog: File)
+  override def convert(inCatalog: Path, inputFiles: Seq[Path], outputDir: Path, outCatalog: Path)
   : OMFError.Throwables \/ Unit
   = for {
-    in_store_cat <- createOMFStoreAndLoadCatalog(inCatalog)
+    in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(inCatalog)
     (inStore, inCat) = in_store_cat
-    out_store_cat <- createOMFStoreAndLoadCatalog(outCatalog)
+    out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
     (outStore, outCat) = out_store_cat
     result <- convert(inStore, inCat, inputFiles, outputDir, outStore, outCat)
   } yield result
@@ -89,8 +63,8 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
   def convert
   (inStore: OWLAPIOMFGraphStore,
    inCat: Catalog,
-   inputFiles: Vector[File],
-   outputDir: File,
+   inputFiles: Seq[Path],
+   outputDir: Path,
    outStore: OWLAPIOMFGraphStore,
    outCat: Catalog)
   : OMFError.Throwables \/ Unit
@@ -107,7 +81,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
       } { case (acc, inputFile) =>
         for {
           prev <- acc
-          loadResult <- inStore.loadModule(prev, inputFile)
+          loadResult <- inStore.loadModule(prev, inputFile.toIO)
           (_, next) = loadResult
         } yield next
       }
@@ -193,6 +167,8 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         System.out.println(s"convert from OWL(gorder): ${g.iri} => $omlIRI")
       }
 
+      // 1) Convert from OMF/OWLAPI => OML Tables
+
       tables <- OMFTabularExport.toTables[OWLAPIOMF](gorder)(inStore, inStore.ops)
 
       _ = {
@@ -223,6 +199,8 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
         } yield ()
       }
+
+      // 2) Convert from OML Tables => OML Resolver
 
       omlUUIDg = JVMUUIDGenerator()
 
@@ -294,6 +272,8 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
       extents = resolved.otherContexts
 
+      // 3) Convert from OML Resolver => OML Textual Concrete Syntax
+
       rs = OMLResourceSet.initializeResourceSet()
 
       r2t <- extents.foldLeft {
@@ -341,6 +321,8 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
             }
         } yield ()
       }
+
+      // 4) Convert from OML Resolver => OMF/OWLAPI again
 
       out_drc <- outStore.loadBuiltinDatatypeMap()
 

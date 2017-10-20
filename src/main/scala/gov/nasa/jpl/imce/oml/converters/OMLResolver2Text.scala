@@ -62,7 +62,21 @@ case class OMLResolver2Text
  termAxioms: Map[api.TermAxiom, terminologies.TermAxiom] = Map.empty,
  conceptTreeDisjunctions: Map[api.ConceptTreeDisjunction, bundles.ConceptTreeDisjunction] = Map.empty,
  disjointUnionOfConceptAxioms: Map[api.DisjointUnionOfConceptsAxiom, bundles.DisjointUnionOfConceptsAxiom] = Map.empty,
- conceptualEntitySingletonInstances: Map[api.ConceptualEntitySingletonInstance, descriptions.ConceptualEntitySingletonInstance] = Map.empty) {
+ conceptualEntitySingletonInstances: Map[api.ConceptualEntitySingletonInstance, descriptions.ConceptualEntitySingletonInstance] = Map.empty,
+
+ chainRules: Map[api.ChainRule, terminologies.ChainRule] = Map.empty,
+ ruleBodySegments: Map[api.RuleBodySegment, terminologies.RuleBodySegment] = Map.empty,
+ aspectPredicates: Map[api.AspectPredicate, terminologies.AspectPredicate] = Map.empty,
+ conceptPredicates: Map[api.ConceptPredicate, terminologies.ConceptPredicate] = Map.empty,
+ reifiedRelationshipPredicates: Map[api.ReifiedRelationshipPredicate, terminologies.ReifiedRelationshipPredicate] = Map.empty,
+ reifiedRelationshipPropertyPredicates: Map[api.ReifiedRelationshipPropertyPredicate, terminologies.ReifiedRelationshipPropertyPredicate] = Map.empty,
+ reifiedRelationshipInversePropertyPredicates: Map[api.ReifiedRelationshipInversePropertyPredicate, terminologies.ReifiedRelationshipInversePropertyPredicate] = Map.empty,
+ reifiedRelationshipSourcePropertyPredicates: Map[api.ReifiedRelationshipSourcePropertyPredicate, terminologies.ReifiedRelationshipSourcePropertyPredicate] = Map.empty,
+ reifiedRelationshipSourceInversePropertyPredicates: Map[api.ReifiedRelationshipSourceInversePropertyPredicate, terminologies.ReifiedRelationshipSourceInversePropertyPredicate] = Map.empty,
+ reifiedRelationshipTargetPropertyPredicates: Map[api.ReifiedRelationshipTargetPropertyPredicate, terminologies.ReifiedRelationshipTargetPropertyPredicate] = Map.empty,
+ reifiedRelationshipTargetInversePropertyPredicates: Map[api.ReifiedRelationshipTargetInversePropertyPredicate, terminologies.ReifiedRelationshipTargetInversePropertyPredicate] = Map.empty,
+ unreifiedRelationshipPropertyPredicates: Map[api.UnreifiedRelationshipPropertyPredicate, terminologies.UnreifiedRelationshipPropertyPredicate] = Map.empty,
+ unreifiedRelationshipInversePropertyPredicates: Map[api.UnreifiedRelationshipInversePropertyPredicate, terminologies.UnreifiedRelationshipInversePropertyPredicate] = Map.empty) {
 
   def moduleLookup(m: api.Module)
   : Option[common.Module]
@@ -140,9 +154,9 @@ object OMLResolver2Text {
   : EMFProblems \/ OMLResolver2Text
   = for {
     iri <-
-    ( extent.terminologyGraphs.toList,
+    (extent.terminologyGraphs.toList,
       extent.bundles.toList,
-      extent.descriptionBoxes.toList ) match {
+      extent.descriptionBoxes.toList) match {
       case (g :: Nil, Nil, Nil) =>
         g._2.iri.right
       case (Nil, b :: Nil, Nil) =>
@@ -151,8 +165,8 @@ object OMLResolver2Text {
         d._2.iri.right
       case (gs, bs, ds) =>
         new EMFProblems(new java.lang.IllegalArgumentException(
-          s"OMLResolver2Text.convert: extent must have a single TerminologyGraph, Bundle or DescriptionBox: "+
-          s" got ${gs.size} TerminologyGraphs, ${bs.size} Bundles, ${ds.size} DescriptionBoxes")).left
+          s"OMLResolver2Text.convert: extent must have a single TerminologyGraph, Bundle or DescriptionBox: " +
+            s" got ${gs.size} TerminologyGraphs, ${bs.size} Bundles, ${ds.size} DescriptionBoxes")).left
     }
 
     _ = java.lang.System.out.println(s"==> OMLResolver2Text converting: $iri")
@@ -225,6 +239,9 @@ object OMLResolver2Text {
 
     c60 <- c52.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c52.right[EMFProblems])(convertRootConceptTaxonomyAxiom)
 
+    // ChainRule, RuleBodySegment, SegmentPredicates
+    c70 <- c60.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c60.right[EMFProblems])(convertChainRule)
+
     // ConceptualEntityInstances
     // @TODO
 
@@ -241,7 +258,7 @@ object OMLResolver2Text {
     _ = java.lang.System.out.println(s"==> OMLResolver2Text  converted: $iri")
   } yield result
 
-  def normalizeName(n: String): String = n.replaceAll("[.]","_")
+  def normalizeName(n: String): String = n.replaceAll("[.]", "_")
 
   // Module
 
@@ -257,59 +274,63 @@ object OMLResolver2Text {
 
   protected val convertTerminologyGraph
   : (ConversionResult, (UUID, api.TerminologyGraph)) => ConversionResult
-  = { case (acc, (_, g0)) =>
-    for {
-      r2t <- acc
-      g1 = graphs.GraphsFactory.eINSTANCE.createTerminologyGraph()
-      _ = g1.setExtent(r2t.omlExtent)
-      _ = g1.setKind(convertTerminologyKind(g0.kind))
-      _ = g1.setIri(g0.iri)
-    } yield r2t.copy(conversions = r2t.conversions.copy(gs = r2t.conversions.gs + (g0 -> g1)))
+  = {
+    case (acc, (_, g0)) =>
+      for {
+        r2t <- acc
+        g1 = graphs.GraphsFactory.eINSTANCE.createTerminologyGraph()
+        _ = g1.setExtent(r2t.omlExtent)
+        _ = g1.setKind(convertTerminologyKind(g0.kind))
+        _ = g1.setIri(g0.iri)
+      } yield r2t.copy(conversions = r2t.conversions.copy(gs = r2t.conversions.gs + (g0 -> g1)))
   }
 
   protected val convertBundle
   : (ConversionResult, (UUID, api.Bundle)) => ConversionResult
-  = { case (acc, (_, b0)) =>
-    for {
-      r2t <- acc
-      b1 = bundles.BundlesFactory.eINSTANCE.createBundle()
-      _ = b1.setExtent(r2t.omlExtent)
-      _ = b1.setKind(convertTerminologyKind(b0.kind))
-      _ = b1.setIri(b0.iri)
-    } yield r2t.copy(conversions = r2t.conversions.copy(bs = r2t.conversions.bs + (b0 -> b1)))
+  = {
+    case (acc, (_, b0)) =>
+      for {
+        r2t <- acc
+        b1 = bundles.BundlesFactory.eINSTANCE.createBundle()
+        _ = b1.setExtent(r2t.omlExtent)
+        _ = b1.setKind(convertTerminologyKind(b0.kind))
+        _ = b1.setIri(b0.iri)
+      } yield r2t.copy(conversions = r2t.conversions.copy(bs = r2t.conversions.bs + (b0 -> b1)))
   }
 
   protected val convertDescription
   : (ConversionResult, (UUID, api.DescriptionBox)) => ConversionResult
-  = { case (acc, (_, d0)) =>
-    for {
-      r2t <- acc
-      d1 = descriptions.DescriptionsFactory.eINSTANCE.createDescriptionBox()
-      _ = d1.setExtent(r2t.omlExtent)
-      _ = d1.setKind(convertDescriptionKind(d0.kind))
-      _ = d1.setIri(d0.iri)
-    } yield r2t.copy(conversions = r2t.conversions.copy(ds = r2t.conversions.ds + (d0 -> d1)))
+  = {
+    case (acc, (_, d0)) =>
+      for {
+        r2t <- acc
+        d1 = descriptions.DescriptionsFactory.eINSTANCE.createDescriptionBox()
+        _ = d1.setExtent(r2t.omlExtent)
+        _ = d1.setKind(convertDescriptionKind(d0.kind))
+        _ = d1.setIri(d0.iri)
+      } yield r2t.copy(conversions = r2t.conversions.copy(ds = r2t.conversions.ds + (d0 -> d1)))
   }
 
   // AnnotationProperty
 
   protected val convertAnnotationProperty
   : (ConversionResult, (UUID, api.AnnotationProperty)) => ConversionResult
-  = { case (acc, (_, ap0)) =>
-    for {
-      r2t <- acc
-      next = r2t.conversions.aps.get(ap0) match {
-        case None =>
-          val ap1 = common.CommonFactory.eINSTANCE.createAnnotationProperty()
-          ap1.setExtent(r2t.omlExtent)
-          ap1.setAbbrevIRI(ap0.abbrevIRI)
-          ap1.setIri(ap0.iri)
-//          java.lang.System.out.println(s"convertAnnotationProperty[${r2t.iri}](abbrevIRI=${ap0.abbrevIRI}, iri=${ap0.iri}")
-          r2t.copy(conversions = r2t.conversions.copy(aps = r2t.conversions.aps + (ap0 -> ap1)))
-        case Some(_) =>
-          r2t
-      }
-    } yield next
+  = {
+    case (acc, (_, ap0)) =>
+      for {
+        r2t <- acc
+        next = r2t.conversions.aps.get(ap0) match {
+          case None =>
+            val ap1 = common.CommonFactory.eINSTANCE.createAnnotationProperty()
+            ap1.setExtent(r2t.omlExtent)
+            ap1.setAbbrevIRI(ap0.abbrevIRI)
+            ap1.setIri(ap0.iri)
+            //          java.lang.System.out.println(s"convertAnnotationProperty[${r2t.iri}](abbrevIRI=${ap0.abbrevIRI}, iri=${ap0.iri}")
+            r2t.copy(conversions = r2t.conversions.copy(aps = r2t.conversions.aps + (ap0 -> ap1)))
+          case Some(_) =>
+            r2t
+        }
+      } yield next
   }
 
   // TerminologyExtensions
@@ -512,8 +533,8 @@ object OMLResolver2Text {
         r2t <- acc
         rr1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationship()
         upd <- (r2t.conversions.tboxLookup(t0),
-        r2t.conversions.entityLookup(rr0.source),
-        r2t.conversions.entityLookup(rr0.target)) match {
+          r2t.conversions.entityLookup(rr0.source),
+          r2t.conversions.entityLookup(rr0.target)) match {
           case (Some(t1), Some(rs1), Some(rt1)) =>
             rr1.setTbox(t1)
             rr1.setName(normalizeName(rr0.name))
@@ -1011,4 +1032,218 @@ object OMLResolver2Text {
     }
   }
 
+  protected val convertChainRule
+  : (ConversionResult, (api.TerminologyBoxStatement, api.TerminologyBox)) => ConversionResult
+  = {
+    case (acc, (ax0: api.ChainRule, t0: api.TerminologyGraph)) =>
+      for {
+        r2t <- acc
+        ax1 = terminologies.TerminologiesFactory.eINSTANCE.createChainRule()
+        upd <- (
+          r2t.conversions.gs.get(t0),
+          r2t.conversions.unreifiedRelationships.get(ax0.head),
+          r2t.extent.firstSegment.get(ax0)) match {
+          case (
+            Some(t1),
+            Some(h1),
+            Some(s0)) =>
+            r2t.extent.predicate.get(s0) match {
+              case Some(p0) =>
+                ax1.setTbox(t1)
+                ax1.setHead(h1)
+                ax1.setName(ax0.name)
+                val next = r2t.copy(conversions = r2t.conversions.copy(chainRules =
+                  r2t.conversions.chainRules + (ax0 -> ax1)))
+                convertRuleBodySegmentPredicate(next, s0, Some(ax1), None, p0)
+              case _ =>
+                new EMFProblems(new java.lang.IllegalArgumentException(
+                  s"convertChainRule: Failed to resolve " +
+                    s"tbox: $t0" +
+                    s" unreified relationship: ${ax0.head}" +
+                    s" first segment for $ax0")).left[ConversionState]
+            }
+          case (t1, h2, s0) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertChainRule: Failed to resolve $ax0\n" +
+                s"tbox: $t0\n" +
+                s"=> $t1\n" +
+                s"unreified relationship: ${ax0.head}\n" +
+                s"=> $h2\n" +
+                s"first segment? $s0")).left[ConversionState]
+        }
+      } yield upd
+    case (acc, _) =>
+      acc
+  }
+
+  protected def convertPredicate
+  (r2t0: ConversionState,
+   predicate: api.SegmentPredicate)
+  : EMFProblems \/ (terminologies.SegmentPredicate,ConversionState)
+  = predicate match {
+    case p0: api.AspectPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createAspectPredicate()
+      r2t0.conversions.aspects.get(p0.aspect) match {
+        case Some(a1) =>
+          p1.setAspect(a1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(aspectPredicates =
+            r2t0.conversions.aspectPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"AspectPredicate: $p0")).left
+      }
+    case p0: api.ConceptPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createConceptPredicate()
+      r2t0.conversions.concepts.get(p0.concept) match {
+        case Some(c1) =>
+          p1.setConcept(c1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(conceptPredicates =
+            r2t0.conversions.conceptPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"ConceptPredicate: $p0")).left
+      }
+    case p0: api.ReifiedRelationshipPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipPredicate()
+      r2t0.conversions.reifiedRelationships.get(p0.reifiedRelationship) match {
+        case Some(rr1) =>
+          p1.setReifiedRelationship(rr1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(reifiedRelationshipPredicates =
+            r2t0.conversions.reifiedRelationshipPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"ReifiedRelationshipPredicate: $p0")).left
+      }
+    case p0: api.ReifiedRelationshipPropertyPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipPropertyPredicate()
+      r2t0.conversions.reifiedRelationships.get(p0.reifiedRelationship) match {
+        case Some(rr1) =>
+          p1.setReifiedRelationship(rr1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(reifiedRelationshipPropertyPredicates =
+            r2t0.conversions.reifiedRelationshipPropertyPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"ReifiedRelationshipPropertyPredicate: $p0")).left
+      }
+    case p0: api.ReifiedRelationshipInversePropertyPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipInversePropertyPredicate()
+      r2t0.conversions.reifiedRelationships.get(p0.reifiedRelationship) match {
+        case Some(rr1) =>
+          p1.setReifiedRelationship(rr1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(reifiedRelationshipInversePropertyPredicates =
+            r2t0.conversions.reifiedRelationshipInversePropertyPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"ReifiedRelationshipInversePropertyPredicate: $p0")).left
+      }
+    case p0: api.ReifiedRelationshipSourcePropertyPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipSourcePropertyPredicate()
+      r2t0.conversions.reifiedRelationships.get(p0.reifiedRelationship) match {
+        case Some(rr1) =>
+          p1.setReifiedRelationship(rr1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(reifiedRelationshipSourcePropertyPredicates =
+            r2t0.conversions.reifiedRelationshipSourcePropertyPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"ReifiedRelationshipSourcePropertyPredicate: $p0")).left
+      }
+    case p0: api.ReifiedRelationshipSourceInversePropertyPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipSourceInversePropertyPredicate()
+      r2t0.conversions.reifiedRelationships.get(p0.reifiedRelationship) match {
+        case Some(rr1) =>
+          p1.setReifiedRelationship(rr1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(reifiedRelationshipSourceInversePropertyPredicates =
+            r2t0.conversions.reifiedRelationshipSourceInversePropertyPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"ReifiedRelationshipSourceInversePropertyPredicate: $p0")).left
+      }
+    case p0: api.ReifiedRelationshipTargetPropertyPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipTargetPropertyPredicate()
+      r2t0.conversions.reifiedRelationships.get(p0.reifiedRelationship) match {
+        case Some(rr1) =>
+          p1.setReifiedRelationship(rr1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(reifiedRelationshipTargetPropertyPredicates =
+            r2t0.conversions.reifiedRelationshipTargetPropertyPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"ReifiedRelationshipTargetPropertyPredicate: $p0")).left
+      }
+    case p0: api.ReifiedRelationshipTargetInversePropertyPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipTargetInversePropertyPredicate()
+      r2t0.conversions.reifiedRelationships.get(p0.reifiedRelationship) match {
+        case Some(rr1) =>
+          p1.setReifiedRelationship(rr1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(reifiedRelationshipTargetInversePropertyPredicates =
+            r2t0.conversions.reifiedRelationshipTargetInversePropertyPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"ReifiedRelationshipTargetInversePropertyPredicate: $p0")).left
+      }
+    case p0: api.UnreifiedRelationshipPropertyPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createUnreifiedRelationshipPropertyPredicate()
+      r2t0.conversions.unreifiedRelationships.get(p0.unreifiedRelationship) match {
+        case Some(ur1) =>
+          p1.setUnreifiedRelationship(ur1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(unreifiedRelationshipPropertyPredicates =
+            r2t0.conversions.unreifiedRelationshipPropertyPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"UnreifiedRelationshipPropertyPredicate: $p0")).left
+      }
+    case p0: api.UnreifiedRelationshipInversePropertyPredicate =>
+      val p1 = terminologies.TerminologiesFactory.eINSTANCE.createUnreifiedRelationshipInversePropertyPredicate()
+      r2t0.conversions.unreifiedRelationships.get(p0.unreifiedRelationship) match {
+        case Some(ur1) =>
+          p1.setUnreifiedRelationship(ur1)
+          (p1, r2t0.copy(conversions = r2t0.conversions.copy(unreifiedRelationshipInversePropertyPredicates =
+            r2t0.conversions.unreifiedRelationshipInversePropertyPredicates + (p0 -> p1)))).right
+        case None =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRuleBodySegmentPredicate: Failed to resolve " +
+              s"UnreifiedRelationshipInversePropertyPredicate: $p0")).left
+      }
+  }
+
+  @scala.annotation.tailrec
+  protected final def convertRuleBodySegmentPredicate
+  (r2t0: ConversionState,
+   s0: api.RuleBodySegment,
+   rule: Option[terminologies.ChainRule],
+   previousSegment: Option[terminologies.RuleBodySegment],
+   predicate: api.SegmentPredicate)
+  : ConversionResult
+  = convertPredicate(r2t0, predicate) match {
+    case \/-((p1, r2t1)) =>
+      val s1 = terminologies.TerminologiesFactory.eINSTANCE.createRuleBodySegment()
+      val r2t2 = r2t1.copy(conversions = r2t1.conversions.copy(ruleBodySegments =
+        r2t1.conversions.ruleBodySegments + (s0 -> s1)))
+      s1.setPredicate(p1)
+      rule.foreach(s1.setRule)
+      previousSegment.foreach(s1.setPreviousSegment)
+      r2t2.extent.nextSegment.get(s0) match {
+        case Some(n0) =>
+          r2t2.extent.predicate.get(n0) match {
+            case Some(p0) =>
+              convertRuleBodySegmentPredicate(r2t2, n0, None, Some(s1), p0)
+            case None =>
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"convertRuleBodySegmentPredicate: Failed to resolve predicate $n0")).left
+          }
+        case None =>
+          r2t2.right
+      }
+    case -\/(errors) =>
+      -\/(errors)
+  }
 }
