@@ -16,10 +16,11 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.converters
+package gov.nasa.jpl.imce.oml.converters.internal
 
 import java.util.UUID
 
+import gov.nasa.jpl.imce.oml.converters.tables2emf
 import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable.filterable
 import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model._
@@ -63,6 +64,13 @@ case class OMLResolver2Text
  conceptTreeDisjunctions: Map[api.ConceptTreeDisjunction, bundles.ConceptTreeDisjunction] = Map.empty,
  disjointUnionOfConceptAxioms: Map[api.DisjointUnionOfConceptsAxiom, bundles.DisjointUnionOfConceptsAxiom] = Map.empty,
  conceptualEntitySingletonInstances: Map[api.ConceptualEntitySingletonInstance, descriptions.ConceptualEntitySingletonInstance] = Map.empty,
+ reifiedRelationshipInstanceDomains: Map[api.ReifiedRelationshipInstanceDomain, descriptions.ReifiedRelationshipInstanceDomain] = Map.empty,
+ reifiedRelationshipInstanceRanges: Map[api.ReifiedRelationshipInstanceRange, descriptions.ReifiedRelationshipInstanceRange] = Map.empty,
+ unreifiedRelationshipInstanceTuples: Map[api.UnreifiedRelationshipInstanceTuple, descriptions.UnreifiedRelationshipInstanceTuple] = Map.empty,
+ singletonInstanceStructuredDataPropertyValues: Map[api.SingletonInstanceStructuredDataPropertyValue, descriptions.SingletonInstanceStructuredDataPropertyValue] = Map.empty,
+ singletonInstanceScalarDataPropertyValues: Map[api.SingletonInstanceScalarDataPropertyValue, descriptions.SingletonInstanceScalarDataPropertyValue] = Map.empty,
+ structuredDataPropertyTuples: Map[api.StructuredDataPropertyTuple, descriptions.StructuredDataPropertyTuple] = Map.empty,
+ scalarDataPropertyValues: Map[api.ScalarDataPropertyValue, descriptions.ScalarDataPropertyValue] = Map.empty,
 
  chainRules: Map[api.ChainRule, terminologies.ChainRule] = Map.empty,
  ruleBodySegments: Map[api.RuleBodySegment, terminologies.RuleBodySegment] = Map.empty,
@@ -135,6 +143,91 @@ case class OMLResolver2Text
     case sdp: api.ScalarDataProperty =>
       scalarDataProperties.get(sdp)
   }
+
+  def structuredDataPropertyContext(sdpt: api.SingletonInstanceStructuredDataPropertyContext)
+  : Option[descriptions.SingletonInstanceStructuredDataPropertyContext]
+  = sdpt match {
+    case ac: api.SingletonInstanceStructuredDataPropertyValue =>
+      singletonInstanceStructuredDataPropertyValues.get(ac)
+    case ac: api.StructuredDataPropertyTuple =>
+      structuredDataPropertyTuples.get(ac)
+    }
+
+  def elementLookup(e: api.Element)
+  : Option[common.Element]
+  = e match {
+    case m: api.Module =>
+      moduleLookup(m)
+
+    case t: api.Entity =>
+      entityLookup(t)
+    case r: api.EntityRelationship =>
+      entityRelationshipLookup(r)
+
+    case d: api.DataRange =>
+      dataRanges.get(d)
+    case d: api.Structure =>
+      structures.get(d)
+    case l: api.ScalarOneOfLiteralAxiom =>
+      scalarOneOfLiterals.get(l)
+
+    case dp: api.DataRelationshipToStructure =>
+      dataRelationshipToStructureLookup(dp)
+    case dp: api.DataRelationshipToScalar =>
+      dataRelationshipToScalarLookup(dp)
+
+    case me: api.ModuleEdge =>
+      moduleEdges.get(me)
+    case ax: api.TermAxiom =>
+      termAxioms.get(ax)
+    case ax: api.ConceptTreeDisjunction =>
+      conceptTreeDisjunctions.get(ax)
+    case ax: api.DisjointUnionOfConceptsAxiom =>
+      disjointUnionOfConceptAxioms.get(ax)
+    case ax: api.ConceptualEntitySingletonInstance =>
+      conceptualEntitySingletonInstances.get(ax)
+    case ax: api.ReifiedRelationshipInstanceDomain =>
+      reifiedRelationshipInstanceDomains.get(ax)
+    case ax: api.ReifiedRelationshipInstanceRange =>
+			reifiedRelationshipInstanceRanges.get(ax)
+    case ax: api.UnreifiedRelationshipInstanceTuple =>
+			unreifiedRelationshipInstanceTuples.get(ax)
+    case ax: api.SingletonInstanceStructuredDataPropertyValue =>
+			singletonInstanceStructuredDataPropertyValues.get(ax)
+    case ax: api.SingletonInstanceScalarDataPropertyValue =>
+			singletonInstanceScalarDataPropertyValues.get(ax)
+    case ax: api.StructuredDataPropertyTuple =>
+			structuredDataPropertyTuples.get(ax)
+    case ax: api.ScalarDataPropertyValue =>
+			scalarDataPropertyValues.get(ax)
+    case ax: api.ChainRule =>
+			chainRules.get(ax)
+    case ax: api.RuleBodySegment =>
+			ruleBodySegments.get(ax)
+    case ax: api.AspectPredicate =>
+			aspectPredicates.get(ax)
+    case ax: api.ConceptPredicate =>
+			conceptPredicates.get(ax)
+    case ax: api.ReifiedRelationshipPredicate =>
+			reifiedRelationshipPredicates.get(ax)
+    case ax: api.ReifiedRelationshipPropertyPredicate =>
+			reifiedRelationshipPropertyPredicates.get(ax)
+    case ax: api.ReifiedRelationshipInversePropertyPredicate =>
+			reifiedRelationshipInversePropertyPredicates.get(ax)
+    case ax: api.ReifiedRelationshipSourcePropertyPredicate =>
+			reifiedRelationshipSourcePropertyPredicates.get(ax)
+    case ax: api.ReifiedRelationshipSourceInversePropertyPredicate =>
+			reifiedRelationshipSourceInversePropertyPredicates.get(ax)
+    case ax: api.ReifiedRelationshipTargetPropertyPredicate =>
+			reifiedRelationshipTargetPropertyPredicates.get(ax)
+    case ax: api.ReifiedRelationshipTargetInversePropertyPredicate =>
+			reifiedRelationshipTargetInversePropertyPredicates.get(ax)
+    case ax: api.UnreifiedRelationshipPropertyPredicate =>
+			unreifiedRelationshipPropertyPredicates.get(ax)
+    case ax: api.UnreifiedRelationshipInversePropertyPredicate =>
+			unreifiedRelationshipInversePropertyPredicates.get(ax)
+  }
+
 }
 
 object OMLResolver2Text {
@@ -229,7 +322,7 @@ object OMLResolver2Text {
     // Restrictions
 
     c50 <- c43.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c43.right[EMFProblems])(convertEntityRestrictionAxiom)
-    c51 <- c50.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c50.right[EMFProblems])(convertEntityScalarDataPropertyRestrictionAxiom)
+    c51 <- c50.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c50.right[EMFProblems])(convertDataPropertyRestrictionAxiom(extent))
 
     // Specializations
 
@@ -243,15 +336,23 @@ object OMLResolver2Text {
     c70 <- c60.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c60.right[EMFProblems])(convertChainRule)
 
     // ConceptualEntityInstances
-    // @TODO
+    c80 <- c70.extent.descriptionBoxOfConceptInstance.foldLeft(c70.right[EMFProblems])(convertConceptInstance)
+    c81 <- c80.extent.descriptionBoxOfReifiedRelationshipInstance.foldLeft(c80.right[EMFProblems])(convertReifiedRelationshipInstance)
+    c82 <- c81.extent.descriptionBoxOfReifiedRelationshipInstanceDomain.foldLeft(c81.right[EMFProblems])(convertReifiedRelationshipInstanceDomain)
+    c83 <- c82.extent.descriptionBoxOfReifiedRelationshipInstanceRange.foldLeft(c82.right[EMFProblems])(convertReifiedRelationshipInstanceRange)
+    c84 <- c83.extent.descriptionBoxOfUnreifiedRelationshipInstanceTuple.foldLeft(c83.right[EMFProblems])(convertUnreifiedRelationshipInstanceTuple)
 
     // Data Property Values
-    // @TODO
+    c90 <- c84.extent.descriptionBoxOfSingletonInstanceStructuredDataPropertyValue.foldLeft(c84.right[EMFProblems])(convertSingletonInstanceStructuredDataPropertyValue)
+    c91 <- c90.extent.descriptionBoxOfSingletonInstanceScalarDataPropertyValue.foldLeft(c90.right[EMFProblems])(convertSingletonInstanceScalarDataPropertyValue)
+    c92 <- c91.extent.singletonInstanceStructuredDataPropertyContextOfStructuredDataPropertyTuple.foldLeft(c91.right[EMFProblems])(convertStructuredDataPropertyTuple)
+    c93 <- c92.extent.singletonInstanceStructuredDataPropertyContextOfScalarDataPropertyValue.foldLeft(c92.right[EMFProblems])(convertScalarDataPropertyValue)
 
     // Annotations
+    c100 <- c93.extent.elementOfAnnotationPropertyValue.keys.foldLeft(c93.right[EMFProblems])(convertAnnotationPropertyValue)
 
     // Finished!
-    cDone = c60
+    cDone = c100
 
     result = cDone.conversions
 
@@ -890,7 +991,8 @@ object OMLResolver2Text {
       acc
   }
 
-  protected val convertEntityScalarDataPropertyRestrictionAxiom
+  protected def convertDataPropertyRestrictionAxiom
+  (ext: api.Extent)
   : (ConversionResult, (api.TerminologyBoxStatement, api.TerminologyBox)) => ConversionResult
   = {
     case (acc, (er0: api.EntityScalarDataPropertyRestrictionAxiom, t0)) =>
@@ -916,14 +1018,124 @@ object OMLResolver2Text {
             r2t.copy(conversions = r2t.conversions.copy(termAxioms = r2t.conversions.termAxioms + (er0 -> er1))).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertEntityScalarDataPropertyRestrictionAxiom: Failed to resolve " +
+              s"convertDataPropertyRestrictionAxiom: Failed to resolve " +
                 s"tbox: $t0" +
                 s" for defining EntityScalarDataPropertyRestrictionAxiom: $er0")).left[ConversionState]
+        }
+      } yield upd
+    case (acc, (er0: api.EntityStructuredDataPropertyParticularRestrictionAxiom, t0)) =>
+      for {
+        r2t1 <- acc
+        upd <-
+        (r2t1.conversions.tboxLookup(t0),
+          r2t1.conversions.entityLookup(er0.restrictedEntity),
+          r2t1.conversions.dataRelationshipToStructureLookup(er0.structuredDataProperty)) match {
+          case (Some(t1), Some(e1), Some(dp1)) =>
+            val er1 = terminologies.TerminologiesFactory.eINSTANCE.createEntityStructuredDataPropertyParticularRestrictionAxiom()
+            er1.setTbox(t1)
+            er1.setRestrictedEntity(e1)
+            er1.setStructuredDataProperty(dp1)
+            val r2t2 =
+              r2t1.copy(conversions = r2t1.conversions.copy(termAxioms = r2t1.conversions.termAxioms + (er0 -> er1)))
+            val next =
+              convertRestrictionStructuredDataPropertyContext(ext, r2t2, Seq(er0 -> er1))
+            next
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertDataPropertyRestrictionAxiom: Failed to resolve " +
+                s"tbox: $t0" +
+                s" for defining EntityStructuredDataPropertyParticularRestrictionAxiom: $er0")).left[ConversionState]
         }
       } yield upd
     case (acc, _) =>
       acc
   }
+
+  @scala.annotation.tailrec
+  protected final def convertRestrictionStructuredDataPropertyContext
+  (ext: api.Extent,
+   r2t: ConversionState,
+   cs: Seq[(api.RestrictionStructuredDataPropertyContext, terminologies.RestrictionStructuredDataPropertyContext)])
+  : ConversionResult
+  = if (cs.isEmpty)
+    r2t.right
+  else {
+    val (c0, c1) = cs.head
+    val values
+    : EMFProblems \/ ConversionState
+    = ext
+      .restrictionStructuredDataPropertyContextOfRestrictionScalarDataPropertyValue
+      .foldLeft(r2t.right[EMFProblems]) { case (acc, (vi, ci)) =>
+        if (c0 != ci)
+          acc
+        else
+          for {
+            r2t1 <- acc
+            dp <- r2t1.conversions.dataRelationshipToScalarLookup(vi.scalarDataProperty) match {
+              case Some(dp1) =>
+                dp1.right[EMFProblems]
+              case None =>
+                new EMFProblems(new java.lang.IllegalArgumentException(
+                  s"convertRestrictionStructuredDataPropertyContext: failed to resolved scalar data property; ${vi.scalarDataProperty}"
+                )).left
+            }
+            vt <- vi.valueType match {
+              case Some(dt0) =>
+                r2t1.conversions.dataRanges.get(dt0) match {
+                  case Some(dt1) =>
+                    Option(dt1).right[EMFProblems]
+                  case None =>
+                    new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"convertRestrictionStructuredDataPropertyContext: failed to resolved data range; $dt0"
+                    )).left
+                }
+              case None =>
+                Option.empty[terminologies.DataRange].right[EMFProblems]
+            }
+            vj = terminologies.TerminologiesFactory.eINSTANCE.createRestrictionScalarDataPropertyValue()
+            _ = vj.setStructuredDataPropertyContext(c1)
+            _ = vj.setScalarDataProperty(dp)
+            _ = vj.setScalarPropertyValue(tables2emf(vi.scalarPropertyValue))
+            _ = vt.foreach(vj.setValueType)
+          } yield r2t1
+      }
+
+    val tuples
+    : EMFProblems \/
+      (ConversionState, Seq[(api.RestrictionStructuredDataPropertyContext, terminologies.RestrictionStructuredDataPropertyContext)])
+    = ext
+      .restrictionStructuredDataPropertyContextOfRestrictionStructuredDataPropertyTuple
+      .foldLeft {
+        values.map(_ -> cs.tail)
+      } { case (acc, (ti, ci)) =>
+        if (c0 != ci)
+          acc
+        else
+          for {
+            tuple <- acc
+            (r2t1, queue) = tuple
+            dp <- r2t1.conversions.dataRelationshipToStructureLookup(ti.structuredDataProperty) match {
+              case Some(dp1) =>
+                dp1.right[EMFProblems]
+              case None =>
+                new EMFProblems(new java.lang.IllegalArgumentException(
+                  s"convertRestrictionStructuredDataPropertyContext: failed to resolved structured data property; ${ti.structuredDataProperty}"
+                )).left
+            }
+            tj = terminologies.TerminologiesFactory.eINSTANCE.createRestrictionStructuredDataPropertyTuple()
+            _ = tj.setStructuredDataPropertyContext(c1)
+            _ = tj.setStructuredDataProperty(dp)
+          } yield r2t1 -> (queue :+ (ti -> tj))
+      }
+
+    tuples match {
+      case \/-((next, queue)) =>
+        convertRestrictionStructuredDataPropertyContext(ext, next, queue)
+      case -\/(errors) =>
+        -\/(errors)
+    }
+  }
+
 
   protected val convertSpecializationAxiom
   : (ConversionResult, (api.TerminologyBoxStatement, api.TerminologyBox)) => ConversionResult
@@ -1245,5 +1457,278 @@ object OMLResolver2Text {
       }
     case -\/(errors) =>
       -\/(errors)
+  }
+
+  protected val convertConceptInstance
+  : (ConversionResult, (api.ConceptInstance, api.DescriptionBox)) => ConversionResult
+  = {
+    case (acc, (ci0, d0)) =>
+      for {
+        r2t <- acc
+        ci1 = descriptions.DescriptionsFactory.eINSTANCE.createConceptInstance()
+        upd <- (
+          r2t.conversions.ds.get(d0),
+          r2t.conversions.concepts.get(ci0.singletonConceptClassifier)) match {
+          case (Some(d1), Some(c1)) =>
+            ci1.setDescriptionBox(d1)
+            ci1.setName(normalizeName(ci0.name))
+            ci1.setSingletonConceptClassifier(c1)
+            r2t.copy(conversions = r2t.conversions.copy(conceptualEntitySingletonInstances = r2t.conversions.conceptualEntitySingletonInstances + (ci0 -> ci1))).right
+          case (d1, c1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertConceptInstance: Failed to resolve " +
+                d1.fold(s" dbox: ${d0.iri}")(_ => "") +
+                c1.fold(s" concept: ${ci0.singletonConceptClassifier}")(_ => ""))
+            ).left
+        }
+      } yield upd
+  }
+
+  protected val convertReifiedRelationshipInstance
+  : (ConversionResult, (api.ReifiedRelationshipInstance, api.DescriptionBox)) => ConversionResult
+  = {
+    case (acc, (rri0, d0)) =>
+      for {
+        r2t <- acc
+        rri1 = descriptions.DescriptionsFactory.eINSTANCE.createReifiedRelationshipInstance()
+        upd <- (
+          r2t.conversions.ds.get(d0),
+          r2t.conversions.reifiedRelationships.get(rri0.singletonReifiedRelationshipClassifier)) match {
+          case (Some(d1), Some(rr1)) =>
+            rri1.setDescriptionBox(d1)
+            rri1.setName(normalizeName(rri0.name))
+            rri1.setSingletonReifiedRelationshipClassifier(rr1)
+            r2t.copy(conversions = r2t.conversions.copy(conceptualEntitySingletonInstances = r2t.conversions.conceptualEntitySingletonInstances + (rri0 -> rri1))).right
+          case (d1, rr1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertReifiedRelationshipInstance: Failed to resolve " +
+                d1.fold(s" dbox: ${d0.iri}")(_ => "") +
+                rr1.fold(s" reified relationship: ${rri0.singletonReifiedRelationshipClassifier}")(_ => ""))
+            ).left
+        }
+      } yield upd
+  }
+
+  protected val convertReifiedRelationshipInstanceDomain
+  : (ConversionResult, (api.ReifiedRelationshipInstanceDomain, api.DescriptionBox)) => ConversionResult
+  = {
+    case (acc, (rrid0, d0)) =>
+      for {
+        r2t <- acc
+        rrid1 = descriptions.DescriptionsFactory.eINSTANCE.createReifiedRelationshipInstanceDomain()
+        upd <- (
+          r2t.conversions.ds.get(d0),
+          r2t.conversions.conceptualEntitySingletonInstances.get(rrid0.reifiedRelationshipInstance),
+          r2t.conversions.conceptualEntitySingletonInstances.get(rrid0.domain)) match {
+          case (Some(d1), Some(rri1: descriptions.ReifiedRelationshipInstance), Some(di1)) =>
+            rrid1.setDescriptionBox(d1)
+            rrid1.setReifiedRelationshipInstance(rri1)
+            rrid1.setDomain(di1)
+            r2t.copy(conversions = r2t.conversions.copy(reifiedRelationshipInstanceDomains = r2t.conversions.reifiedRelationshipInstanceDomains + (rrid0 -> rrid1))).right
+          case (d1, rr1, di1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertReifiedRelationshipInstanceDomain: Failed to resolve " +
+                d1.fold(s" dbox: ${d0.iri}")(_ => "") +
+                rr1.fold(s" reified relationship instance: ${rrid0.reifiedRelationshipInstance}")(_ => "") +
+                di1.fold(s" domain: ${rrid0.domain}")(_ => ""))
+            ).left
+        }
+      } yield upd
+  }
+
+  protected val convertReifiedRelationshipInstanceRange
+  : (ConversionResult, (api.ReifiedRelationshipInstanceRange, api.DescriptionBox)) => ConversionResult
+  = {
+    case (acc, (rrid0, d0)) =>
+      for {
+        r2t <- acc
+        rrid1 = descriptions.DescriptionsFactory.eINSTANCE.createReifiedRelationshipInstanceRange()
+        upd <- (
+          r2t.conversions.ds.get(d0),
+          r2t.conversions.conceptualEntitySingletonInstances.get(rrid0.reifiedRelationshipInstance),
+          r2t.conversions.conceptualEntitySingletonInstances.get(rrid0.range)) match {
+          case (Some(d1), Some(rri1: descriptions.ReifiedRelationshipInstance), Some(di1)) =>
+            rrid1.setDescriptionBox(d1)
+            rrid1.setReifiedRelationshipInstance(rri1)
+            rrid1.setRange(di1)
+            r2t.copy(conversions = r2t.conversions.copy(reifiedRelationshipInstanceRanges = r2t.conversions.reifiedRelationshipInstanceRanges + (rrid0 -> rrid1))).right
+          case (d1, rr1, di1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertReifiedRelationshipInstanceRange: Failed to resolve " +
+                d1.fold(s" dbox: ${d0.iri}")(_ => "") +
+                rr1.fold(s" reified relationship instance: ${rrid0.reifiedRelationshipInstance}")(_ => "") +
+                di1.fold(s" range: ${rrid0.range}")(_ => ""))
+            ).left
+        }
+      } yield upd
+  }
+
+  protected val convertUnreifiedRelationshipInstanceTuple
+  : (ConversionResult, (api.UnreifiedRelationshipInstanceTuple, api.DescriptionBox)) => ConversionResult
+  = {
+    case (acc, (urit0, d0)) =>
+      for {
+        r2t <- acc
+        urit1 = descriptions.DescriptionsFactory.eINSTANCE.createUnreifiedRelationshipInstanceTuple()
+        upd <- (
+          r2t.conversions.ds.get(d0),
+          r2t.conversions.unreifiedRelationships.get(urit0.unreifiedRelationship),
+          r2t.conversions.conceptualEntitySingletonInstances.get(urit0.domain),
+          r2t.conversions.conceptualEntitySingletonInstances.get(urit0.range)) match {
+          case (Some(d1), Some(ur1), Some(di1), Some(ri1)) =>
+            urit1.setDescriptionBox(d1)
+            urit1.setUnreifiedRelationship(ur1)
+            urit1.setDomain(di1)
+            urit1.setRange(ri1)
+            r2t.copy(conversions = r2t.conversions.copy(unreifiedRelationshipInstanceTuples = r2t.conversions.unreifiedRelationshipInstanceTuples + (urit0 -> urit1))).right
+          case (d1, ur1, di1, ri1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertUnreifiedRelationshipInstanceTuple: Failed to resolve " +
+                d1.fold(s" dbox: ${d0.iri}")(_ => "") +
+                ur1.fold(s" unreified relationship: ${urit0.unreifiedRelationship}")(_ => "") +
+                di1.fold(s" domain: ${urit0.domain}")(_ => "")+
+                ri1.fold(s" range: ${urit0.range}")(_ => ""))
+            ).left
+        }
+      } yield upd
+  }
+
+  protected val convertSingletonInstanceStructuredDataPropertyValue
+  : (ConversionResult, (api.SingletonInstanceStructuredDataPropertyValue, api.DescriptionBox)) => ConversionResult
+  = {
+    case (acc, (si0, d0)) =>
+      for {
+        r2t <- acc
+        si1 = descriptions.DescriptionsFactory.eINSTANCE.createSingletonInstanceStructuredDataPropertyValue()
+        upd <- (
+          r2t.conversions.ds.get(d0),
+          r2t.conversions.conceptualEntitySingletonInstances.get(si0.singletonInstance),
+          r2t.conversions.dataRelationshipToStructureLookup(si0.structuredDataProperty)) match {
+          case (Some(d1), Some(ce1), Some(sdp1)) =>
+            si1.setDescriptionBox(d1)
+            si1.setSingletonInstance(ce1)
+            si1.setStructuredDataProperty(sdp1)
+            r2t.copy(conversions = r2t.conversions.copy(singletonInstanceStructuredDataPropertyValues = r2t.conversions.singletonInstanceStructuredDataPropertyValues + (si0 -> si1))).right
+          case (d1, ur1, di1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertSingletonInstanceStructuredDataPropertyValue: Failed to resolve " +
+                d1.fold(s" dbox: ${d0.iri}")(_ => "") +
+                ur1.fold(s" singleton instance ${si0.singletonInstance}")(_ => "") +
+                di1.fold(s" structuredDataProperty: ${si0.structuredDataProperty}")(_ => "")
+            )).left
+        }
+      } yield upd
+  }
+
+  protected val convertSingletonInstanceScalarDataPropertyValue
+  : (ConversionResult, (api.SingletonInstanceScalarDataPropertyValue, api.DescriptionBox)) => ConversionResult
+  = {
+    case (acc, (si0, d0)) =>
+      for {
+        r2t <- acc
+        si1 = descriptions.DescriptionsFactory.eINSTANCE.createSingletonInstanceScalarDataPropertyValue()
+        upd <- (
+          r2t.conversions.ds.get(d0),
+          r2t.conversions.conceptualEntitySingletonInstances.get(si0.singletonInstance),
+          r2t.conversions.entityScalarDataProperties.get(si0.scalarDataProperty)) match {
+          case (Some(d1), Some(ce1), Some(sdp1)) =>
+            si1.setDescriptionBox(d1)
+            si1.setSingletonInstance(ce1)
+            si1.setScalarDataProperty(sdp1)
+            r2t.copy(conversions = r2t.conversions.copy(singletonInstanceScalarDataPropertyValues = r2t.conversions.singletonInstanceScalarDataPropertyValues + (si0 -> si1))).right
+          case (d1, ur1, di1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertSingletonInstanceScalarDataPropertyValue: Failed to resolve " +
+                d1.fold(s" dbox: ${d0.iri}")(_ => "") +
+                ur1.fold(s" singleton instance ${si0.singletonInstance}")(_ => "") +
+                di1.fold(s" scalarDataProperty: ${si0.scalarDataProperty}")(_ => "")
+            )).left
+        }
+      } yield upd
+  }
+
+  protected val convertStructuredDataPropertyTuple
+  : (ConversionResult, (api.StructuredDataPropertyTuple, api.SingletonInstanceStructuredDataPropertyContext)) => ConversionResult
+  = {
+    case (acc, (si0, ctx0)) =>
+      for {
+        r2t <- acc
+        si1 = descriptions.DescriptionsFactory.eINSTANCE.createStructuredDataPropertyTuple()
+        upd <- (
+          r2t.conversions.structuredDataPropertyContext(ctx0),
+          r2t.conversions.dataRelationshipToStructureLookup(si0.structuredDataProperty)) match {
+          case (Some(ctx1), Some(sdp1)) =>
+            si1.setStructuredDataPropertyContext(ctx1)
+            si1.setStructuredDataProperty(sdp1)
+            r2t.copy(conversions = r2t.conversions.copy(structuredDataPropertyTuples = r2t.conversions.structuredDataPropertyTuples + (si0 -> si1))).right
+          case (ctx1, sdp1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertStructuredDataPropertyTuple: Failed to resolve " +
+                ctx1.fold(s" structuredDataPropertyContext: $ctx0")(_ => "") +
+                sdp1.fold(s" structuredDataProperty ${si0.structuredDataProperty}")(_ => "")
+            )).left
+        }
+      } yield upd
+  }
+
+  protected val convertScalarDataPropertyValue
+  : (ConversionResult, (api.ScalarDataPropertyValue, api.SingletonInstanceStructuredDataPropertyContext)) => ConversionResult
+  = {
+    case (acc, (si0, ctx0)) =>
+      for {
+        r2t <- acc
+        si1 = descriptions.DescriptionsFactory.eINSTANCE.createScalarDataPropertyValue()
+        upd <- (
+          r2t.conversions.structuredDataPropertyContext(ctx0),
+          r2t.conversions.dataRelationshipToScalarLookup(si0.scalarDataProperty),
+          si0.valueType,
+          si0.valueType.flatMap(r2t.conversions.dataRanges.get)) match {
+          case (Some(ctx1), Some(sdp1), Some(_), Some(vt1)) =>
+            si1.setStructuredDataPropertyContext(ctx1)
+            si1.setScalarDataProperty(sdp1)
+            si1.setValueType(vt1)
+            r2t.copy(conversions = r2t.conversions.copy(scalarDataPropertyValues = r2t.conversions.scalarDataPropertyValues + (si0 -> si1))).right
+          case (Some(ctx1), Some(sdp1), None, None) =>
+            si1.setStructuredDataPropertyContext(ctx1)
+            si1.setScalarDataProperty(sdp1)
+            r2t.copy(conversions = r2t.conversions.copy(scalarDataPropertyValues = r2t.conversions.scalarDataPropertyValues + (si0 -> si1))).right
+          case (ctx1, sdp1, vt0, vt1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertScalarDataPropertyValue: Failed to resolve " +
+                ctx1.fold(s" structuredDataPropertyContext: $ctx0")(_ => "") +
+                sdp1.fold(s" scalarDataProperty ${si0.scalarDataProperty}")(_ => "") +
+                vt0.fold(s" no value type")(v0 => s" given value type: $v0") +
+                vt1.fold(s" no converted value type")(v1 => s" converted value type: $v1")
+            )).left
+        }
+      } yield upd
+  }
+
+  protected val convertAnnotationPropertyValue
+  : (ConversionResult, api.AnnotationPropertyValue) => ConversionResult
+  = {
+    case (acc, apv0) =>
+      for {
+        r2t <- acc
+        apv1 = common.CommonFactory.eINSTANCE.createAnnotationPropertyValue()
+        _ <- (
+          r2t.conversions.aps.get(apv0.property),
+          r2t.conversions.elementLookup(apv0.subject)
+        ) match {
+          case (Some(ap1), Some(e1)) =>
+            val lit = common.CommonFactory.eINSTANCE.createLiteralRawString()
+            lit.setString(new datatypes.RawStringValue(apv0.value))
+            apv1.setProperty(ap1)
+            apv1.setSubject(e1)
+            apv1.setValue(lit)
+            ().right
+          case (ap1, e1) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertAnnotationPropertyValue: Failed to resolve " +
+                ap1.fold(s" anotation property: ${apv0.property}")(_ => "") +
+                e1.fold(s" subject ${apv0.subject}")(_ => "")
+            )).left
+        }
+      } yield r2t
   }
 }

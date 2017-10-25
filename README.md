@@ -167,14 +167,17 @@ OML supports three canonical representations:
   #
   # Usage:
   # 
+  # 0) Get information about command-line options
+  # omlDirectoryConverter
+  # 
   # 1) Convert all OML textual concrete syntax files *.oml
-  # omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
+  # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
   # 
   # 2) Convert all OWL2-DL ontology syntax files *.owl
-  # omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
+  # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
   # 
   # 3) Convert all normalized tabular syntax files *.oml.json.zip
-  # omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
+  # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
   # 
   # where:
   # <oml.catalog.xml> is an OASIS XML catalog file named 'oml.catalog.xml' for resolving OML IRIs to OML files

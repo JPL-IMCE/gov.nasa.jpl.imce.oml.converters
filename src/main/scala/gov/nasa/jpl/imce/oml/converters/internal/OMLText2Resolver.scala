@@ -16,10 +16,11 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.converters
+package gov.nasa.jpl.imce.oml.converters.internal
 
 import ammonite.ops.RelPath
 
+import gov.nasa.jpl.imce.oml.converters.emf2tables
 import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model.bundles._
 import gov.nasa.jpl.imce.oml.model.common._
@@ -33,7 +34,7 @@ import gov.nasa.jpl.imce.oml.tables.{Final, Partial, DescriptionKind => TDescrip
 import scala.collection.JavaConverters._
 import scala.collection.immutable._
 import scala.Predef.{ArrowAssoc, augmentString}
-import scala.{None, Option, Some, StringContext}
+import scala.{None, Option, Some, StringContext, Tuple3}
 import scalaz._
 import Scalaz._
 
@@ -54,6 +55,10 @@ case class OMLText2Resolver
  concepts: Map[Concept, api.Concept] = Map.empty,
  reifiedRelationships: Map[ReifiedRelationship, api.ReifiedRelationship] = Map.empty,
  unreifiedRelationships: Map[UnreifiedRelationship, api.UnreifiedRelationship] = Map.empty,
+
+ chainRules: Map[ChainRule, api.ChainRule] = Map.empty,
+ ruleBodySegments: Map[RuleBodySegment, api.RuleBodySegment] = Map.empty,
+ segmentPredicates: Map[SegmentPredicate, api.SegmentPredicate] = Map.empty,
 
  dataRanges: Map[DataRange, api.DataRange] = Map.empty,
  structures: Map[Structure, api.Structure] = Map.empty,
@@ -633,6 +638,172 @@ object OMLText2Resolver {
     }
   }
 
+  @scala.annotation.tailrec
+  protected final def getRuleBodySegmentPredicates
+  (t2r: OMLText2Resolver,
+   cr: ChainRule,
+   segment: RuleBodySegment,
+   segmentPredicates: Seq[(RuleBodySegment, SegmentPredicate, api.Term)])
+  : EMFProblems \/ Seq[(RuleBodySegment, SegmentPredicate, api.Term)]
+  = Option(segment.getPredicate) match {
+    case Some(pred) =>
+      Option(pred.termPredicate()) match {
+        case Some(term: Aspect) =>
+          t2r.aspects.get(term) match {
+            case Some(a) =>
+              val nextSegmentPredicates = segmentPredicates :+ Tuple3(segment, pred, a)
+              Option(segment.getNextSegment) match {
+                case Some(next) =>
+                  getRuleBodySegmentPredicates(t2r, cr, next, nextSegmentPredicates)
+                case None =>
+                  nextSegmentPredicates.right
+              }
+            case None =>
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"getRuleBodySegmentPredicates: Unmapped Aspect $term in $pred in $segment in $cr"
+              )).left
+          }
+        case Some(term: Concept) =>
+          t2r.concepts.get(term) match {
+            case Some(c) =>
+              val nextSegmentPredicates = segmentPredicates :+ Tuple3(segment, pred, c)
+              Option(segment.getNextSegment) match {
+                case Some(next) =>
+                  getRuleBodySegmentPredicates(t2r, cr, next, nextSegmentPredicates)
+                case None =>
+                  nextSegmentPredicates.right
+              }
+            case None =>
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"getRuleBodySegmentPredicates: Unmapped Concept $term in $pred in $segment in $cr"
+              )).left
+          }
+        case Some(term: ReifiedRelationship) =>
+          t2r.reifiedRelationships.get(term) match {
+            case Some(rr) =>
+              val nextSegmentPredicates = segmentPredicates :+ Tuple3(segment, pred, rr)
+              Option(segment.getNextSegment) match {
+                case Some(next) =>
+                  getRuleBodySegmentPredicates(t2r, cr, next, nextSegmentPredicates)
+                case None =>
+                  nextSegmentPredicates.right
+              }
+            case None =>
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"getRuleBodySegmentPredicates: Unmapped ReifiedRelationship $term in $pred in $segment in $cr"
+              )).left
+          }
+        case Some(term: UnreifiedRelationship) =>
+          t2r.unreifiedRelationships.get(term) match {
+            case Some(ur) =>
+              val nextSegmentPredicates = segmentPredicates :+ Tuple3(segment, pred, ur)
+              Option(segment.getNextSegment) match {
+                case Some(next) =>
+                  getRuleBodySegmentPredicates(t2r, cr, next, nextSegmentPredicates)
+                case None =>
+                  nextSegmentPredicates.right
+              }
+            case None =>
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"getRuleBodySegmentPredicates: Unmapped UneifiedRelationship $term in $pred in $segment in $cr"
+              )).left
+          }
+        case _ =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"getRuleBodySegmentPredicates: Ill-formed SegmentPredicate without a valid term: $pred in $segment in $cr"
+          )).left
+      }
+    case None =>
+      new EMFProblems(new java.lang.IllegalArgumentException(
+        s"getRuleBodySegmentPredicates: Ill-formed RuleBodySegment without a predicate: $segment in $cr"
+      )).left
+  }
+
+  protected def convertChainRules
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val crs = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case cr: ChainRule => cr }).to[Set]
+    crs.foldLeft(state) { case (acc, cri) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        uri = cri.getHead
+        segmentsi <- getRuleBodySegmentPredicates(o2ri, cri, cri.getFirstSegment, Seq.empty)
+        tboxi = cri.getTbox
+        tuple <-
+        ( prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(uri.getTbox.getExtent).flatMap(_.unreifiedRelationships.get(uri))) match {
+          case (Some(tboxj), Some(urj)) =>
+            val (rj, crj) = f.createChainRule(
+              extent = o2ri.rextent,
+              tbox = tboxj,
+              name = cri.getName,
+              head = urj)
+            val o2rj1 = o2ri.copy(rextent = rj, chainRules = o2ri.chainRules + (cri -> crj))
+            val o2rj2 = segmentsi.foldLeft((o2rj1, Option(crj), Option.empty[api.RuleBodySegment])) {
+              case ((o2rj3, ocrj, orbsj), (rbsi, si, tj)) =>
+                val (rk1, rbsj) = f.createRuleBodySegment(o2rj3.rextent, orbsj, ocrj)
+                val rk2 = if (ocrj.isDefined)
+                  rk1.copy(
+                    chainRuleOfRuleBodySegment = rk1.chainRuleOfRuleBodySegment + (rbsj -> crj),
+                    firstSegment = rk1.firstSegment + (crj -> rbsj))
+                else
+                  // createRuleBodySegment factory has updated: nextSegment, ruleBodySegmentOfRuleBodySegment
+                  rk1.copy(
+                    chainRuleOfRuleBodySegment = rk1.chainRuleOfRuleBodySegment + (rbsj -> crj))
+                val o2rj4 = o2rj3.copy(rextent = rk2, ruleBodySegments = o2rj3.ruleBodySegments + (rbsi -> rbsj))
+                val (rl, sj) = (si, tj) match {
+                  case (p: AspectPredicate, at: api.Aspect) =>
+                    f.createAspectPredicate(o2rj4.rextent, at, rbsj)
+                  case (p: ConceptPredicate, ct: api.Concept) =>
+                    f.createConceptPredicate(o2rj4.rextent, rbsj, ct)
+                  case (p: ReifiedRelationshipPredicate, rrt: api.ReifiedRelationship) =>
+                    f.createReifiedRelationshipPredicate(o2rj4.rextent, rbsj, rrt)
+                  case (p: ReifiedRelationshipPropertyPredicate, rrt: api.ReifiedRelationship) =>
+                    f.createReifiedRelationshipPropertyPredicate(o2rj4.rextent, rbsj, rrt)
+                  case (p: ReifiedRelationshipInversePropertyPredicate, rrt: api.ReifiedRelationship) =>
+                    f.createReifiedRelationshipInversePropertyPredicate(o2rj4.rextent, rbsj, rrt)
+                  case (p: ReifiedRelationshipSourcePropertyPredicate, rrt: api.ReifiedRelationship) =>
+                    f.createReifiedRelationshipSourcePropertyPredicate(o2rj4.rextent, rbsj, rrt)
+                  case (p: ReifiedRelationshipSourceInversePropertyPredicate, rrt: api.ReifiedRelationship) =>
+                    f.createReifiedRelationshipSourceInversePropertyPredicate(o2rj4.rextent, rbsj, rrt)
+                  case (p: ReifiedRelationshipTargetPropertyPredicate, rrt: api.ReifiedRelationship) =>
+                    f.createReifiedRelationshipTargetPropertyPredicate(o2rj4.rextent, rbsj, rrt)
+                  case (p: ReifiedRelationshipTargetInversePropertyPredicate, rrt: api.ReifiedRelationship) =>
+                    f.createReifiedRelationshipTargetInversePropertyPredicate(o2rj4.rextent, rbsj, rrt)
+                  case (p: UnreifiedRelationshipPropertyPredicate, urt: api.UnreifiedRelationship) =>
+                    f.createUnreifiedRelationshipPropertyPredicate(o2rj4.rextent, urt, rbsj)
+                  case (p: UnreifiedRelationshipInversePropertyPredicate, urt: api.UnreifiedRelationship) =>
+                    f.createUnreifiedRelationshipInversePropertyPredicate(o2rj4.rextent, urt, rbsj)
+                  case (p, t) =>
+                    throw new java.lang.IllegalArgumentException(s"This should not happen:\np=$p\nt=$t")
+                }
+                val o2rj5 = o2rj4.copy(rextent = rl, segmentPredicates = o2rj4.segmentPredicates + (si -> sj))
+                ( o2rj5,
+                  Option.empty[api.ChainRule],
+                  Option(rbsj) )
+            }
+            o2rj2.right
+          case (tboxj, urj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertChainRules: Failed to resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                urj.fold(s" head: ${uri.getName}")(_ => "")
+            )).left
+        }
+        (o2rk, _, _) = tuple
+        next = prev.updated(e, o2rk)
+      } yield next
+    }
+  }
+
   protected def convertStructures
   (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
    entry: (Extent, OMLText2Resolver))
@@ -802,22 +973,41 @@ object OMLText2Resolver {
         o2ri = prev(e)
         tboxi = li.getTbox
         dri = li.getAxiom
-        vti = li.getValueType
         o2rj <-
-        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
-          prev.get(dri.getTbox.getExtent).flatMap(_.dataRanges.get(dri)),
-          prev.get(vti.getTbox.getExtent).flatMap(_.dataRanges.get(vti))) match {
-          case (Some(tboxj), Some(drj: api.ScalarOneOfRestriction), Some(vtj: api.DataRange)) =>
-            val (rj, lj) = f.createScalarOneOfLiteralAxiom(
-              extent = o2ri.rextent,
-              tbox = tboxj,
-              axiom = drj,
-              value = emf2tables(li.getValue),
-              valueType = Some(vtj))
-            o2ri.copy(
-              rextent = rj,
-              scalarOneOfLiterals = o2ri.scalarOneOfLiterals + (li -> lj),
-              termAxioms = o2ri.termAxioms + (li -> lj)).right
+        ( prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(dri.getTbox.getExtent).flatMap(_.dataRanges.get(dri))) match {
+          case (Some(tboxj), Some(drj: api.ScalarOneOfRestriction)) =>
+            Option(li.getValueType) match {
+              case Some(vti) =>
+                prev.get(vti.getTbox.getExtent).flatMap(_.dataRanges.get(vti)) match {
+                  case Some(vtj: api.DataRange) =>
+                    val (rj, lj) = f.createScalarOneOfLiteralAxiom(
+                      extent = o2ri.rextent,
+                      tbox = tboxj,
+                      axiom = drj,
+                      value = emf2tables(li.getValue),
+                      valueType = Some(vtj))
+                    o2ri.copy(
+                      rextent = rj,
+                      scalarOneOfLiterals = o2ri.scalarOneOfLiterals + (li -> lj),
+                      termAxioms = o2ri.termAxioms + (li -> lj)).right
+                  case _ =>
+                    new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"convertScalarOneLiteralAxioms: Cannot find value type $vti for ${li.getAxiom.abbrevIRI()}"
+                    )).left
+                }
+              case None =>
+                val (rj, lj) = f.createScalarOneOfLiteralAxiom(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  axiom = drj,
+                  value = emf2tables(li.getValue),
+                  valueType = None)
+                o2ri.copy(
+                  rextent = rj,
+                  scalarOneOfLiterals = o2ri.scalarOneOfLiterals + (li -> lj),
+                  termAxioms = o2ri.termAxioms + (li -> lj)).right
+            }
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertScalarOneLiteralAxioms: Cannot find ScalarOneOfRestriction for ${li.getAxiom.abbrevIRI()}"
@@ -1069,20 +1259,29 @@ object OMLText2Resolver {
           case (Some(tboxj), Some(ej), Some(dpj)) =>
             val (rj, axj: \/[EMFProblems, api.EntityScalarDataPropertyRestrictionAxiom]) = axi match {
               case axpi: EntityScalarDataPropertyParticularRestrictionAxiom =>
-                val vti = axpi.getValueType
-                prev.get(vti.getTbox.getExtent).flatMap(_.dataRanges.get(vti)) match {
-                  case Some(vtj) =>
+                Option(axpi.getValueType) match {
+                  case Some(vti) =>
+                    prev.get(vti.getTbox.getExtent).flatMap(_.dataRanges.get(vti)) match {
+                      case Some(vtj) =>
+                        f
+                          .createEntityScalarDataPropertyParticularRestrictionAxiom(
+                            o2ri.rextent, tboxj, ej, dpj,
+                            emf2tables(axpi.getLiteralValue), Some(vtj)) match {
+                          case (rk, ak) => rk -> ak.right
+                        }
+                      case _ =>
+                        o2ri.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
+                          s"convertEntityScalarDataPropertyRestrictionAxioms: " +
+                            s"Cannot find ValueType: ${vti.abbrevIRI()}"
+                        )).left
+                    }
+                  case None =>
                     f
                       .createEntityScalarDataPropertyParticularRestrictionAxiom(
                         o2ri.rextent, tboxj, ej, dpj,
-                        emf2tables(axpi.getLiteralValue), Some(vtj)) match {
+                        emf2tables(axpi.getLiteralValue), None) match {
                       case (rk, ak) => rk -> ak.right
                     }
-                  case _ =>
-                    o2ri.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
-                      s"convertEntityScalarDataPropertyRestrictionAxioms: " +
-                        s"Cannot find ValueType: ${vti.abbrevIRI()}"
-                    )).left
                 }
               case axui: EntityScalarDataPropertyExistentialRestrictionAxiom =>
                 val dri = axui.getScalarRestriction
@@ -1130,6 +1329,123 @@ object OMLText2Resolver {
         }
         next = prev.updated(e, o2rj)
       } yield next
+    }
+  }
+
+  protected def convertEntityStructuredDataPropertyRestrictionAxioms
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: EntityStructuredDataPropertyParticularRestrictionAxiom => s })
+    ss.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = axi.getTbox
+        ei = axi.getRestrictedEntity
+        dpi = axi.getStructuredDataProperty
+        dptboxi = dpi match {
+          case edp: EntityStructuredDataProperty =>
+            edp.getTbox()
+          case sdp: StructuredDataProperty =>
+            sdp.getTbox()
+        }
+        o2rj <-
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(ei.getTbox.getExtent).flatMap(_.entityLookup(ei)),
+          prev.get(dptboxi.getExtent).flatMap(_.dataRelationshipToStructureLookup(dpi))) match {
+          case (Some(tboxj), Some(ej), Some(dpj)) =>
+            val (rj, axj) =
+              f.createEntityStructuredDataPropertyParticularRestrictionAxiom(o2ri.rextent, tboxj, dpj, ej)
+            convertRestrictionStructuredDataPropertyContext(o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axj)), Seq(axi -> axj))
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertEntityStructuredDataPropertyRestrictionAxioms: Cannot find EntityScalarDataPropertyRestrictionAxiom for" +
+                s": restricted entity: ${axi.getRestrictedEntity.abbrevIRI()}" +
+                s", structured data property: ${axi.getStructuredDataProperty.abbrevIRI()}"
+            )).left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
+    }
+  }
+
+  @scala.annotation.tailrec
+  protected final def convertRestrictionStructuredDataPropertyContext
+  (o2r: OMLText2Resolver,
+   cs: Seq[(RestrictionStructuredDataPropertyContext, api.RestrictionStructuredDataPropertyContext)])
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ OMLText2Resolver
+  = if (cs.isEmpty)
+    o2r.right
+  else {
+    val (ci, cj) = cs.head
+    val values
+    : EMFProblems \/ OMLText2Resolver
+    = ci.getScalarDataPropertyRestrictions.asScala.foldLeft(o2r.right[EMFProblems]) { case (acc, vi) =>
+      for {
+        o2r1 <- acc
+        lv = emf2tables(vi.getScalarPropertyValue)
+        o2r2 <- (
+          o2r1.dataRelationshipToScalarLookup(vi.getScalarDataProperty),
+          Option(vi.getValueType),
+          Option(vi.getValueType).flatMap(o2r1.dataRanges.get)
+        ) match {
+          case (Some(dpj), Some(_), Some(vtj)) =>
+            val (rj, _) =
+              f.createRestrictionScalarDataPropertyValue(o2r1.rextent, dpj, lv, cj, Some(vtj))
+            o2r1.copy(rextent = rj).right
+
+          case (Some(dpj), None, _) =>
+            val (rj, _) =
+              f.createRestrictionScalarDataPropertyValue(o2r1.rextent, dpj, lv, cj, None)
+            o2r1.copy(rextent = rj).right
+
+          case (dpj, vti, vtj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertRestrictionStructuredDataPropertyContext: failed to resolve: " +
+                dpj.fold{ s"\n scalar data property: ${vi.getScalarDataProperty}"}{_ => ""} +
+                vti.fold{""}{ ti => vtj.fold{ s"\n value type: $ti" }{_ => " "} }
+            )).left
+        }
+      } yield o2r2
+    }
+
+    val tuples
+    : EMFProblems \/
+      (OMLText2Resolver, Seq[(RestrictionStructuredDataPropertyContext, api.RestrictionStructuredDataPropertyContext)])
+    = ci.getStructuredDataPropertyRestrictions.asScala.foldLeft {
+      values.map(_ -> Seq.empty[(RestrictionStructuredDataPropertyContext, api.RestrictionStructuredDataPropertyContext)])
+    } { case (acc, si) =>
+      for {
+        tuple1 <- acc
+        (o2r1, prev) = tuple1
+        tuple2 <- o2r1.dataRelationshipToStructureLookup(si.getStructuredDataProperty) match {
+          case Some(dpj) =>
+            val (rj, sj) =
+              f.createRestrictionStructuredDataPropertyTuple(o2r1.rextent, dpj, cj)
+            (o2r1.copy(rextent = rj) -> (prev :+ (si -> sj))).right
+          case None =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertRestrictionStructuredDataPropertyContext: failed to resolve: " +
+                s"\n structured data property: ${si.getStructuredDataProperty}"
+            )).left
+        }
+        (o2r2, next) = tuple2
+      } yield o2r2 -> next
+    }
+
+    tuples match {
+      case \/-((o2r_updated, inc)) =>
+        convertRestrictionStructuredDataPropertyContext(o2r_updated, cs.tail ++ inc)
+      case -\/(errors) =>
+        -\/(errors)
     }
   }
 
@@ -1490,25 +1806,43 @@ object OMLText2Resolver {
         dboxi = di.descriptionBox()
         si = di.getSingletonInstance
         dpi = di.getScalarDataProperty
-        vti = di.getValueType
         o2rj <-
         (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
           prev.get(si.descriptionBox().getExtent).flatMap(_.conceptualEntitySingletonInstances.get(si)),
-          prev.get(dpi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(dpi)),
-          prev.get(vti.getTbox.getExtent).flatMap(_.dataRanges.get(vti))) match {
-          case (Some(dboxj), Some(sj), Some(dpj), Some(vtj)) =>
-            val (rj, dj) = f.createSingletonInstanceScalarDataPropertyValue(
-              o2ri.rextent, dboxj, sj, dpj,
-              emf2tables(di.getScalarPropertyValue), Some(vtj))
-            o2ri.copy(
-              rextent = rj,
-              singletonInstanceScalarDataPropertyValues = o2ri.singletonInstanceScalarDataPropertyValues + (di -> dj)).right
+          prev.get(dpi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(dpi))) match {
+          case (Some(dboxj), Some(sj), Some(dpj)) =>
+            Option(di.getValueType) match {
+              case Some(vti) =>
+                prev.get(vti.getTbox.getExtent).flatMap(_.dataRanges.get(vti)) match {
+                  case Some(vtj) =>
+                    val (rj, dj) = f.createSingletonInstanceScalarDataPropertyValue(
+                      o2ri.rextent, dboxj, sj, dpj,
+                      emf2tables(di.getScalarPropertyValue), Some(vtj))
+                    o2ri.copy(
+                      rextent = rj,
+                      singletonInstanceScalarDataPropertyValues = o2ri.singletonInstanceScalarDataPropertyValues + (di -> dj)).right
+                  case None =>
+                    new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"convertSingletonScalarDataPropertyValues: Cannot find:" +
+                        s" singleton instance: ${si.abbrevIRI}" +
+                        s" entity scalar data property: ${dpi.abbrevIRI}" +
+                        s" value type: ${vti.abbrevIRI}"
+                    )).left
+                }
+              case None =>
+                val (rj, dj) = f.createSingletonInstanceScalarDataPropertyValue(
+                  o2ri.rextent, dboxj, sj, dpj,
+                  emf2tables(di.getScalarPropertyValue), None)
+                o2ri.copy(
+                  rextent = rj,
+                  singletonInstanceScalarDataPropertyValues = o2ri.singletonInstanceScalarDataPropertyValues + (di -> dj)).right
+            }
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertSingletonScalarDataPropertyValues: Cannot find:" +
                 s" singleton instance: ${si.abbrevIRI}" +
                 s" entity scalar data property: ${dpi.abbrevIRI}" +
-                s" value type: ${vti.abbrevIRI}"
+                Option(di.getValueType).fold{""}{ vti => s" value type: ${vti.abbrevIRI}" }
             )).left
         }
         next = prev.updated(e, o2rj)
@@ -1635,7 +1969,10 @@ object OMLText2Resolver {
           allO2Rs = prev.values
           annotationProperties = allO2Rs.flatMap(_.aps).toMap
           o2ri = prev(e)
-          o2rj <- mi.getAnnotations.asScala.foldLeft(o2ri.right[EMFProblems]) { case (acc2, a0) =>
+          as = mi.getAnnotations.asScala ++
+            mi.moduleElements().asScala.flatMap(_.getAnnotations.asScala) ++
+            mi.moduleEdges().asScala.flatMap(_.getAnnotations.asScala)
+          o2rj <- as.foldLeft(o2ri.right[EMFProblems]) { case (acc2, a0) =>
             for {
               o2rk <- acc2
               aSubject <- allO2Rs.flatMap(_.elementLookup(a0.getSubject)).headOption match {
@@ -1654,7 +1991,7 @@ object OMLText2Resolver {
                     s"convertAnnotations: Cannot find: ${a0.getProperty} "
                   )).left
               }
-              (el, _) = f.createAnnotationPropertyValue(o2rk.rextent, aSubject, aProperty, a0.getValue.value)
+              (el, _) = f.createAnnotationPropertyValue(o2rk.rextent, aSubject, aProperty, a0.getValue.value.value)
               o2rl = o2rk.copy(rextent = el)
             } yield o2rl
           }
@@ -1709,69 +2046,78 @@ object OMLText2Resolver {
 
     c32 <- c31.foldLeft(c31.right[EMFProblems])(convertUnreifiedRelationships)
 
+    // ChainRules
+    c40 = c32
+
+    c41 <- c40.foldLeft(c40.right[EMFProblems])(convertChainRules)
+
     // DataTypes
 
-    c33 <- c32.foldLeft(c32.right[EMFProblems])(convertStructures)
+    c50 = c41
 
-    c34 <- c33.foldLeft(c33.right[EMFProblems])(convertScalars)
+    c51 <- c50.foldLeft(c50.right[EMFProblems])(convertStructures)
 
-    c35 <- c34.foldLeft(c34.right[EMFProblems])(convertRestrictedDataRanges)
+    c52 <- c51.foldLeft(c51.right[EMFProblems])(convertScalars)
 
-    c36 <- c35.foldLeft(c35.right[EMFProblems])(convertScalarOneOfLiteralAxioms)
+    c53 <- c52.foldLeft(c52.right[EMFProblems])(convertRestrictedDataRanges)
+
+    c54 <- c53.foldLeft(c53.right[EMFProblems])(convertScalarOneOfLiteralAxioms)
 
     // DataRelationships
-    c40 = c36
+    c60 = c54
 
-    c41 <- c40.foldLeft(c40.right[EMFProblems])(convertEntityScalarDataProperties)
+    c61 <- c60.foldLeft(c60.right[EMFProblems])(convertEntityScalarDataProperties)
 
-    c42 <- c41.foldLeft(c41.right[EMFProblems])(convertEntityStructuredDataProperties)
+    c62 <- c61.foldLeft(c61.right[EMFProblems])(convertEntityStructuredDataProperties)
 
-    c43 <- c42.foldLeft(c42.right[EMFProblems])(convertScalarDataProperties)
+    c63 <- c62.foldLeft(c62.right[EMFProblems])(convertScalarDataProperties)
 
-    c44 <- c43.foldLeft(c43.right[EMFProblems])(convertStructuredDataProperties)
+    c64 <- c63.foldLeft(c63.right[EMFProblems])(convertStructuredDataProperties)
 
     // Restrictions
-    c50 = c44
+    c70 = c64
 
-    c51 <- c50.foldLeft(c50.right[EMFProblems])(convertEntityRestrictionAxioms)
+    c71 <- c70.foldLeft(c70.right[EMFProblems])(convertEntityRestrictionAxioms)
 
-    c52 <- c51.foldLeft(c51.right[EMFProblems])(convertEntityScalarDataPropertyRestrictionAxioms)
+    c72 <- c71.foldLeft(c71.right[EMFProblems])(convertEntityScalarDataPropertyRestrictionAxioms)
+
+    c73 <- c72.foldLeft(c72.right[EMFProblems])(convertEntityStructuredDataPropertyRestrictionAxioms)
 
     // Specializations
-    c60 = c52
+    c80 = c73
 
-    c61 <- c60.foldLeft(c60.right[EMFProblems])(convertSpecializationAxioms)
+    c81 <- c80.foldLeft(c80.right[EMFProblems])(convertSpecializationAxioms)
 
     // Disjunctions
-    c70 = c61
+    c90 = c81
 
-    c71 <- c70.foldLeft(c70.right[EMFProblems])(convertRootConceptTaxonomyAxioms)
+    c91 <- c90.foldLeft(c90.right[EMFProblems])(convertRootConceptTaxonomyAxioms)
 
     // ConceptualEntityInstances
-    c80 = c71
+    cA0 = c81
 
-    c81 <- c80.foldLeft(c80.right[EMFProblems])(convertConceptInstances)
+    cA1 <- cA0.foldLeft(cA0.right[EMFProblems])(convertConceptInstances)
 
-    c82 <- c81.foldLeft(c81.right[EMFProblems])(convertReifiedRelationshipInstances)
+    cA2 <- cA1.foldLeft(cA1.right[EMFProblems])(convertReifiedRelationshipInstances)
 
-    c83 <- c82.foldLeft(c82.right[EMFProblems])(convertReifiedRelationshipInstanceDomains)
+    cA3 <- cA2.foldLeft(cA2.right[EMFProblems])(convertReifiedRelationshipInstanceDomains)
 
-    c84 <- c83.foldLeft(c83.right[EMFProblems])(convertReifiedRelationshipInstanceRanges)
+    cA4 <- cA3.foldLeft(cA3.right[EMFProblems])(convertReifiedRelationshipInstanceRanges)
 
-    c85 <- c84.foldLeft(c84.right[EMFProblems])(convertUnreifiedRelationshipInstances)
+    cA5 <- cA4.foldLeft(cA4.right[EMFProblems])(convertUnreifiedRelationshipInstances)
 
     // Data Property Values
-    c90 = c85
+    cB0 = cA5
 
-    c91 <- c90.foldLeft(c90.right[EMFProblems])(convertSingletonScalarDataPropertyValues)
+    cB1 <- cB0.foldLeft(cB0.right[EMFProblems])(convertSingletonScalarDataPropertyValues)
 
-    c92 <- c91.foldLeft(c91.right[EMFProblems])(convertSingletonStructuredDataPropertyValues)
+    cB2 <- cB1.foldLeft(cB1.right[EMFProblems])(convertSingletonStructuredDataPropertyValues)
 
-    cA0 = c92
+    cC0 = cB2
 
     // AnnotationProperties
-    cA1 <- cA0.foldLeft(cA0.right[EMFProblems])(convertAnnotations)
+    cC1 <- cC0.foldLeft(cC0.right[EMFProblems])(convertAnnotations)
 
-  } yield cA1
+  } yield cC1
 
 }

@@ -6,4 +6,14 @@ gov.nasa.jpl.imce.oml.converters 0.9.0.0 is a build based on OML 0.9
 
 - [#16 Convert OML files found recursively from an OML catalog file's directory](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/16)
 
-
+  WIP:
+  `-text` conversion fully implemented.
+  
+  `-owl` conversion partially implemented:
+    - Full support for open terminology box
+    - Partial support for closed terminology box (missing parsing of key axioms and of entity structured data property restrictions)
+    - Implemented support for description box (not yet tested)
+  
+  `-json` not yet implemented.
+    
+- [#17 OMLResolved2Text: Add missing rule for converting annotation property values and instances](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/17)

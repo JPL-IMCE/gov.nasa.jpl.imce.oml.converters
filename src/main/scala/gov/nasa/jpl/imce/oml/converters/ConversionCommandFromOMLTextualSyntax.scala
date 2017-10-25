@@ -21,7 +21,6 @@ package gov.nasa.jpl.imce.oml.converters
 import java.lang.System
 
 import ammonite.ops.{up,Path}
-import gov.nasa.jpl.imce.oml.converters.internal.ConvertToOWL
 import org.eclipse.emf.common.util.{URI => EURI}
 import org.eclipse.emf.ecore.util.EcoreUtil
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
@@ -67,7 +66,7 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         omlUUIDg = uuid.JVMUUIDGenerator()
         factory: api.OMLResolvedFactory = impl.OMLResolvedFactoryImpl(omlUUIDg)
 
-        o2rMap <- OMLText2Resolver.convert(fileExtents)(factory)
+        o2rMap <- internal.OMLText2Resolver.convert(fileExtents)(factory)
 
         // Convert to tables
         _ <- o2rMap.foldLeft[EMFProblems \/ Unit](\/-(())) {
@@ -106,7 +105,7 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         }
 
         // Convert to OWL
-        sortedModules <- ConvertToOWL.convertToOWL(modules, moduleEdges, outCat, outCatalog)(outStore)
+        sortedModules <- internal.ConvertToOWL.convertToOWL(modules, moduleEdges, outCat, outCatalog)(outStore)
           .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
 
         module2Extent = o2rMap.map { case (_, t2r) =>
@@ -128,12 +127,12 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         (out_rs, _, _) = out_rs_cm_cat
 
         r2t <- sortedModules.foldLeft {
-          OMLResolver2Text().right[EMFProblems]
+          internal.OMLResolver2Text().right[EMFProblems]
         } { case (acc, m) =>
           for {
             prev <- acc
             ext = module2Extent(m)
-            next <- OMLResolver2Text.convert(ext, out_rs, prev)
+            next <- internal.OMLResolver2Text.convert(ext, out_rs, prev)
           } yield next
         }
 

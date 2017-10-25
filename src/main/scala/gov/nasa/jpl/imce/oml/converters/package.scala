@@ -71,8 +71,8 @@ package object converters {
       d.setDateTime(new model.datatypes.DateTimeValue(v.value))
       d
     case tables.LiteralStringType =>
-      val d = model.common.CommonFactory.eINSTANCE.createLiteralString()
-      d.setString(new model.datatypes.StringValue(v.value))
+      val d = model.common.CommonFactory.eINSTANCE.createLiteralRawString()
+      d.setString(new model.datatypes.RawStringValue(v.value))
       d
     case tables.LiteralUUIDType =>
       val d = model.common.CommonFactory.eINSTANCE.createLiteralUUID()
@@ -148,7 +148,7 @@ package object converters {
     case d: model.common.LiteralDateTime =>
       tables.LiteralValue(tables.LiteralDateTimeType,d.getDateTime.value)
     case d: model.common.LiteralString =>
-      tables.LiteralValue(tables.LiteralStringType,d.getString.value)
+      tables.LiteralValue(tables.LiteralStringType,d.value().value)
     case d: model.common.LiteralUUID =>
       tables.LiteralValue(tables.LiteralUUIDType,d.getUuid.value)
     case d: model.common.LiteralURI =>

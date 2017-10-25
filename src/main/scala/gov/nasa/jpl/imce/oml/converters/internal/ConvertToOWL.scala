@@ -109,6 +109,8 @@ object ConvertToOWL {
     val g = g2
 
     val catalogDir = outCatalog / up
+    val catalogDirPrefix = catalogDir.toString()
+
     val metadataFile = (catalogDir / "oml.metadata.json").toIO
 
     val metadataNodes
@@ -126,11 +128,11 @@ object ConvertToOWL {
         else
           metadata.OMLMetadataProvenance.OMLOtherModuleProvenance
 
-        val filename = cat
-          .resolveURI(m.iri)
+        val mResolved = cat.resolveURI(m.iri)
+
+        val filename = mResolved
           .stripPrefix("file:")
-          .stripPrefix(catalogDir.ext)
-          .stripPrefix("/")
+          .stripPrefix(catalogDirPrefix)
           .stripSuffix("/")
 
         metadata.OMLConvertedModule(
@@ -164,6 +166,84 @@ object ConvertToOWL {
         System.out.println(s"# Wrote OML Metadata Graph: $metadataFile")
       } finally {
         s.close()
+      }
+    }
+
+    @scala.annotation.tailrec
+    def convertRestrictionStructuredDataPropertyContext
+    (tbox: api.TerminologyBox,
+     ont_tbox: OWLAPIMutableTerminologyBox,
+     prev: Map[api.Element, common.Element],
+     cs: Seq[(api.RestrictionStructuredDataPropertyContext, types.RestrictionStructuredDataPropertyContext)])
+    : OMFError.Throwables \/ Unit
+    = if (cs.isEmpty)
+      ().right
+    else {
+      val (c, ont_c) = cs.head
+      val ext = modules(tbox)
+      val values = ext
+        .restrictionStructuredDataPropertyContextOfRestrictionScalarDataPropertyValue
+        .foldLeft(().right[OMFError.Throwables]) { case (acc, (vi, ci)) =>
+          if (c != ci)
+            acc
+          else
+            for {
+              _ <- acc
+              ont_dp <- prev.get(vi.scalarDataProperty) match {
+                case Some(e: types.terms.ScalarDataProperty) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"convertRestrictionStructuredDataPropertyContext scalarDataProperty: ${vi.scalarDataProperty} conversion"
+                  )).left
+              }
+              ont_vt <- vi.valueType match {
+                case Some(dt) =>
+                  prev.get(dt) match {
+                    case Some(ont_dt: types.terms.DataRange) =>
+                      Option(ont_dt).right[OMFError.Throwables]
+                    case _ =>
+                      Set[java.lang.Throwable](OMFError.omfError(
+                        s"convertRestrictionStructuredDataPropertyContext valueType: $dt conversion"
+                      )).left
+                  }
+                case None =>
+                  Option.empty.right[OMFError.Throwables]
+              }
+              _ <- ops.addRestrictionScalarDataPropertyValue(ont_tbox, ont_c, ont_dp, vi.scalarPropertyValue, ont_vt)
+            } yield ()
+        }
+
+      val tuples = ext
+        .restrictionStructuredDataPropertyContextOfRestrictionStructuredDataPropertyTuple
+        .foldLeft(cs.tail.right[OMFError.Throwables]) { case (acc, (ti, ci)) =>
+          if (c != ci)
+            acc
+          else
+            for {
+              cs1 <- acc
+              ont_dp <- prev.get(ti.structuredDataProperty) match {
+                case Some(e: types.terms.StructuredDataProperty) =>
+                  e.right
+                case _ =>
+                  Set[java.lang.Throwable](OMFError.omfError(
+                    s"convertRestrictionStructuredDataPropertyContext structuredDataProperty: ${ti.structuredDataProperty} conversion"
+                  )).left
+              }
+              ont_ti <- ops.addRestrictionStructuredDataPropertyTuple(ont_tbox, ont_c, ont_dp)
+            } yield cs1 :+ (ti -> ont_ti)
+        }
+
+      values match {
+        case \/-(_) =>
+          tuples match {
+            case \/-(next) =>
+              convertRestrictionStructuredDataPropertyContext(tbox, ont_tbox, prev, next)
+            case -\/(errors) =>
+              -\/(errors)
+          }
+        case -\/(errors) =>
+          -\/(errors)
       }
     }
 
@@ -790,6 +870,29 @@ object ConvertToOWL {
                     )).left
                 }
                 ont_ax <- ops.addEntityScalarDataPropertyUniversalRestrictionAxiom(ont_tbox, ont_e, ont_dp, ont_dr)
+                next = prev + (ax -> ont_ax)
+              } yield next
+            case ax: api.EntityStructuredDataPropertyParticularRestrictionAxiom =>
+              for {
+                prev <- acc2
+                ont_e <- prev.get(ax.restrictedEntity) match {
+                  case Some(e: types.terms.Entity) =>
+                    e.right
+                  case _ =>
+                    Set[java.lang.Throwable](OMFError.omfError(
+                      s"EntityStructuredDataPropertyParticularRestrictionAxiom restrictedEntity: ${ax.restrictedEntity} conversion"
+                    )).left
+                }
+                ont_dp <- prev.get(ax.structuredDataProperty) match {
+                  case Some(e: types.terms.EntityStructuredDataProperty) =>
+                    e.right
+                  case _ =>
+                    Set[java.lang.Throwable](OMFError.omfError(
+                      s"EntityStructuredDataPropertyParticularRestrictionAxiom structuredDataProperty: ${ax.structuredDataProperty} conversion"
+                    )).left
+                }
+                ont_ax <- ops.addEntityStructuredDataPropertyParticularRestrictionAxiom(ont_tbox, ont_e, ont_dp)
+                _ <- convertRestrictionStructuredDataPropertyContext(tbox, ont_tbox, prev, Seq(ax -> ont_ax))
                 next = prev + (ax -> ont_ax)
               } yield next
             case ax: api.EntityExistentialRestrictionAxiom =>

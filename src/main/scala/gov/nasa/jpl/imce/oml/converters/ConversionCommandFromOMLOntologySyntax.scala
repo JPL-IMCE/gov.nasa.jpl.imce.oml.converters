@@ -277,11 +277,11 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
       rs = OMLResourceSet.initializeResourceSet()
 
       r2t <- extents.foldLeft {
-        OMLResolver2Text().right[OMFError.Throwables]
+        internal.OMLResolver2Text().right[OMFError.Throwables]
       } { case (acc, apiExtent) =>
         for {
           prev <- acc
-          next <- OMLResolver2Text.convert(apiExtent, rs, prev).leftMap(_.toThrowables)
+          next <- internal.OMLResolver2Text.convert(apiExtent, rs, prev).leftMap(_.toThrowables)
         } yield next
       }
 
@@ -327,11 +327,11 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
       out_drc <- outStore.loadBuiltinDatatypeMap()
 
       r2o <- extents.foldLeft {
-        OMLResolver2Ontology(out_drc, outStore).right[OMFError.Throwables]
+        internal.OMLResolver2Ontology(out_drc, outStore).right[OMFError.Throwables]
       } { case (acc, apiExtent) =>
         for {
           prev <- acc
-          next <- OMLResolver2Ontology.convert(apiExtent, prev)
+          next <- internal.OMLResolver2Ontology.convert(apiExtent, prev)
         } yield next
       }
 
