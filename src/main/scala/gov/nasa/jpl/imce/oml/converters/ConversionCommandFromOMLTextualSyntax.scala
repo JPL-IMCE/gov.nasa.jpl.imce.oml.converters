@@ -68,6 +68,19 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
         o2rMap <- internal.OMLText2Resolver.convert(fileExtents)(factory)
 
+        module2Extent = o2rMap.map { case (_, t2r) =>
+          val modules
+          : Seq[api.Module]
+          = Seq.empty[api.Module] ++
+            t2r.rextent.terminologyGraphs.values ++
+            t2r.rextent.bundles.values ++
+            t2r.rextent.descriptionBoxes.values
+
+          scala.Predef.require(modules.size == 1)
+          val m = modules.head
+          m -> t2r.rextent
+        }
+
         // Convert to tables
         _ <- o2rMap.foldLeft[EMFProblems \/ Unit](\/-(())) {
           case (acc, (_, o2r)) =>
@@ -105,33 +118,22 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         }
 
         // Convert to OWL
-        sortedModules <- internal.ConvertToOWL.convertToOWL(modules, moduleEdges, outCat, outCatalog)(outStore)
+
+        sortedModuleExtents <-
+        internal
+          .OMLResolver2Ontology.sortExtents(modules, moduleEdges)
           .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
-
-        module2Extent = o2rMap.map { case (_, t2r) =>
-          val modules
-          : Seq[api.Module]
-          = Seq.empty[api.Module] ++
-            t2r.rextent.terminologyGraphs.values ++
-            t2r.rextent.bundles.values ++
-            t2r.rextent.descriptionBoxes.values
-
-          scala.Predef.require(modules.size == 1)
-          val m = modules.head
-          m -> t2r.rextent
-        }
 
         // Convert to OML
         out_rs_cm_cat <- OMLResourceSet.initializeResourceSetWithCatalog(outCatalog)
 
         (out_rs, _, _) = out_rs_cm_cat
 
-        r2t <- sortedModules.foldLeft {
+        r2t <- sortedModuleExtents.foldLeft {
           internal.OMLResolver2Text().right[EMFProblems]
-        } { case (acc, m) =>
+        } { case (acc, (_, ext)) =>
           for {
             prev <- acc
-            ext = module2Extent(m)
             next <- internal.OMLResolver2Text.convert(ext, out_rs, prev)
           } yield next
         }

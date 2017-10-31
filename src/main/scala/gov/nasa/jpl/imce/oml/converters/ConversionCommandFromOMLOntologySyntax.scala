@@ -30,7 +30,7 @@ import gov.nasa.jpl.imce.oml.uuid.JVMUUIDGenerator
 import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.binding.owlapi.common.ImmutableModule
 import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
-import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{ImmutableBundle, ImmutableTerminologyBox, ImmutableTerminologyGraph}
+import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{ImmutableBundle, ImmutableTerminologyGraph}
 import gov.nasa.jpl.omf.scala.core.OMFError
 import gov.nasa.jpl.omf.scala.core.tables.OMFTabularExport
 import org.apache.xml.resolver.Catalog
@@ -270,7 +270,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         } yield next
       }
 
-      extents = resolved.otherContexts
+      extents = resolved.otherContexts // allContexts === Extent.empty ++ otherContexts
 
       // 3) Convert from OML Resolver => OML Textual Concrete Syntax
 
@@ -324,78 +324,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
       // 4) Convert from OML Resolver => OMF/OWLAPI again
 
-      out_drc <- outStore.loadBuiltinDatatypeMap()
-
-      r2o <- extents.foldLeft {
-        internal.OMLResolver2Ontology(out_drc, outStore).right[OMFError.Throwables]
-      } { case (acc, apiExtent) =>
-        for {
-          prev <- acc
-          next <- internal.OMLResolver2Ontology.convert(apiExtent, prev)
-        } yield next
-      }
-
-      tboxConversions <-
-      r2o
-        .modules
-        .foldLeft[OMFError.Throwables \/ (Seq[ImmutableTerminologyBox], Mutable2ImmutableModuleMap)] {
-        (Seq.empty[ImmutableTerminologyBox], emptyMutable2ImmutableModuleMap).right
-      } {
-        case (acc, m0: resolver.api.TerminologyBox) =>
-          for {
-            prev <- acc
-            (convs, m2i) = prev
-            m1 <- r2o.getTbox(m0)
-            _ = System.out.println(s"... Converting terminology ${m1.sig.kind}: ${m1.iri}")
-            next <- r2o.ops.asImmutableTerminologyBox(m1, m2i)(outStore).map { case (i1, m2iWithConv) =>
-              (convs :+ i1) -> m2iWithConv
-            }
-          } yield next
-        case (acc, _) =>
-          acc
-      }
-
-      (tboxConvs, m2iTboxConv) = tboxConversions
-
-      _ <- tboxConvs.foldLeft[OMFError.Throwables \/ Unit](().right[OMFError.Throwables]) {
-        case (acc, itbox) =>
-          for {
-            _ <- acc
-            _ = System.out.println(s"... Saving terminology ${itbox.iri}")
-            _ <- r2o.ops.saveTerminology(itbox)(outStore)
-          } yield ()
-      }
-
-      dboxConversions <-
-      r2o
-        .modules
-        .foldLeft[OMFError.Throwables \/ (Seq[ImmutableDescriptionBox], Mutable2ImmutableModuleMap)] {
-        (Seq.empty[ImmutableDescriptionBox], m2iTboxConv).right
-      } {
-        case (acc, m0: resolver.api.DescriptionBox) =>
-          for {
-            prev <- acc
-            (convs, m2i) = prev
-            m1 <- r2o.getDbox(m0)
-            _ = System.out.println(s"... Converting description ${m1.sig.kind}: ${m1.iri}")
-            next <- r2o.ops.asImmutableDescription(m1, m2i)(outStore).map { case (i1, m2iWithConv) =>
-              (convs :+ i1) -> m2iWithConv
-            }
-          } yield next
-        case (acc, _) =>
-          acc
-      }
-
-      (dboxConvs, _) = dboxConversions
-
-      _ <- dboxConvs.foldLeft[OMFError.Throwables \/ Unit](().right[OMFError.Throwables]) {
-        case (acc, idbox) =>
-          for {
-            _ <- acc
-            _ = System.out.println(s"... Saving description ${idbox.iri}")
-            _ <- r2o.ops.saveDescriptionBox(idbox)(outStore)
-          } yield ()
-      }
+      _ <- internal.OMLResolver2Ontology.convert(extents, outStore)
 
     } yield ()
 

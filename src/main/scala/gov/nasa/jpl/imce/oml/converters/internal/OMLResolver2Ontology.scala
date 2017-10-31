@@ -22,19 +22,24 @@ import java.lang.{IllegalArgumentException, System}
 import java.util.UUID
 
 import gov.nasa.jpl.imce.oml.resolver.Filterable._
-import gov.nasa.jpl.imce.oml.resolver.api
-import gov.nasa.jpl.imce.oml.tables
+import gov.nasa.jpl.imce.oml.resolver.{ModuleGraphEdge, api}
+import gov.nasa.jpl.imce.oml.{resolver, tables}
 import gov.nasa.jpl.omf.scala.binding.owlapi
+import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
+import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.ImmutableTerminologyBox
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.{terminologies => owlapiterminologies}
-import gov.nasa.jpl.omf.scala.binding.owlapi.{descriptions => owlapidescriptions}
+import gov.nasa.jpl.omf.scala.binding.owlapi.{Mutable2ImmutableModuleMap, OWLAPIOMFGraphStore, OWLAPIOMFLoader, emptyMutable2ImmutableModuleMap, descriptions => owlapidescriptions}
 import gov.nasa.jpl.omf.scala.core
-import org.semanticweb.owlapi.model.{IRI}
+import gov.nasa.jpl.omf.scala.core.OMFError
+import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable.{::, Iterable, List, Map, Nil, Seq, Set}
 import scala.{Boolean, Function, None, Option, Some, StringContext, Unit}
 import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
+import scalax.collection.GraphEdge.NodeProduct
+import scalax.collection.immutable.Graph
 
 object OMLResolver2Ontology {
 
@@ -44,7 +49,142 @@ object OMLResolver2Ontology {
 
   type ResolverResult = Throwables \/ OMLResolver2Ontology
 
-  def convert(extent: api.Extent, prev: OMLResolver2Ontology)
+  def sortExtents
+  (moduleExtents: Map[api.Module, api.Extent],
+   edgeExtents: Map[api.ModuleEdge, api.Extent])
+  : Throwables \/ Seq[(api.Module, api.Extent)]
+  = for {
+    m2e <- moduleExtents.right[Throwables]
+
+    g0 = Graph[api.Module, ModuleGraphEdge]()
+
+    g1 = moduleExtents.foldLeft(g0) {
+      case (gi, (mi, _)) =>
+        gi + mi
+    }
+
+    g2 <- edgeExtents.foldLeft(g1.right[Throwables]) { case (acc, (me, ext)) =>
+      for {
+        gi <- acc
+        source <- me.sourceModule()(ext) match {
+          case Some(s) =>
+            s.right[Throwables]
+          case _ =>
+            Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
+              s"No source module for edge: $me"
+            )).left
+        }
+        targetIRI = me.targetModule()(ext)
+        gj = gi.toOuterNodes.find(_.iri == targetIRI).fold(gi) { target: api.Module =>
+          val edge = new ModuleGraphEdge[api.Module](NodeProduct(source, target), me)
+          System.out.println(s"Edge: ${source.iri} ~> ${target.iri}")
+          gi + edge
+        }
+      } yield gj
+    }
+
+    g = g2
+
+    moduleSort <- OWLAPIOMFLoader
+      .hierarchicalTopologicalSort[api.Module, ModuleGraphEdge](Seq(g), Seq.empty)
+      .map(_.reverse)
+
+    result <- moduleSort.foldLeft(Seq.empty[(api.Module, api.Extent)].right[Throwables]) { case (acc, m) =>
+      for {
+        prev <- acc
+        e <- m2e.get(m) match {
+          case Some(_e) =>
+            _e.right[Throwables]
+          case None =>
+            Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
+              s"No extent for module: $m"
+            )).left
+        }
+        next = prev :+ (m -> e)
+      } yield next
+    }
+  } yield result
+
+  def convert
+  (extents: Seq[api.Extent],
+   outStore: OWLAPIOMFGraphStore)
+  : Throwables \/ OMLResolver2Ontology
+  = for {
+    out_drc <- outStore.loadBuiltinDatatypeMap()
+
+    r2o <- extents.foldLeft {
+      OMLResolver2Ontology(out_drc, outStore).right[OMFError.Throwables]
+    } { case (acc, apiExtent) =>
+      for {
+        prev <- acc
+        next <- OMLResolver2Ontology.convert(apiExtent, prev)
+      } yield next
+    }
+
+    tboxConversions <-
+    r2o
+      .modules
+      .foldLeft[OMFError.Throwables \/ (Seq[ImmutableTerminologyBox], Mutable2ImmutableModuleMap)] {
+      (Seq.empty[ImmutableTerminologyBox], emptyMutable2ImmutableModuleMap).right
+    } {
+      case (acc, m0: resolver.api.TerminologyBox) =>
+        for {
+          prev <- acc
+          (convs, m2i) = prev
+          m1 <- r2o.getTbox(m0)
+          _ = System.out.println(s"... Converting terminology ${m1.sig.kind}: ${m1.iri}")
+          next <- r2o.ops.asImmutableTerminologyBox(m1, m2i)(outStore).map { case (i1, m2iWithConv) =>
+            (convs :+ i1) -> m2iWithConv
+          }
+        } yield next
+      case (acc, _) =>
+        acc
+    }
+
+    (tboxConvs, m2iTboxConv) = tboxConversions
+
+    _ <- tboxConvs.foldLeft[OMFError.Throwables \/ Unit](().right[OMFError.Throwables]) {
+      case (acc, itbox) =>
+        for {
+          _ <- acc
+          _ = System.out.println(s"... Saving terminology ${itbox.iri}")
+          _ <- r2o.ops.saveTerminology(itbox)(outStore)
+        } yield ()
+    }
+
+    dboxConversions <-
+    r2o
+      .modules
+      .foldLeft[OMFError.Throwables \/ (Seq[ImmutableDescriptionBox], Mutable2ImmutableModuleMap)] {
+      (Seq.empty[ImmutableDescriptionBox], m2iTboxConv).right
+    } {
+      case (acc, m0: resolver.api.DescriptionBox) =>
+        for {
+          prev <- acc
+          (convs, m2i) = prev
+          m1 <- r2o.getDbox(m0)
+          _ = System.out.println(s"... Converting description ${m1.sig.kind}: ${m1.iri}")
+          next <- r2o.ops.asImmutableDescription(m1, m2i)(outStore).map { case (i1, m2iWithConv) =>
+            (convs :+ i1) -> m2iWithConv
+          }
+        } yield next
+      case (acc, _) =>
+        acc
+    }
+
+    (dboxConvs, _) = dboxConversions
+
+    _ <- dboxConvs.foldLeft[OMFError.Throwables \/ Unit](().right[OMFError.Throwables]) {
+      case (acc, idbox) =>
+        for {
+          _ <- acc
+          _ = System.out.println(s"... Saving description ${idbox.iri}")
+          _ <- r2o.ops.saveDescriptionBox(idbox)(outStore)
+        } yield ()
+    }
+  } yield r2o
+
+  protected def convert(extent: api.Extent, prev: OMLResolver2Ontology)
   : Throwables \/ OMLResolver2Ontology
   = for {
     tuple <-
@@ -70,15 +210,16 @@ object OMLResolver2Ontology {
 
     updated = next.copy(extents = next.extents :+ extent)
 
-    result <- if (updated.drc.isBuiltInModule(i)(updated.ops))
+    result <- if (updated.drc.isBuiltInModule(i)(updated.ops)) {
+      System.out.println(s"==> OMLResolver2Ontology w/ builtin: $iri")
       updated.withBuiltIn(m0, m1)(extent)
-    else {
+    } else {
       System.out.println(s"==> OMLResolver2Ontology converting: $iri")
       convert(updated.right[Throwables], extent, iri, m0, m1, i)
     }
   } yield result
 
-  def convert(c00: Throwables \/ OMLResolver2Ontology, extent: api.Extent, iri: tables.IRI, m0: api.Module, m1: MutableTboxOrDbox, i: IRI)
+  protected def convert(c00: Throwables \/ OMLResolver2Ontology, extent: api.Extent, iri: tables.IRI, m0: api.Module, m1: MutableTboxOrDbox, i: IRI)
   : Throwables \/ OMLResolver2Ontology
   = for {
     // AnnotationProperties
@@ -176,10 +317,14 @@ object OMLResolver2Ontology {
     cD3 <- extent.structuredPropertyTuples.foldLeft(cD2.right[Throwables])(convertStructuredPropertyTuples(extent))
     cD4 <- extent.descriptionBoxOfSingletonInstanceScalarDataPropertyValue.foldLeft(cD3.right[Throwables])(convertSingletonInstanceScalarDataPropertyValues(extent))
     cDN = cD4
+
     // Annotations
+    cE0 = cDN
+    cE1 <- extent.annotations.foldLeft(cE0.right[Throwables])(convertAnnotations(extent))
+    cEN = cE1
 
     // Finished!
-    result = cDN
+    result = cEN
 
     _ = java.lang.System.out.println(s"==> OMLResolver2Ontology  converted: $iri")
   } yield result
@@ -216,6 +361,69 @@ object OMLResolver2Ontology {
               tables.AnnotationProperty(uuid.toString, ap0.iri, ap0.abbrevIRI))(r2o.omfStore)
         }
       } yield r2o.copy(aps = r2o.aps + (ap0 -> ap1))
+  }
+
+  protected def convertAnnotations(ext: api.Extent)
+  : (ResolverResult, (api.Element, Set[api.AnnotationPropertyValue])) => ResolverResult
+  = {
+    case (acc, (e0, apvs)) =>
+      for {
+        r2o <- acc
+        _ <- e0 match {
+          case x0: api.Module =>
+            r2o.getModule(x0).flatMap { x1 =>
+              convertElementAnnotations(r2o, x1, x1, apvs)
+            }
+          case x0: api.ModuleElement =>
+            r2o.lookupModuleElement(x0)(ext).flatMap { x1 =>
+              x0.moduleContext()(ext) match {
+                case Some(m0) =>
+                  r2o.getModule(m0).flatMap { m1 =>
+                    convertElementAnnotations(r2o, m1, x1, apvs)
+                  }
+                case _ =>
+                  Set[java.lang.Throwable](new IllegalArgumentException(
+                    s"OMLResolver2Ontology.convertAnnotations(subject=$x0) not found!")).left
+              }
+            }
+          case x0: api.ModuleEdge =>
+            // @TODO
+            ().right[Throwables]
+          case x0: api.Element =>
+            r2o.lookupOtherElement(x0)(ext).flatMap { x1 =>
+              x0.moduleContext()(ext) match {
+                case Some(m0) =>
+                  r2o.getModule(m0).flatMap { m1 =>
+                    convertElementAnnotations(r2o, m1, x1, apvs)
+                  }
+                case _ =>
+                  Set[java.lang.Throwable](new IllegalArgumentException(
+                    s"OMLResolver2Ontology.convertAnnotations(subject=$x0) not found!")).left
+              }
+            }
+        }
+      } yield r2o
+  }
+
+  protected def convertElementAnnotations
+  (r2o: OMLResolver2Ontology,
+   m: owlapi.common.MutableModule,
+   e: owlapi.common.Element,
+   apvs: Set[api.AnnotationPropertyValue])
+  : Throwables \/ Unit
+  = apvs.foldLeft(().right[Throwables]) { case (acc, apv) =>
+    for {
+      _ <- acc
+      ap <- r2o.aps.get(apv.property) match {
+        case Some(p) =>
+          p.right[Throwables]
+        case _ =>
+          Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
+            s"OWLResolver2Ontology.convertModuleAnnotations(${apv.property}) not found."
+          )).left
+      }
+      _ <- m.addAnnotation(e, ap, apv.value)(r2o.omfStore)
+    } yield ()
   }
 
   // Atomic Entities
@@ -321,7 +529,7 @@ object OMLResolver2Ontology {
       for {
         r2o <- acc
         d1 <- r2o.getDbox(d0)
-        rd1 <- r2o.lookupDbox(ax0.refinedDescriptionBox)
+        rd1 <- r2o.getDboxByIRI(ax0.refinedDescriptionBox)
         ax1 <- r2o.ops.addDescriptionBoxRefinement(d1, rd1)(r2o.omfStore)
       } yield r2o.copy(edges = r2o.edges + (ax0 -> ax1))
     case (acc, _) =>
@@ -560,7 +768,7 @@ object OMLResolver2Ontology {
                 s"value type: ${s0.valueType}")).left
         }
         s1 <- r2o.ops.addScalarOneOfLiteralAxiom(t1, r1, s0.value, vt1)(r2o.omfStore)
-      } yield r2o.copy(scalarOneOfLiterals = r2o.scalarOneOfLiterals + (s0 -> s1))
+      } yield r2o.copy(termAxioms = r2o.termAxioms + (s0 -> s1))
     case (acc, _) =>
       acc
   }
@@ -692,13 +900,14 @@ object OMLResolver2Ontology {
       } yield r2o.copy(termAxioms = r2o.termAxioms + (er0 -> er1))
     case (acc, (er0: api.EntityStructuredDataPropertyParticularRestrictionAxiom, t0)) =>
       for {
-        r2o <- acc
-        t1 <- r2o.getTbox(t0)
-        d1 <- r2o.entityLookup(er0.restrictedEntity)
-        sc1 <- r2o.lookupEntityStructuredDataProperty(er0.structuredDataProperty)
-        er1 <- r2o.ops.addEntityStructuredDataPropertyParticularRestrictionAxiom(t1, d1, sc1)(r2o.omfStore)
-        _ <- convertRestrictionStructuredDataPropertyContext(r2o, t1, Seq(er0 -> er1))
-      } yield r2o.copy(termAxioms = r2o.termAxioms + (er0 -> er1))
+        r2o1 <- acc
+        t1 <- r2o1.getTbox(t0)
+        d1 <- r2o1.entityLookup(er0.restrictedEntity)
+        sc1 <- r2o1.lookupEntityStructuredDataProperty(er0.structuredDataProperty)
+        er1 <- r2o1.ops.addEntityStructuredDataPropertyParticularRestrictionAxiom(t1, d1, sc1)(r2o1.omfStore)
+        erTuple = er0 -> er1
+        r2o2 <- convertRestrictionStructuredDataPropertyContext(r2o1.copy(termAxioms = r2o1.termAxioms + erTuple), t1, Seq(erTuple))
+      } yield r2o2
     case (acc, _) =>
       acc
   }
@@ -709,51 +918,50 @@ object OMLResolver2Ontology {
    t1: owlapi.types.terminologies.MutableTerminologyBox,
    cs: Seq[(api.RestrictionStructuredDataPropertyContext, owlapi.types.RestrictionStructuredDataPropertyContext)])
   (implicit ext: api.Extent)
-  : Throwables \/ Unit
+  : Throwables \/ OMLResolver2Ontology
   = if (cs.isEmpty)
-    ().right[Throwables]
+    r2o.right[Throwables]
   else {
     val (c0, c1) = cs.head
     val values = ext
       .restrictionStructuredDataPropertyContextOfRestrictionScalarDataPropertyValue
-      .foldLeft(().right[Throwables]) { case (acc, (vi, ci)) =>
+      .foldLeft(r2o.right[Throwables]) { case (acc, (vi, ci)) =>
         if (c0 != ci)
           acc
         else
           for {
-            _ <- acc
-            ont_dp <- r2o.lookupDataRelationshipToScalar(vi.scalarDataProperty)
+            r2o1 <- acc
+            ont_dp <- r2o1.lookupDataRelationshipToScalar(vi.scalarDataProperty)
             ont_vt <- vi.valueType match {
               case Some(dt) =>
-                r2o.lookupDataRange(dt).map(Option.apply)
+                r2o1.lookupDataRange(dt).map(Option.apply)
               case None =>
                 Option.empty.right[Throwables]
             }
-            _ <- r2o.ops.addRestrictionScalarDataPropertyValue(t1, c1, ont_dp, vi.scalarPropertyValue, ont_vt)(r2o.omfStore)
-          } yield ()
+            vj <- r2o1.ops.addRestrictionScalarDataPropertyValue(t1, c1, ont_dp, vi.scalarPropertyValue, ont_vt)(r2o1.omfStore)
+          } yield r2o1.copy(restrictionScalarDataPropertyValues = r2o1.restrictionScalarDataPropertyValues + (vi -> vj))
       }
 
     val tuples = ext
       .restrictionStructuredDataPropertyContextOfRestrictionStructuredDataPropertyTuple
-      .foldLeft(cs.tail.right[Throwables]) { case (acc, (ti, ci)) =>
+      .foldLeft(values.map(_ -> cs.tail)) { case (acc, (ti, ci)) =>
         if (c0 != ci)
           acc
         else
           for {
-            cs1 <- acc
-            ont_dp <- r2o.lookupDataRelationshipToStructure(ti.structuredDataProperty)
-            ont_ti <- r2o.ops.addRestrictionStructuredDataPropertyTuple(t1, c1, ont_dp)(r2o.omfStore)
-          } yield cs1 :+ (ti -> ont_ti)
+            r2o1_cs1 <- acc
+            (r2o1, cs1) = r2o1_cs1
+            ont_dp <- r2o1.lookupDataRelationshipToStructure(ti.structuredDataProperty)
+            ont_ti <- r2o1.ops.addRestrictionStructuredDataPropertyTuple(t1, c1, ont_dp)(r2o1.omfStore)
+            r2o2 = r2o1.copy(restrictionStructuredDataPropertyTuples = r2o1.restrictionStructuredDataPropertyTuples + (ti -> ont_ti))
+            cs2 = cs1 :+ (ti -> ont_ti)
+          } yield r2o2 -> cs2
       }
 
-    values match {
-      case \/-(_) =>
-        tuples match {
-          case \/-(next) =>
-            convertRestrictionStructuredDataPropertyContext(r2o, t1, cs.tail ++ next)
-          case -\/(errors) =>
-            -\/(errors)
-        }
+
+    tuples match {
+      case \/-((r2o1, next)) =>
+        convertRestrictionStructuredDataPropertyContext(r2o1, t1, next)
       case -\/(errors) =>
         -\/(errors)
     }
@@ -1153,10 +1361,6 @@ case class OMLResolver2Ontology
  : Map[api.Structure, owlapi.types.terms.Structure]
  = Map.empty,
 
- scalarOneOfLiterals
- : Map[api.ScalarOneOfLiteralAxiom, owlapi.types.termAxioms.ScalarOneOfLiteralAxiom]
- = Map.empty,
-
  entityScalarDataProperties
  : Map[api.EntityScalarDataProperty, owlapi.types.terms.EntityScalarDataProperty]
  = Map.empty,
@@ -1271,7 +1475,16 @@ case class OMLResolver2Ontology
 
  singletonInstanceStructuredDataPropertyContexts
  : Map[api.SingletonInstanceStructuredDataPropertyContext, owlapi.descriptions.SingletonInstanceStructuredDataPropertyContext]
+ = Map.empty,
+
+ restrictionStructuredDataPropertyTuples
+ : Map[api.RestrictionStructuredDataPropertyTuple, owlapi.types.RestrictionStructuredDataPropertyTuple]
+ = Map.empty,
+
+ restrictionScalarDataPropertyValues
+ : Map[api.RestrictionScalarDataPropertyValue, owlapi.types.RestrictionScalarDataPropertyValue]
  = Map.empty
+
 
 ) {
   def withBuiltIn
@@ -1280,10 +1493,32 @@ case class OMLResolver2Ontology
   : core.OMFError.Throwables \/ OMLResolver2Ontology
   = (m0, m1) match {
     case (g0: api.TerminologyGraph, -\/(g1: owlapiterminologies.TerminologyGraph)) =>
+
+      val r2oWithAPS
+      : core.OMFError.Throwables \/ OMLResolver2Ontology
+      = ext
+        .annotationProperties
+        .foldLeft[core.OMFError.Throwables \/ OMLResolver2Ontology](this.right) {
+        case (\/-(r2o), (uuid, ap0)) =>
+          val apUUID = uuid.toString
+          g1
+            .annotationProperties()
+            .find(_.uuid == apUUID) match {
+            case Some(ap1) =>
+              r2o.copy(aps = r2o.aps + (ap0 -> ap1)).right
+            case _ =>
+              Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
+                s"withBuiltIn: Failed to lookup annotation property: $ap0 from ${g1.iri}")).left
+
+          }
+        case (acc, _) =>
+          acc
+      }
+
       g0
         .moduleElements()
         .selectByKindOf { case d0: api.DataRange => d0 }
-        .foldLeft[core.OMFError.Throwables \/ OMLResolver2Ontology](this.right) {
+        .foldLeft[core.OMFError.Throwables \/ OMLResolver2Ontology](r2oWithAPS) {
         case (\/-(r2o), d0) =>
           g1.lookupTerm(d0.iri().map(IRI.create), recursively=false)(this.omfStore) match {
             case Some(d1: owlapi.types.terms.DataRange) =>
@@ -1298,6 +1533,14 @@ case class OMLResolver2Ontology
     case _ =>
       Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
         s"withBuiltIn: Invalid modules: m0=$m0, m1=$m1")).left
+  }
+
+  def getModule(m0: api.Module):  core.OMFError.Throwables \/ owlapi.common.MutableModule
+  = m0 match {
+    case t0: api.TerminologyBox =>
+      getTbox(t0)
+    case d0: api.DescriptionBox =>
+      getDbox(d0)
   }
 
   def getTbox(m0: api.TerminologyBox): core.OMFError.Throwables \/ owlapiterminologies.MutableTerminologyBox
@@ -1371,7 +1614,7 @@ case class OMLResolver2Ontology
       )).left
   }
 
-  def lookupDbox(iri: tables.IRI): core.OMFError.Throwables \/ owlapidescriptions.MutableDescriptionBox
+  def getDboxByIRI(iri: tables.IRI): core.OMFError.Throwables \/ owlapidescriptions.MutableDescriptionBox
   = ds.values
     .find { dbox =>
       dbox.iri.toString == iri
@@ -1577,6 +1820,94 @@ case class OMLResolver2Ontology
     case _ =>
       Set[java.lang.Throwable](new IllegalArgumentException(
         s"OMLResolver2Ontology.lookupSingletonInstanceStructuredDataPropertyContext(rr=${t0.uuid}) failed")).left
+  }
+
+  def lookup[U <: api.Element, V <: owlapi.common.Element]
+  (u: U, uv: Map[U, V])
+  (implicit ext: api.Extent)
+  : core.OMFError.Throwables \/ V
+  = uv.get(u) match {
+    case Some(u) =>
+      u.right[core.OMFError.Throwables]
+    case _ =>
+      Set[java.lang.Throwable](new IllegalArgumentException(
+        s"OMLResolver2Ontology.lookup failed for: $u")).left
+  }
+
+  def lookupModuleElement(me: api.ModuleElement)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.common.ModuleElement
+  = me match {
+    case x: api.Aspect =>
+      lookupAspect(x)
+    case x: api.Concept =>
+      lookupConcept(x)
+    case x: api.ReifiedRelationship =>
+      lookupReifiedRelationship(x)
+    case x: api.UnreifiedRelationship =>
+      lookupUnreifiedRelationship(x)
+    case x: api.DataRange =>
+      lookupDataRange(x)
+    case x: api.Structure =>
+      lookupStructure(x)
+    case x: api.TermAxiom =>
+      lookup(x, termAxioms)
+    case x: api.DataRelationshipToStructure =>
+      lookupDataRelationshipToStructure(x)
+    case x: api.DataRelationshipToScalar =>
+      lookupDataRelationshipToScalar(x)
+    case x: api.ConceptualEntitySingletonInstance =>
+      lookupConceptualEntityInstance(x)
+    case x: api.ReifiedRelationshipInstanceDomain =>
+      lookup(x, reifiedRelationshipInstanceDomains)
+    case x: api.ReifiedRelationshipInstanceRange =>
+      lookup(x, reifiedRelationshipInstanceRanges)
+    case x: api.UnreifiedRelationshipInstanceTuple =>
+      lookup(x, unreifiedRelationshipInstanceTuples)
+    case x: api.SingletonInstanceScalarDataPropertyValue =>
+      lookup(x, singletonScalarDataPropertyValues)
+    case x: api.SingletonInstanceStructuredDataPropertyValue =>
+      lookup(x, singletonStructuredDataPropertyValues)
+    case x: api.RestrictionStructuredDataPropertyTuple =>
+      lookup(x, restrictionStructuredDataPropertyTuples)
+    case x: api.ChainRule =>
+      lookup(x, chainRules)
+  }
+
+  def lookupOtherElement(e: api.Element)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.common.Element
+  = e match {
+    case x: api.ConceptTreeDisjunction =>
+      lookup(x, conceptTreeDisjunctions)
+    case x: api.DisjointUnionOfConceptsAxiom =>
+      lookup(x, disjointUnionOfConceptAxioms)
+    case x: api.RuleBodySegment =>
+      lookup(x, ruleBodySegments)
+    case x: api.AspectPredicate =>
+      lookup(x, aspectPredicates)
+    case x: api.ConceptPredicate =>
+      lookup(x, conceptPredicates)
+    case x: api.ReifiedRelationshipPredicate =>
+      lookup(x, reifiedRelationshipPredicates)
+    case x: api.ReifiedRelationshipPropertyPredicate =>
+      lookup(x, reifiedRelationshipPropertyPredicates)
+    case x: api.ReifiedRelationshipInversePropertyPredicate =>
+      lookup(x, reifiedRelationshipInversePropertyPredicates)
+    case x: api.ReifiedRelationshipSourcePropertyPredicate =>
+      lookup(x, reifiedRelationshipSourcePropertyPredicates)
+    case x: api.ReifiedRelationshipSourceInversePropertyPredicate =>
+      lookup(x, reifiedRelationshipSourceInversePropertyPredicates)
+    case x: api.ReifiedRelationshipTargetPropertyPredicate =>
+      lookup(x, reifiedRelationshipTargetPropertyPredicates)
+    case x: api.ReifiedRelationshipTargetInversePropertyPredicate =>
+      lookup(x, reifiedRelationshipTargetInversePropertyPredicates)
+    case x: api.UnreifiedRelationshipPropertyPredicate =>
+      lookup(x, unreifiedRelationshipPropertyPredicates)
+    case x: api.UnreifiedRelationshipInversePropertyPredicate =>
+      lookup(x, unreifiedRelationshipInversePropertyPredicates)
+    case x: api.RestrictionScalarDataPropertyValue =>
+      lookup(x, restrictionScalarDataPropertyValues)
+    case x: api.StructuredDataPropertyTuple =>
+      lookup(x, structuredPropertyTuples)
+    case x: api.ScalarDataPropertyValue =>
+      lookup(x, scalarDataPropertyValues)
   }
 
   val ops: owlapi.OWLAPIOMFOps = omfStore.ops

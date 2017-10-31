@@ -36,7 +36,7 @@ import scalaz.Scalaz._
 import scalaz._
 
 case class OMLResolver2Text
-(mappings: Map[IRI, (api.Extent, common.Extent)] = Map.empty,
+(mappings: Seq[(IRI, (api.Extent, common.Extent))] = Seq.empty,
 
  // Modules
  gs: Map[api.TerminologyGraph, graphs.TerminologyGraph] = Map.empty,
@@ -272,7 +272,7 @@ object OMLResolver2Text {
 
 
     // Modules
-    c010 = c00.copy(conversions = c00.conversions.copy(mappings = c00.conversions.mappings + (iri -> (c00.extent -> c00.omlExtent))))
+    c010 = c00.copy(conversions = c00.conversions.copy(mappings = c00.conversions.mappings :+ (iri -> (c00.extent -> c00.omlExtent))))
     c011 <- c00.extent.terminologyGraphs.foldLeft(c010.right[EMFProblems])(convertTerminologyGraph)
     c012 <- c011.extent.bundles.foldLeft(c011.right[EMFProblems])(convertBundle)
     c013 <- c012.extent.descriptionBoxes.foldLeft(c012.right[EMFProblems])(convertDescription)
