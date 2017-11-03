@@ -640,7 +640,10 @@ object OMLText2Resolver {
 
   @scala.annotation.tailrec
   protected final def getRuleBodySegmentPredicates
-  (t2r: OMLText2Resolver,
+  (allAs: Map[Aspect, api.Aspect],
+   allCs: Map[Concept, api.Concept],
+   allRRs: Map[ReifiedRelationship, api.ReifiedRelationship],
+   allURs: Map[UnreifiedRelationship, api.UnreifiedRelationship],
    cr: ChainRule,
    segment: RuleBodySegment,
    segmentPredicates: Seq[(RuleBodySegment, SegmentPredicate, api.Term)])
@@ -649,12 +652,12 @@ object OMLText2Resolver {
     case Some(pred) =>
       Option(pred.termPredicate()) match {
         case Some(term: Aspect) =>
-          t2r.aspects.get(term) match {
+          allAs.get(term) match {
             case Some(a) =>
               val nextSegmentPredicates = segmentPredicates :+ Tuple3(segment, pred, a)
               Option(segment.getNextSegment) match {
                 case Some(next) =>
-                  getRuleBodySegmentPredicates(t2r, cr, next, nextSegmentPredicates)
+                  getRuleBodySegmentPredicates(allAs, allCs, allRRs, allURs, cr, next, nextSegmentPredicates)
                 case None =>
                   nextSegmentPredicates.right
               }
@@ -664,12 +667,12 @@ object OMLText2Resolver {
               )).left
           }
         case Some(term: Concept) =>
-          t2r.concepts.get(term) match {
+          allCs.get(term) match {
             case Some(c) =>
               val nextSegmentPredicates = segmentPredicates :+ Tuple3(segment, pred, c)
               Option(segment.getNextSegment) match {
                 case Some(next) =>
-                  getRuleBodySegmentPredicates(t2r, cr, next, nextSegmentPredicates)
+                  getRuleBodySegmentPredicates(allAs, allCs, allRRs, allURs, cr, next, nextSegmentPredicates)
                 case None =>
                   nextSegmentPredicates.right
               }
@@ -679,12 +682,12 @@ object OMLText2Resolver {
               )).left
           }
         case Some(term: ReifiedRelationship) =>
-          t2r.reifiedRelationships.get(term) match {
+          allRRs.get(term) match {
             case Some(rr) =>
               val nextSegmentPredicates = segmentPredicates :+ Tuple3(segment, pred, rr)
               Option(segment.getNextSegment) match {
                 case Some(next) =>
-                  getRuleBodySegmentPredicates(t2r, cr, next, nextSegmentPredicates)
+                  getRuleBodySegmentPredicates(allAs, allCs, allRRs, allURs, cr, next, nextSegmentPredicates)
                 case None =>
                   nextSegmentPredicates.right
               }
@@ -694,12 +697,12 @@ object OMLText2Resolver {
               )).left
           }
         case Some(term: UnreifiedRelationship) =>
-          t2r.unreifiedRelationships.get(term) match {
+          allURs.get(term) match {
             case Some(ur) =>
               val nextSegmentPredicates = segmentPredicates :+ Tuple3(segment, pred, ur)
               Option(segment.getNextSegment) match {
                 case Some(next) =>
-                  getRuleBodySegmentPredicates(t2r, cr, next, nextSegmentPredicates)
+                  getRuleBodySegmentPredicates(allAs, allCs, allRRs, allURs, cr, next, nextSegmentPredicates)
                 case None =>
                   nextSegmentPredicates.right
               }
@@ -720,6 +723,10 @@ object OMLText2Resolver {
   }
 
   protected def convertChainRules
+  (allAs: Map[Aspect, api.Aspect],
+   allCs: Map[Concept, api.Concept],
+   allRRs: Map[ReifiedRelationship, api.ReifiedRelationship],
+   allURs: Map[UnreifiedRelationship, api.UnreifiedRelationship])
   (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
    entry: (Extent, OMLText2Resolver))
   (implicit f: api.OMLResolvedFactory)
@@ -735,7 +742,7 @@ object OMLText2Resolver {
         prev <- acc
         o2ri = prev(e)
         uri = cri.getHead
-        segmentsi <- getRuleBodySegmentPredicates(o2ri, cri, cri.getFirstSegment, Seq.empty)
+        segmentsi <- getRuleBodySegmentPredicates(allAs, allCs, allRRs, allURs, cri, cri.getFirstSegment, Seq.empty)
         tboxi = cri.getTbox
         tuple <-
         ( prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
@@ -2049,7 +2056,13 @@ object OMLText2Resolver {
     // ChainRules
     c40 = c32
 
-    c41 <- c40.foldLeft(c40.right[EMFProblems])(convertChainRules)
+    t2rs = c40.values.to[Set]
+    allAs = t2rs.flatMap(_.aspects).toMap
+    allCs = t2rs.flatMap(_.concepts).toMap
+    allRRs = t2rs.flatMap(_.reifiedRelationships).toMap
+    allURs = t2rs.flatMap(_.unreifiedRelationships).toMap
+
+    c41 <- c40.foldLeft(c40.right[EMFProblems])(convertChainRules(allAs, allCs, allRRs, allURs))
 
     // DataTypes
 

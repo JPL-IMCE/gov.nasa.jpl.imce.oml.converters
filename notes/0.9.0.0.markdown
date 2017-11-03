@@ -19,3 +19,5 @@ gov.nasa.jpl.imce.oml.converters 0.9.0.0 is a build based on OML 0.9
 - [#17 OMLResolved2Text: Add missing rule for converting annotation property values and instances](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/17)
 
 - [#18 Reuse functionality for converting from OML Resolver to OWL](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/18)
+
+- [#19 OMLText2Resolver.getRuleBodySegmentPredicates needs to lookup predicates over all available extents](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/19)
