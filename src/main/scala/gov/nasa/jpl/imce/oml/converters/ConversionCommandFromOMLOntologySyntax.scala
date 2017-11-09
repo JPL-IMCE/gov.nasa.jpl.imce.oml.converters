@@ -23,6 +23,7 @@ import java.nio.file.Paths
 
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.OMLResourceSet
+import gov.nasa.jpl.imce.oml.graphs.hierarchicalTopologicalSort
 import gov.nasa.jpl.imce.oml.{filesystem, resolver}
 import gov.nasa.jpl.imce.oml.resolver.impl.OMLResolvedFactoryImpl
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
@@ -156,7 +157,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         gl
       }
 
-      gorder <- OWLAPIOMFLoader.hierarchicalTopologicalSort(Seq(g3), Seq.empty).map(_.reverse)
+      gorder <- hierarchicalTopologicalSort(Seq(g3), Seq.empty).map(_.reverse)
 
       _ = gorder.foreach { g =>
         val iri = g.iri.toString
@@ -293,10 +294,6 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
           else
             iri + ".oml"
           val resolvedIRI = outCat.resolveURI(omlIRI)
-
-          System.out.println(s" OML IRI = $iri")
-          System.out.println(s"resolved = $resolvedIRI")
-
           val uri: EURI = EURI.createURI(resolvedIRI)
           val r = rs.createResource(uri)
           r.getContents.add(omlExtent)

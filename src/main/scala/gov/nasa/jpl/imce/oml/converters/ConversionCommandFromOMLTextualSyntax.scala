@@ -29,11 +29,10 @@ import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.imce.oml.{filesystem, uuid}
 import gov.nasa.jpl.omf.scala.core.OMFError
 
-import scala.collection.immutable.{List, Map, Seq, Set}
+import scala.collection.immutable.{List, Seq, Set}
 import scala.util.{Failure, Success}
 import scala.util.control.Exception.nonFatalCatch
 import scala.{StringContext, Unit}
-import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
 
@@ -66,20 +65,10 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         omlUUIDg = uuid.JVMUUIDGenerator()
         factory: api.OMLResolvedFactory = impl.OMLResolvedFactoryImpl(omlUUIDg)
 
-        o2rMap <- internal.OMLText2Resolver.convert(fileExtents)(factory)
+        o2rMap_sorted <- internal.OMLText2Resolver.convert(fileExtents)(factory)
 
-        module2Extent = o2rMap.map { case (_, t2r) =>
-          val modules
-          : Seq[api.Module]
-          = Seq.empty[api.Module] ++
-            t2r.rextent.terminologyGraphs.values ++
-            t2r.rextent.bundles.values ++
-            t2r.rextent.descriptionBoxes.values
-
-          scala.Predef.require(modules.size == 1)
-          val m = modules.head
-          m -> t2r.rextent
-        }
+        (o2rMap, sortedModuleExtents) = o2rMap_sorted
+        extents = sortedModuleExtents.map(_._2)
 
         // Convert to tables
         _ <- o2rMap.foldLeft[EMFProblems \/ Unit](\/-(())) {
@@ -100,28 +89,10 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
             } yield ()
         }
 
-        modules = o2rMap.values.foldLeft(Map.empty[api.Module, api.Extent]) { case (acc, o2r) =>
-          val ext = o2r.rextent
-          acc ++
-            ext.terminologyGraphs.values.map(_ -> ext) ++
-            ext.bundles.values.map(_ -> ext) ++
-            ext.descriptionBoxes.values.map(_ -> ext)
-        }
-
-        moduleEdges = o2rMap.values.foldLeft(Map.empty[api.ModuleEdge, api.Extent]) { case (acc, o2r) =>
-          val ext = o2r.rextent
-          acc ++
-            ext.terminologyBoxAxiomByUUID.values.map(_ -> ext) ++
-            ext.terminologyBundleAxiomByUUID.values.map(_ -> ext) ++
-            ext.descriptionBoxExtendsClosedWorldDefinitionsByUUID.values.map(_ -> ext) ++
-            ext.descriptionBoxRefinementByUUID.values.map(_ -> ext)
-        }
-
         // Convert to OWL
 
-        sortedModuleExtents <-
-        internal
-          .OMLResolver2Ontology.sortExtents(modules, moduleEdges)
+        _ <- internal
+          .OMLResolver2Ontology.convert(extents, outStore)
           .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
 
         // Convert to OML
@@ -146,10 +117,6 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
             else
               iri + ".oml"
             val resolvedIRI = outCat.resolveURI(omlIRI)
-
-            System.out.println(s" OML IRI = $iri")
-            System.out.println(s"resolved = $resolvedIRI")
-
             val uri: EURI = EURI.createURI(resolvedIRI)
             val r = out_rs.createResource(uri)
             r.getContents.add(omlExtent)

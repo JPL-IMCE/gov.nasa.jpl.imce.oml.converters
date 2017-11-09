@@ -33,8 +33,8 @@ import gov.nasa.jpl.imce.oml.tables.{Final, Partial, DescriptionKind => TDescrip
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable._
-import scala.Predef.{ArrowAssoc, augmentString}
-import scala.{None, Option, Some, StringContext, Tuple3}
+import scala.Predef.{ArrowAssoc, augmentString, require}
+import scala.{Boolean, None, Option, Some, StringContext, Tuple3}
 import scalaz._
 import Scalaz._
 
@@ -118,6 +118,8 @@ case class OMLText2Resolver
   = omlFile.copy(segments =
     omlFile.segments.dropRight(1) :+
       omlFile.segments.last.stripSuffix(".oml")+".oml.json.zip")
+
+  def includesAPIModule(m: api.Module): Boolean = tboxes.values.find(_ == m).orElse(dboxes.values.find(_ == m)).isDefined
 
   def allAccessibleModules: Map[Module, api.Module] =
     tboxes ++ dboxes
@@ -755,8 +757,12 @@ object OMLText2Resolver {
               head = urj)
             val o2rj1 = o2ri.copy(rextent = rj, chainRules = o2ri.chainRules + (cri -> crj))
             val o2rj2 = segmentsi.foldLeft((o2rj1, Option(crj), Option.empty[api.RuleBodySegment])) {
-              case ((o2rj3, ocrj, orbsj), (rbsi, si, tj)) =>
+              case ((o2rj3, ocrj, orbsj), (rbsi, predi, tj)) =>
+                val rbsi_uuid = rbsi.uuid()
                 val (rk1, rbsj) = f.createRuleBodySegment(o2rj3.rextent, orbsj, ocrj)
+                val rbsj_uuid = rbsj.uuid.toString
+                if (rbsi_uuid != rbsj_uuid)
+                  require(rbsi_uuid == rbsj_uuid)
                 val rk2 = if (ocrj.isDefined)
                   rk1.copy(
                     chainRuleOfRuleBodySegment = rk1.chainRuleOfRuleBodySegment + (rbsj -> crj),
@@ -766,7 +772,7 @@ object OMLText2Resolver {
                   rk1.copy(
                     chainRuleOfRuleBodySegment = rk1.chainRuleOfRuleBodySegment + (rbsj -> crj))
                 val o2rj4 = o2rj3.copy(rextent = rk2, ruleBodySegments = o2rj3.ruleBodySegments + (rbsi -> rbsj))
-                val (rl, sj) = (si, tj) match {
+                val (rl, predj) = (predi, tj) match {
                   case (p: AspectPredicate, at: api.Aspect) =>
                     f.createAspectPredicate(o2rj4.rextent, at, rbsj)
                   case (p: ConceptPredicate, ct: api.Concept) =>
@@ -792,7 +798,11 @@ object OMLText2Resolver {
                   case (p, t) =>
                     throw new java.lang.IllegalArgumentException(s"This should not happen:\np=$p\nt=$t")
                 }
-                val o2rj5 = o2rj4.copy(rextent = rl, segmentPredicates = o2rj4.segmentPredicates + (si -> sj))
+                val si_uuid = predi.uuid()
+                val sj_uuid = predj.uuid.toString
+                if (si_uuid != sj_uuid)
+                  require(si_uuid == sj_uuid)
+                val o2rj5 = o2rj4.copy(rextent = rl, segmentPredicates = o2rj4.segmentPredicates + (predi -> predj))
                 ( o2rj5,
                   Option.empty[api.ChainRule],
                   Option(rbsj) )
@@ -857,110 +867,122 @@ object OMLText2Resolver {
 
   protected def convertRestrictedDataRanges
   (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
-   entry: (Extent, OMLText2Resolver))
+   entry: (api.Module, api.Extent))
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
-    val (e, _) = entry
-    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
-    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: RestrictedDataRange => s })
-    ss.foldLeft(state) { case (acc, rdri) =>
-      for {
-        prev <- acc
-        o2ri = prev(e)
-        tboxi = rdri.getTbox
-        rsi = rdri.getRestrictedRange
-        o2rj <-
-        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
-          prev.get(rsi.getTbox.getExtent).flatMap(_.dataRanges.get(rsi))) match {
-          case (Some(tboxj), Some(rsj)) =>
-            val (rj, rdrj) = rdri match {
-              case rri: BinaryScalarRestriction =>
-                f.createBinaryScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  length = Option.apply(rri.getLength).map(emf2tables),
-                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                  name = rri.name)
-              case rri: IRIScalarRestriction =>
-                f.createIRIScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  length = Option.apply(rri.getLength).map(emf2tables),
-                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                  pattern = Option.apply(rri.getPattern).map(_.value),
-                  name = rri.name)
-              case rri: NumericScalarRestriction =>
-                f.createNumericScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
-                  minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
-                  maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
-                  maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
-                  name = rri.name)
-              case rri: PlainLiteralScalarRestriction =>
-                f.createPlainLiteralScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  length = Option.apply(rri.getLength).map(emf2tables),
-                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                  pattern = Option.apply(rri.getPattern).map(emf2tables),
-                  langRange = Option.apply(rri.getLangRange).map(emf2tables),
-                  name = rri.name)
-              case rri: ScalarOneOfRestriction =>
-                f.createScalarOneOfRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  name = rri.name)
-              case rri: StringScalarRestriction =>
-                f.createStringScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  length = Option.apply(rri.getLength).map(emf2tables),
-                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                  pattern = Option.apply(rri.getPattern).map(emf2tables),
-                  name = rri.name)
-              case rri: SynonymScalarRestriction =>
-                f.createSynonymScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  name = rri.name)
-              case rri: TimeScalarRestriction =>
-                f.createTimeScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
-                  minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
-                  maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
-                  maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
-                  name = rri.name)
-            }
-            o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (rdri -> rdrj)).right
-          case (tboxj, rsj) =>
-            new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertRestrictedDataRanges(${rdri.iri()}): Failed to resolve " +
-                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
-                rsj.fold(s" restricted data range: ${rsi.iri}")(_ => "")
-            )).left
-        }
-        next = prev.updated(e, o2rj)
-      } yield next
-    }
+    for {
+      s <- state
+      (mj, _) = entry
+      e_o2r <- s.find(_._2.rextent.lookupModule(mj.uuid).isDefined) match {
+        case Some(pair) =>
+          pair.right
+        case _ =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertRestrictedDataRanges(${mj.iri}): Failed to lookup extent!"
+          )).left
+      }
+      (ei, _) = e_o2r
+      tboxes = ei.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+      ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: RestrictedDataRange => s })
+      result <- ss.foldLeft(state) { case (acc, rdri) =>
+        for {
+          prev <- acc
+          o2ri = prev(ei)
+          tboxi = rdri.getTbox
+          rsi = rdri.getRestrictedRange
+          o2rj <-
+          (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+            prev.get(rsi.getTbox.getExtent).flatMap(_.dataRanges.get(rsi))) match {
+            case (Some(tboxj), Some(rsj)) =>
+              val (rj, rdrj) = rdri match {
+                case rri: BinaryScalarRestriction =>
+                  f.createBinaryScalarRestriction(
+                    extent = o2ri.rextent,
+                    tbox = tboxj,
+                    restrictedRange = rsj,
+                    length = Option.apply(rri.getLength).map(emf2tables),
+                    minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                    maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                    name = rri.name)
+                case rri: IRIScalarRestriction =>
+                  f.createIRIScalarRestriction(
+                    extent = o2ri.rextent,
+                    tbox = tboxj,
+                    restrictedRange = rsj,
+                    length = Option.apply(rri.getLength).map(emf2tables),
+                    minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                    maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                    pattern = Option.apply(rri.getPattern).map(_.value),
+                    name = rri.name)
+                case rri: NumericScalarRestriction =>
+                  f.createNumericScalarRestriction(
+                    extent = o2ri.rextent,
+                    tbox = tboxj,
+                    restrictedRange = rsj,
+                    minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
+                    minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
+                    maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
+                    maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
+                    name = rri.name)
+                case rri: PlainLiteralScalarRestriction =>
+                  f.createPlainLiteralScalarRestriction(
+                    extent = o2ri.rextent,
+                    tbox = tboxj,
+                    restrictedRange = rsj,
+                    length = Option.apply(rri.getLength).map(emf2tables),
+                    minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                    maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                    pattern = Option.apply(rri.getPattern).map(emf2tables),
+                    langRange = Option.apply(rri.getLangRange).map(emf2tables),
+                    name = rri.name)
+                case rri: ScalarOneOfRestriction =>
+                  f.createScalarOneOfRestriction(
+                    extent = o2ri.rextent,
+                    tbox = tboxj,
+                    restrictedRange = rsj,
+                    name = rri.name)
+                case rri: StringScalarRestriction =>
+                  f.createStringScalarRestriction(
+                    extent = o2ri.rextent,
+                    tbox = tboxj,
+                    restrictedRange = rsj,
+                    length = Option.apply(rri.getLength).map(emf2tables),
+                    minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                    maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                    pattern = Option.apply(rri.getPattern).map(emf2tables),
+                    name = rri.name)
+                case rri: SynonymScalarRestriction =>
+                  f.createSynonymScalarRestriction(
+                    extent = o2ri.rextent,
+                    tbox = tboxj,
+                    restrictedRange = rsj,
+                    name = rri.name)
+                case rri: TimeScalarRestriction =>
+                  f.createTimeScalarRestriction(
+                    extent = o2ri.rextent,
+                    tbox = tboxj,
+                    restrictedRange = rsj,
+                    minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
+                    minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
+                    maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
+                    maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
+                    name = rri.name)
+              }
+              o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (rdri -> rdrj)).right
+            case (tboxj, rsj) =>
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"convertRestrictedDataRanges(${rdri.iri()}): Failed to resolve " +
+                  tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                  rsj.fold(s" restricted data range: ${rsi.iri}")(_ => "")
+              )).left
+          }
+          next = prev.updated(ei, o2rj)
+        } yield next
+      }
+    } yield result
   }
 
   protected def convertScalarOneOfLiteralAxioms
@@ -2010,7 +2032,7 @@ object OMLText2Resolver {
   def convert
   (fileExtents: Map[Extent, RelPath])
   (implicit factory: api.OMLResolvedFactory)
-  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  : EMFProblems \/ (Map[Extent, OMLText2Resolver], Seq[(api.Module, api.Extent)])
   = for {
     c00 <- fileExtents.map { case (e, f) =>
       e -> OMLText2Resolver(omlFile = f, rextent = api.Extent())
@@ -2046,8 +2068,35 @@ object OMLText2Resolver {
 
     c25 <- c24.foldLeft(c24.right[EMFProblems])(convertDescriptionBoxRefinements)
 
+    c2N = c25
+
+    // Topo sort of the modules
+
+    modules = c2N.foldLeft(Map.empty[api.Module, api.Extent]) { case (acc, (_, t2r)) =>
+      val modules
+      : Seq[api.Module]
+      = Seq.empty[api.Module] ++
+        t2r.rextent.terminologyGraphs.values ++
+        t2r.rextent.bundles.values ++
+        t2r.rextent.descriptionBoxes.values
+
+      scala.Predef.require(modules.size == 1)
+      acc + (modules(0) -> t2r.rextent)
+    }
+
+    moduleEdges = c2N.values.foldLeft(Map.empty[api.ModuleEdge, api.Extent]) { case (acc, t2r) =>
+      val ext = t2r.rextent
+      acc ++
+        ext.terminologyBoxAxiomByUUID.values.map(_ -> ext) ++
+        ext.terminologyBundleAxiomByUUID.values.map(_ -> ext) ++
+        ext.descriptionBoxExtendsClosedWorldDefinitionsByUUID.values.map(_ -> ext) ++
+        ext.descriptionBoxRefinementByUUID.values.map(_ -> ext)
+    }
+
+    sortedModuleExtents <- sortExtents(modules, moduleEdges).leftMap(ts => EMFProblems(exceptions = ts.to[List]))
+
     // Relationships
-    c30 = c25
+    c30 = c2N
 
     c31 <- c30.foldLeft(c30.right[EMFProblems])(convertReifiedRelationships)
 
@@ -2072,7 +2121,7 @@ object OMLText2Resolver {
 
     c52 <- c51.foldLeft(c51.right[EMFProblems])(convertScalars)
 
-    c53 <- c52.foldLeft(c52.right[EMFProblems])(convertRestrictedDataRanges)
+    c53 <- sortedModuleExtents.foldLeft(c52.right[EMFProblems])(convertRestrictedDataRanges)
 
     c54 <- c53.foldLeft(c53.right[EMFProblems])(convertScalarOneOfLiteralAxioms)
 
@@ -2130,7 +2179,20 @@ object OMLText2Resolver {
 
     // AnnotationProperties
     cC1 <- cC0.foldLeft(cC0.right[EMFProblems])(convertAnnotations)
+    cCN = cC1
 
-  } yield cC1
+    finalSortedModuleExtents <- sortedModuleExtents.foldLeft(Seq.empty[(api.Module, api.Extent)].right[EMFProblems]) {
+      case (acc, (mi, _)) =>
+        cCN.find(_._2.includesAPIModule(mi)).map(_._2.rextent) match {
+          case Some(ei) =>
+            acc.map(_ :+ (mi -> ei))
+          case None =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convert() failed to find final extent for module ${mi.iri}"
+            )).left
+        }
+    }
+
+  } yield cCN -> finalSortedModuleExtents
 
 }

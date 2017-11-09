@@ -22,13 +22,13 @@ import java.lang.{IllegalArgumentException, System}
 import java.util.UUID
 
 import gov.nasa.jpl.imce.oml.resolver.Filterable._
-import gov.nasa.jpl.imce.oml.resolver.{ModuleGraphEdge, api}
+import gov.nasa.jpl.imce.oml.resolver.api
 import gov.nasa.jpl.imce.oml.{resolver, tables}
 import gov.nasa.jpl.omf.scala.binding.owlapi
 import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.ImmutableTerminologyBox
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.{terminologies => owlapiterminologies}
-import gov.nasa.jpl.omf.scala.binding.owlapi.{Mutable2ImmutableModuleMap, OWLAPIOMFGraphStore, OWLAPIOMFLoader, emptyMutable2ImmutableModuleMap, descriptions => owlapidescriptions}
+import gov.nasa.jpl.omf.scala.binding.owlapi.{Mutable2ImmutableModuleMap, OWLAPIOMFGraphStore, emptyMutable2ImmutableModuleMap, descriptions => owlapidescriptions}
 import gov.nasa.jpl.omf.scala.core
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.semanticweb.owlapi.model.IRI
@@ -38,8 +38,6 @@ import scala.{Boolean, Function, None, Option, Some, StringContext, Unit}
 import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
-import scalax.collection.GraphEdge.NodeProduct
-import scalax.collection.immutable.Graph
 
 object OMLResolver2Ontology {
 
@@ -48,62 +46,6 @@ object OMLResolver2Ontology {
   type Throwables = core.OMFError.Throwables
 
   type ResolverResult = Throwables \/ OMLResolver2Ontology
-
-  def sortExtents
-  (moduleExtents: Map[api.Module, api.Extent],
-   edgeExtents: Map[api.ModuleEdge, api.Extent])
-  : Throwables \/ Seq[(api.Module, api.Extent)]
-  = for {
-    m2e <- moduleExtents.right[Throwables]
-
-    g0 = Graph[api.Module, ModuleGraphEdge]()
-
-    g1 = moduleExtents.foldLeft(g0) {
-      case (gi, (mi, _)) =>
-        gi + mi
-    }
-
-    g2 <- edgeExtents.foldLeft(g1.right[Throwables]) { case (acc, (me, ext)) =>
-      for {
-        gi <- acc
-        source <- me.sourceModule()(ext) match {
-          case Some(s) =>
-            s.right[Throwables]
-          case _ =>
-            Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
-              s"No source module for edge: $me"
-            )).left
-        }
-        targetIRI = me.targetModule()(ext)
-        gj = gi.toOuterNodes.find(_.iri == targetIRI).fold(gi) { target: api.Module =>
-          val edge = new ModuleGraphEdge[api.Module](NodeProduct(source, target), me)
-          System.out.println(s"Edge: ${source.iri} ~> ${target.iri}")
-          gi + edge
-        }
-      } yield gj
-    }
-
-    g = g2
-
-    moduleSort <- OWLAPIOMFLoader
-      .hierarchicalTopologicalSort[api.Module, ModuleGraphEdge](Seq(g), Seq.empty)
-      .map(_.reverse)
-
-    result <- moduleSort.foldLeft(Seq.empty[(api.Module, api.Extent)].right[Throwables]) { case (acc, m) =>
-      for {
-        prev <- acc
-        e <- m2e.get(m) match {
-          case Some(_e) =>
-            _e.right[Throwables]
-          case None =>
-            Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
-              s"No extent for module: $m"
-            )).left
-        }
-        next = prev :+ (m -> e)
-      } yield next
-    }
-  } yield result
 
   def convert
   (extents: Seq[api.Extent],
@@ -263,7 +205,7 @@ object OMLResolver2Ontology {
         extent
           .terminologyBoxOfTerminologyBoxStatement
           .selectByKindOf { case (dr: api.RestrictedDataRange, t: api.TerminologyBox) => dr -> t }
-      System.out.println(s"- IRI: $iri\n- Request: drs size ${drs.size}")
+      //System.out.println(s"- IRI: $iri\n- Request: drs size ${drs.size}")
       convertRestrictedDataRanges(c62.right[Throwables], drs, List.empty)(c62.omfStore)
     }
     c64 <- extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c63.right[Throwables])(convertScalarOneOfLiteralAxiom(extent))
@@ -457,7 +399,7 @@ object OMLResolver2Ontology {
         r2o <- acc
         t1 <- r2o.getTbox(t0)
         e1 <- r2o.getTboxByIRI(ax0.extendedTerminology)
-        _ = System.out.println(s"convertTerminologyExtension($iri)\n\textendingG=${t1.iri}\n\t  extendedG=${e1.iri}")
+        //_ = System.out.println(s"convertTerminologyExtension($iri)\n\textendingG=${t1.iri}\n\t  extendedG=${e1.iri}")
         ax1 <- r2o.ops.addTerminologyExtension(extendingG = t1, extendedG = e1)(r2o.omfStore)
       } yield r2o.copy(edges = r2o.edges + (ax0 -> ax1))
     case (acc, _) =>
@@ -668,14 +610,12 @@ object OMLResolver2Ontology {
   = if (drs.isEmpty) {
     if (queue.isEmpty)
       acc
-    else if (progress) {
-      System.out.println(s"- Restart with drs size ${queue.size}")
+    else if (progress)
       convertRestrictedDataRanges(acc, queue, List.empty)
-    } else {
+    else
       Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
         s"convertRestrictedDataRanges: no progress with ${queue.size} data ranges in the queue: " +
           queue.map(_._1.name).mkString(", "))).left
-    }
   }
   else acc match {
     case \/-(r2o) =>
@@ -740,7 +680,6 @@ object OMLResolver2Ontology {
               -\/(errors)
           }
         case (Some(t1), None) =>
-          System.out.println(s"- Defer: drs size ${drs.tail.size}, queue size ${1 + queue.size}")
           convertRestrictedDataRanges(acc, drs.tail, drs.head :: queue)
         case (None, _) =>
           Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
@@ -763,9 +702,7 @@ object OMLResolver2Ontology {
           case Some(vt0) =>
             r2o.lookupDataRange(vt0).map(Option.apply)
           case None =>
-            Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
-              s"convertScalarOneOfLiteralAxiom: Failed to resolve " +
-                s"value type: ${s0.valueType}")).left
+            None.right
         }
         s1 <- r2o.ops.addScalarOneOfLiteralAxiom(t1, r1, s0.value, vt1)(r2o.omfStore)
       } yield r2o.copy(termAxioms = r2o.termAxioms + (s0 -> s1))
