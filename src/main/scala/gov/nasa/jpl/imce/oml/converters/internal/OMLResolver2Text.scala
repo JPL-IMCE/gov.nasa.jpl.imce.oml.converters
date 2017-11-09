@@ -359,7 +359,7 @@ object OMLResolver2Text {
     _ = java.lang.System.out.println(s"==> OMLResolver2Text  converted: $iri")
   } yield result
 
-  def normalizeName(n: String): String = n.replaceAll("[.]", "_")
+  def normalizeName(n: String): String = n
 
   // Module
 
