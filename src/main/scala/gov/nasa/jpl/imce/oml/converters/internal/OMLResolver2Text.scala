@@ -844,7 +844,26 @@ object OMLResolver2Text {
             s1.setTbox(t1)
             s1.setAxiom(a1)
             s1.setValue(tables2emf(s0.value))
-            r2t.copy(conversions = r2t.conversions.copy(scalarOneOfLiterals = r2t.conversions.scalarOneOfLiterals + (s0 -> s1))).right
+            val next = r2t.copy(conversions =
+              r2t.conversions.copy(scalarOneOfLiterals =
+                r2t.conversions.scalarOneOfLiterals + (s0 -> s1))).right
+            s0.valueType match {
+              case Some(vt0) =>
+                r2t.conversions.dataRanges.get(vt0) match {
+                  case Some(vt1) =>
+                    s1.setValueType(vt1)
+                    next
+                  case None =>
+                    new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"convertScalarOneOfLiteralAxiom: Failed to resolve " +
+                        s" value type: $vt0 " +
+                        s" in tbox: $t0" +
+                        s" for defining ScalarOneOfLiteralAxiom: $s0")).left[ConversionState]
+                }
+              case None =>
+                next
+            }
+
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertScalarOneOfLiteralAxiom: Failed to resolve " +
