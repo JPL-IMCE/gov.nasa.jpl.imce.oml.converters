@@ -35,13 +35,7 @@ import scalaz.{-\/, \/, \/-}
 object OMLDirectoryConverter {
 
   def main(argv: Array[String]): Unit = {
-    if (argv.length != 5) {
-      System.out.println(s"argv has ${argv.length} arguments:")
-      argv.foreach { arg =>
-        System.out.println(s"# arg: $arg")
-      }
-      System.out.println(usage())
-    } else {
+    if (argv.length == 5) {
       val (_ :: cat :: flag :: out :: cmd :: Nil) = argv.to[List]
       val result: OMFError.Throwables \/ Unit = for {
         inCatalog <- checkCatalogFile(cat)
@@ -63,6 +57,14 @@ object OMLDirectoryConverter {
           }
           System.exit(-1)
       }
+    } else if (argv.length == 3 && argv(0) == "-diff") {
+      DiffConversionsCommand.diff(Path(argv(1)),Path(argv(2)))
+    } else {
+      System.out.println(s"argv has ${argv.length} arguments:")
+      argv.foreach { arg =>
+        System.out.println(s"# arg: $arg")
+      }
+      System.out.println(usage())
     }
   }
 
@@ -128,18 +130,31 @@ object OMLDirectoryConverter {
     s"""
        |Usage:
        |
-       |1) Convert all OML textual concrete syntax files *.oml
-       |omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
+       |0) Get information about extended options
+       |omlDirectoryConverter -h
        |
-       |2) Convert all OWL2-DL ontology syntax files *.owl
-       |omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
+       |1) Compare recursively OML files (text, owl, json) between two directories
+       |omlDirectoryConverter -- -diff <dir1> <dir2>
        |
-       |3) Convert all normalized tabular syntax files *.oml.json.zip
-       |omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
+       |  where <dir1> and <dir2> are absolute paths to directories, each containing an oml.catalog.xml file.
        |
-       |where:
-       |<oml.catalog.xml> is an OASIS XML catalog file named 'oml.catalog.xml' for resolving OML IRIs to OML files
-       |<out.dir> is a new directory that will be created as long as it does not exist (-out) or
+       |  For `*.owl` and `*.owl`, this comparison only reports which files are different between the two directories.
+       |  The comparison does not report the differences in these files.
+       |
+       |  For `*.oml.json.zip`, this comparison reports line-level differences (added/deleted) for each OML table.
+       |
+       |2) Convert all OML textual concrete syntax files *.oml
+       |omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
+       |
+       |3) Convert all OWL2-DL ontology syntax files *.owl
+       |omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
+       |
+       |4) Convert all normalized tabular syntax files *.oml.json.zip
+       |omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
+       |
+       |  where:
+       |  <oml.catalog.xml> is an OASIS XML catalog file named 'oml.catalog.xml' for resolving OML IRIs to OML files
+       |  <out.dir> is a new directory that will be created as long as it does not exist (-out) or
        |          will be deleted if it exists and created again (-d)
      """.stripMargin
 

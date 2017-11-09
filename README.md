@@ -158,7 +158,7 @@ OML supports three canonical representations:
   
   This tarball contains a folder, `OMLConverter` with two sub-folders:
   - `OMLConverter/bin`: platform-specific scripts to launch the command-line application on Linux, MacOSX and Windows.
-  - `OMLConverter/lib`: shared libraries used by the converter application.
+  - `OMLConverter/lib`: shared libraries used by the directory converter application.
 
 - Print OML Converter usage information
 
@@ -170,13 +170,23 @@ OML supports three canonical representations:
   # 0) Get information about command-line options
   # omlDirectoryConverter
   # 
-  # 1) Convert all OML textual concrete syntax files *.oml
+  # 1) Compare recursively OML files (text, owl, json) between two directories
+  # omlDirectoryConverter -- -diff <dir1> <dir2>
+  #   
+  # where <dir1> and <dir2> are absolute paths to directories, each containing an oml.catalog.xml file.
+  #
+  # For `*.owl` and `*.owl`, this comparison only reports which files are different between the two directories.
+  # The comparison does not report the differences in these files.
+  # 
+  # For `*.oml.json.zip`, this comparison reports line-level differences (added/deleted) for each OML table.
+  #
+  # 2) Convert all OML textual concrete syntax files *.oml
   # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
   # 
-  # 2) Convert all OWL2-DL ontology syntax files *.owl
+  # 3) Convert all OWL2-DL ontology syntax files *.owl
   # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
   # 
-  # 3) Convert all normalized tabular syntax files *.oml.json.zip
+  # 4) Convert all normalized tabular syntax files *.oml.json.zip
   # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
   # 
   # where:
@@ -185,28 +195,37 @@ OML supports three canonical representations:
   #           will be deleted if it exists and created again (-d)
   ```
  
+### Compare recursively OML files (text, owl, json) between two directories
+
+- `omlDirectoryConverter -- -diff <dir1> <dir2>
+
+   For `*.owl` and `*.owl`, this comparison only reports which files are different between the two directories.
+   The comparison does not report the differences in these files.
+   
+   For `*.oml.json.zip`, this comparison reports line-level differences (added/deleted) for each OML table.
+   
 ### Convert from OML textual concrete Syntax
 
-- `omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d <dir>] -text`
+- `omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d <dir>] -text`
     
-    Use the `oml.catalog.xml` file to convert all `*.oml` files from the OML textual concrete syntax representation 
-    to corresponding OML representations in all 3 formats.
+   Use the `oml.catalog.xml` file to convert all `*.oml` files from the OML textual concrete syntax representation 
+   to corresponding OML representations in all 3 formats.
     
-    If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
+   If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
     
 ### Convert from OML normalilzed tabular relational schema
 
-- `omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d <dir>] -json`
+- `omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d <dir>] -json`
        
    Use the `oml.catalog.xml` file to convert all `*.oml.json.zip` files from the OML tabular representation 
    to corresponding OML representations in all 3 formats.
     
 ### Convert from OML ontologies
 
-- `omlDirectoryConverter -cat <oml.catalog.xml> [-out|-d <dir>] -owl`
+- `omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d <dir>] -owl`
                        
-  Use the `oml.catalog.xml` file to convert all OML ontological representations resolved from the `<IRI>` provided
-  to corresponding OML representations in all 3 formats.
+   Use the `oml.catalog.xml` file to convert all OML ontological representations resolved from the `<IRI>` provided
+   to corresponding OML representations in all 3 formats.
   
 ### OML Metadata Directed Graph
 
