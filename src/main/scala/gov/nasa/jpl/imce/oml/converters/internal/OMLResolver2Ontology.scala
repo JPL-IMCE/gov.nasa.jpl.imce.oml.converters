@@ -23,6 +23,7 @@ import java.util.UUID
 
 import gov.nasa.jpl.imce.oml.resolver.Filterable._
 import gov.nasa.jpl.imce.oml.resolver.api
+import gov.nasa.jpl.imce.oml.resolver.toUUIDString
 import gov.nasa.jpl.imce.oml.{resolver, tables}
 import gov.nasa.jpl.omf.scala.binding.owlapi
 import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
@@ -161,7 +162,7 @@ object OMLResolver2Ontology {
     }
   } yield result
 
-  protected def convert(c00: Throwables \/ OMLResolver2Ontology, extent: api.Extent, iri: tables.IRI, m0: api.Module, m1: MutableTboxOrDbox, i: IRI)
+  protected def convert(c00: Throwables \/ OMLResolver2Ontology, extent: api.Extent, iri: tables.taggedTypes.IRI, m0: api.Module, m1: MutableTboxOrDbox, i: IRI)
   : Throwables \/ OMLResolver2Ontology
   = for {
     // AnnotationProperties
@@ -287,7 +288,7 @@ object OMLResolver2Ontology {
   }
 
   protected def convertAnnotationProperty(m1: MutableTboxOrDbox)
-  : (ResolverResult, (UUID, api.AnnotationProperty)) => ResolverResult
+  : (ResolverResult, (api.taggedTypes.AnnotationPropertyUUID, api.AnnotationProperty)) => ResolverResult
   = {
     case (acc, (uuid, ap0)) =>
       for {
@@ -296,11 +297,17 @@ object OMLResolver2Ontology {
           case -\/(mtbox) =>
             r2o.ops.addTerminologyAnnotationProperty(
               mtbox,
-              tables.AnnotationProperty(uuid.toString, ap0.iri, ap0.abbrevIRI))(r2o.omfStore)
+              tables.AnnotationProperty(
+                uuid,
+                tables.taggedTypes.iri(ap0.iri), 
+                tables.taggedTypes.abbrevIRI(ap0.abbrevIRI)))(r2o.omfStore)
           case \/-(mdbox) =>
             r2o.ops.addDescriptionAnnotationProperty(
               mdbox,
-              tables.AnnotationProperty(uuid.toString, ap0.iri, ap0.abbrevIRI))(r2o.omfStore)
+              tables.AnnotationProperty(
+                uuid,
+                tables.taggedTypes.iri(ap0.iri), 
+                tables.taggedTypes.abbrevIRI(ap0.abbrevIRI)))(r2o.omfStore)
         }
       } yield r2o.copy(aps = r2o.aps + (ap0 -> ap1))
   }
@@ -377,13 +384,13 @@ object OMLResolver2Ontology {
       for {
         r2o <- acc
         t1 <- r2o.getTbox(t0)
-        a1 <- r2o.ops.addAspect(t1, core.OMLString.LocalName(a0.name))(r2o.omfStore)
+        a1 <- r2o.ops.addAspect(t1, tables.taggedTypes.localName(a0.name))(r2o.omfStore)
       } yield r2o.copy(aspects = r2o.aspects + (a0 -> a1))
     case (acc, (c0: api.Concept, t0: api.TerminologyBox)) =>
       for {
         r2o <- acc
         t1 <- r2o.getTbox(t0)
-        c1 <- r2o.ops.addConcept(t1, core.OMLString.LocalName(c0.name))(r2o.omfStore)
+        c1 <- r2o.ops.addConcept(t1, tables.taggedTypes.localName(c0.name))(r2o.omfStore)
       } yield r2o.copy(concepts = r2o.concepts + (c0 -> c1))
     case (acc, _) =>
       acc
@@ -391,7 +398,7 @@ object OMLResolver2Ontology {
 
   // ModuleEdges
 
-  protected def convertTerminologyExtension(ext: api.Extent, iri: tables.IRI)
+  protected def convertTerminologyExtension(ext: api.Extent, iri: tables.taggedTypes.IRI)
   : (ResolverResult, (api.TerminologyBoxAxiom, api.TerminologyBox)) => ResolverResult
   = {
     case (acc, (ax0: api.TerminologyExtensionAxiom, t0)) =>
@@ -519,9 +526,9 @@ object OMLResolver2Ontology {
             (if (rr0.isTransitive)
               Iterable(core.RelationshipCharacteristics.isTransitive)
             else Iterable()),
-          core.OMLString.LocalName(rr0.name),
-          core.OMLString.LocalName(rr0.unreifiedPropertyName),
-          rr0.unreifiedInversePropertyName.map(core.OMLString.LocalName(_))
+          tables.taggedTypes.localName(rr0.name),
+          tables.taggedTypes.localName(rr0.unreifiedPropertyName),
+          rr0.unreifiedInversePropertyName.map(tables.taggedTypes.localName(_))
         )(r2o.omfStore)
       } yield r2o.copy(reifiedRelationships = r2o.reifiedRelationships + (rr0 -> rr1))
     case (acc, _) =>
@@ -564,7 +571,7 @@ object OMLResolver2Ontology {
             (if (ur0.isTransitive)
               Iterable(core.RelationshipCharacteristics.isTransitive)
             else Iterable()),
-          core.OMLString.LocalName(ur0.name)
+          tables.taggedTypes.localName(ur0.name)
         )(r2o.omfStore)
       } yield r2o.copy(unreifiedRelationships = r2o.unreifiedRelationships + (ur0 -> ur1))
     case (acc, _) =>
@@ -580,7 +587,7 @@ object OMLResolver2Ontology {
       for {
         r2o <- acc
         t1 <- r2o.getTbox(t0)
-        s1 <- r2o.ops.addStructuredDataType(t1, core.OMLString.LocalName(s0.name))(r2o.omfStore)
+        s1 <- r2o.ops.addStructuredDataType(t1, tables.taggedTypes.localName(s0.name))(r2o.omfStore)
       } yield r2o.copy(structures = r2o.structures + (s0 -> s1))
     case (acc, _) =>
       acc
@@ -593,7 +600,7 @@ object OMLResolver2Ontology {
       for {
         r2o <- acc
         t1 <- r2o.getTbox(t0)
-        s1 <- r2o.ops.addScalarDataType(t1, core.OMLString.LocalName(s0.name))(r2o.omfStore)
+        s1 <- r2o.ops.addScalarDataType(t1, tables.taggedTypes.localName(s0.name))(r2o.omfStore)
       } yield r2o.copy(dataRanges = r2o.dataRanges + (s0 -> s1))
     case (acc, _) =>
       acc
@@ -626,49 +633,49 @@ object OMLResolver2Ontology {
             case rdr0: api.BinaryScalarRestriction =>
               r2o.ops
                 .addBinaryScalarRestriction(
-                  t1, core.OMLString.LocalName(rdr0.name), rr1,
+                  t1, tables.taggedTypes.localName(rdr0.name), rr1,
                   rdr0.length, rdr0.minLength, rdr0.maxLength)
                 .map { rdr1 => r2o.copy(dataRanges = r2o.dataRanges + (rdr0 -> rdr1)) }
             case rdr0: api.IRIScalarRestriction =>
               r2o.ops
                 .addIRIScalarRestriction(
-                  t1, core.OMLString.LocalName(rdr0.name), rr1,
+                  t1, tables.taggedTypes.localName(rdr0.name), rr1,
                   rdr0.length, rdr0.minLength, rdr0.maxLength, rdr0.pattern)
                 .map { rdr1 => r2o.copy(dataRanges = r2o.dataRanges + (rdr0 -> rdr1)) }
             case rdr0: api.NumericScalarRestriction =>
               r2o.ops
                 .addNumericScalarRestriction(
-                  t1, core.OMLString.LocalName(rdr0.name), rr1,
+                  t1, tables.taggedTypes.localName(rdr0.name), rr1,
                   rdr0.minInclusive, rdr0.maxInclusive,
                   rdr0.minExclusive, rdr0.maxExclusive)
                 .map { rdr1 => r2o.copy(dataRanges = r2o.dataRanges + (rdr0 -> rdr1)) }
             case rdr0: api.PlainLiteralScalarRestriction =>
               r2o.ops
                 .addPlainLiteralScalarRestriction(
-                  t1, core.OMLString.LocalName(rdr0.name), rr1,
+                  t1, tables.taggedTypes.localName(rdr0.name), rr1,
                   rdr0.length, rdr0.minLength, rdr0.maxLength, rdr0.pattern,
-                  rdr0.langRange.map(core.OMLString.LangRange(_)))
+                  rdr0.langRange.map(r => tables.taggedTypes.languageTagDataType(r)))
                 .map { rdr1 => r2o.copy(dataRanges = r2o.dataRanges + (rdr0 -> rdr1)) }
             case rdr0: api.ScalarOneOfRestriction =>
               r2o.ops
                 .addScalarOneOfRestriction(
-                  t1, core.OMLString.LocalName(rdr0.name), rr1)
+                  t1, tables.taggedTypes.localName(rdr0.name), rr1)
                 .map { rdr1 => r2o.copy(dataRanges = r2o.dataRanges + (rdr0 -> rdr1)) }
             case rdr0: api.StringScalarRestriction =>
               r2o.ops
                 .addStringScalarRestriction(
-                  t1, core.OMLString.LocalName(rdr0.name), rr1,
+                  t1, tables.taggedTypes.localName(rdr0.name), rr1,
                   rdr0.length, rdr0.minLength, rdr0.maxLength, rdr0.pattern)
                 .map { rdr1 => r2o.copy(dataRanges = r2o.dataRanges + (rdr0 -> rdr1)) }
             case rdr0: api.SynonymScalarRestriction =>
               r2o.ops
                 .addSynonymScalarRestriction(
-                  t1, core.OMLString.LocalName(rdr0.name), rr1)
+                  t1, tables.taggedTypes.localName(rdr0.name), rr1)
                 .map { rdr1 => r2o.copy(dataRanges = r2o.dataRanges + (rdr0 -> rdr1)) }
             case rdr0: api.TimeScalarRestriction =>
               r2o.ops
                 .addTimeScalarRestriction(
-                  t1, core.OMLString.LocalName(rdr0.name), rr1,
+                  t1, tables.taggedTypes.localName(rdr0.name), rr1,
                   rdr0.minInclusive, rdr0.maxInclusive,
                   rdr0.minExclusive, rdr0.maxExclusive)
                 .map { rdr1 => r2o.copy(dataRanges = r2o.dataRanges + (rdr0 -> rdr1)) }
@@ -723,7 +730,7 @@ object OMLResolver2Ontology {
         r1 <- r2o.lookupDataRange(dp0.range)
         dp1 <- r2o.ops.addEntityScalarDataProperty(
           t1, e1, r1,
-          core.OMLString.LocalName(dp0.name),
+          tables.taggedTypes.localName(dp0.name),
           dp0.isIdentityCriteria)(r2o.omfStore)
       } yield r2o.copy(entityScalarDataProperties = r2o.entityScalarDataProperties + (dp0 -> dp1))
     case (acc, _) =>
@@ -741,7 +748,7 @@ object OMLResolver2Ontology {
         r1 <- r2o.lookupStructure(dp0.range)
         dp1 <- r2o.ops.addEntityStructuredDataProperty(
           t1, e1, r1,
-          core.OMLString.LocalName(dp0.name),
+          tables.taggedTypes.localName(dp0.name),
           dp0.isIdentityCriteria)(r2o.omfStore)
       } yield r2o.copy(entityStructuredDataProperties = r2o.entityStructuredDataProperties + (dp0 -> dp1))
     case (acc, _) =>
@@ -759,7 +766,7 @@ object OMLResolver2Ontology {
         r1 <- r2o.lookupDataRange(dp0.range)
         dp1 <- r2o.ops.addScalarDataProperty(
           t1, e1, r1,
-          core.OMLString.LocalName(dp0.name))(r2o.omfStore)
+          tables.taggedTypes.localName(dp0.name))(r2o.omfStore)
       } yield r2o.copy(scalarDataProperties = r2o.scalarDataProperties + (dp0 -> dp1))
     case (acc, _) =>
       acc
@@ -776,7 +783,7 @@ object OMLResolver2Ontology {
         r1 <- r2o.lookupStructure(dp0.range)
         dp1 <- r2o.ops.addStructuredDataProperty(
           t1, e1, r1,
-          core.OMLString.LocalName(dp0.name))(r2o.omfStore)
+          tables.taggedTypes.localName(dp0.name))(r2o.omfStore)
       } yield r2o.copy(structuredDataProperties = r2o.structuredDataProperties + (dp0 -> dp1))
     case (acc, _) =>
       acc
@@ -971,7 +978,7 @@ object OMLResolver2Ontology {
     val (dis0, ctd1) = disjuncts.head
     dis0 match {
       case ax0: api.AnonymousConceptUnionAxiom =>
-        r2o.ops.addAnonymousConceptTaxonomyAxiom(b1, ctd1, core.OMLString.LocalName(ax0.name))(r2o.omfStore) match {
+        r2o.ops.addAnonymousConceptTaxonomyAxiom(b1, ctd1, tables.taggedTypes.localName(ax0.name))(r2o.omfStore) match {
           case \/-(ax1) =>
             val upd = r2o.copy(disjointUnionOfConceptAxioms = r2o.disjointUnionOfConceptAxioms + (ax0 -> ax1))
             val children = disjunctsForConceptTreeDisjunction(upd, ax0, ax1)
@@ -997,7 +1004,7 @@ object OMLResolver2Ontology {
         r2o <- acc
         t1 <- r2o.getGbox(t0)
         h1 <- r2o.lookupUnreifiedRelationship(ax0.head)
-        ax1 <- r2o.ops.addChainRule(t1, h1, core.OMLString.LocalName(ax0.name))(r2o.omfStore)
+        ax1 <- r2o.ops.addChainRule(t1, h1, tables.taggedTypes.localName(ax0.name))(r2o.omfStore)
         _ <- ext.lookupFirstSegment(ax0) match {
           case Some(s0) =>
             convertRuleBodySegment(r2o.copy(chainRules = r2o.chainRules + (ax0 -> ax1)), ext, s0, t1, Some(ax1), None)
@@ -1130,7 +1137,7 @@ object OMLResolver2Ontology {
         r2o <- acc
         d1 <- r2o.getDbox(d0)
         c1 <- r2o.lookupConcept(ax0.singletonConceptClassifier)
-        ax1 <- r2o.ops.addConceptInstance(d1, c1, core.OMLString.LocalName(ax0.name))(r2o.omfStore)
+        ax1 <- r2o.ops.addConceptInstance(d1, c1, tables.taggedTypes.localName(ax0.name))(r2o.omfStore)
       } yield r2o.copy(conceptualEntitySingletonInstances = r2o.conceptualEntitySingletonInstances + (ax0 -> ax1))
   }
 
@@ -1142,7 +1149,7 @@ object OMLResolver2Ontology {
         r2o <- acc
         d1 <- r2o.getDbox(d0)
         rr1 <- r2o.lookupReifiedRelationship(ax0.singletonReifiedRelationshipClassifier)
-        ax1 <- r2o.ops.addReifiedRelationshipInstance(d1, rr1, core.OMLString.LocalName(ax0.name))(r2o.omfStore)
+        ax1 <- r2o.ops.addReifiedRelationshipInstance(d1, rr1, tables.taggedTypes.localName(ax0.name))(r2o.omfStore)
       } yield r2o.copy(conceptualEntitySingletonInstances = r2o.conceptualEntitySingletonInstances + (ax0 -> ax1))
   }
 
@@ -1510,7 +1517,7 @@ case class OMLResolver2Ontology
       )).left
   }
 
-  def getTboxByIRI(iri: tables.IRI): core.OMFError.Throwables \/ owlapiterminologies.MutableTerminologyBox
+  def getTboxByIRI(iri: tables.taggedTypes.IRI): core.OMFError.Throwables \/ owlapiterminologies.MutableTerminologyBox
   = (gs.values ++ bs.values)
     .find { case tbox: owlapiterminologies.MutableTerminologyBox =>
       tbox.iri.toString == iri
@@ -1551,7 +1558,7 @@ case class OMLResolver2Ontology
       )).left
   }
 
-  def getDboxByIRI(iri: tables.IRI): core.OMFError.Throwables \/ owlapidescriptions.MutableDescriptionBox
+  def getDboxByIRI(iri: tables.taggedTypes.IRI): core.OMFError.Throwables \/ owlapidescriptions.MutableDescriptionBox
   = ds.values
     .find { dbox =>
       dbox.iri.toString == iri

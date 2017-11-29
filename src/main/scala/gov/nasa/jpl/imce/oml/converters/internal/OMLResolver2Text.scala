@@ -25,7 +25,8 @@ import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable.filterable
 import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model._
 import gov.nasa.jpl.imce.oml.resolver.api
-import gov.nasa.jpl.imce.oml.tables.{IRI, ClosedWorldDesignations, OpenWorldDefinitions, TerminologyKind => TTerminologyKind}
+import gov.nasa.jpl.imce.oml.tables
+import gov.nasa.jpl.imce.oml.tables.{ClosedWorldDesignations, OpenWorldDefinitions, TerminologyKind => TTerminologyKind}
 import gov.nasa.jpl.imce.oml.tables.{Final, Partial, DescriptionKind => TDescriptionKind}
 import org.eclipse.xtext.resource.XtextResourceSet
 
@@ -36,7 +37,7 @@ import scalaz.Scalaz._
 import scalaz._
 
 case class OMLResolver2Text
-(mappings: Seq[(IRI, (api.Extent, common.Extent))] = Seq.empty,
+(mappings: Seq[(tables.taggedTypes.IRI, (api.Extent, common.Extent))] = Seq.empty,
 
  // Modules
  gs: Map[api.TerminologyGraph, graphs.TerminologyGraph] = Map.empty,
@@ -94,15 +95,15 @@ case class OMLResolver2Text
     case d: api.DescriptionBox => ds.get(d)
   }
 
-  def tboxLookup(iri: IRI)
+  def tboxLookup(iri: tables.taggedTypes.IRI)
   : Option[terminologies.TerminologyBox]
   = gs.values.find { g => g.iri() == iri } orElse bs.values.find { b => b.iri() == iri }
 
-  def bundleLookup(iri: IRI)
+  def bundleLookup(iri: tables.taggedTypes.IRI)
   : Option[bundles.Bundle]
   = bs.values.find { b => b.iri() == iri }
 
-  def dboxLookup(iri: IRI)
+  def dboxLookup(iri: tables.taggedTypes.IRI)
   : Option[descriptions.DescriptionBox]
   = ds.values.find { d => d.iri() == iri }
 
@@ -233,7 +234,7 @@ case class OMLResolver2Text
 object OMLResolver2Text {
 
   case class ConversionState
-  (iri: IRI,
+  (iri: tables.taggedTypes.IRI,
    extent: api.Extent,
    omlExtent: common.Extent,
    conversions: OMLResolver2Text)

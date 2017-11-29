@@ -2,8 +2,7 @@
 import com.typesafe.sbt.license.{LicenseInfo, DepModuleInfo}
 
 import de.heikoseeberger.sbtheader.HeaderPlugin
-import de.heikoseeberger.sbtheader.HeaderPattern
-import de.heikoseeberger.sbtheader.license.CommentBlock
+import de.heikoseeberger.sbtheader.CommentStyle
 import scala.util.matching.Regex
 
 // use `sbt createHeaders` to update source code headers.
@@ -30,7 +29,10 @@ val license =
 
 startYear := Some(2017)
 
-headers := Map("scala" -> (HeaderPattern.cStyleBlockComment, CommentBlock.cStyle(license)))
+headerLicense := Some(HeaderLicense.ALv2("2017", license))
+
+headerMappings := headerMappings.value +
+  (HeaderFileType.scala -> CommentStyle.CStyleBlockComment)
 
 licenseReportTitle := "LicenseReportOfAggregatedSBTPluginsAndLibraries"
 

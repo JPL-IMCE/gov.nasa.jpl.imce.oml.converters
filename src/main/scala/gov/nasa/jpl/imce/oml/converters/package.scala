@@ -189,21 +189,21 @@ package object converters {
 
   def emf2tables
   (d: model.datatypes.PositiveIntegerValue)
-  : tables.PositiveIntegerLiteral
-  = new tables.PositiveIntegerLiteral(d.value)
+  : tables.taggedTypes.PositiveIntegerLiteral
+  = tables.taggedTypes.positiveIntegerLiteral(d.value)
 
   def emf2tables
   (d: model.common.LiteralDateTime)
   : tables.LiteralDateTime
-  = new tables.LiteralDateTime(d.getDateTime.value)
+  = tables.LiteralDateTime(d.getDateTime.value)
 
   def emf2tables
   (d: model.datatypes.LanguageTagValue)
-  : tables.LanguageTagDataType
-  = d.value
+  : tables.taggedTypes.LanguageTagDataType
+  = tables.taggedTypes.languageTagDataType(d.value)
 
   def emf2tables
   (d: model.datatypes.PatternValue)
-  : tables.LiteralPattern
-  = d.value
+  : tables.taggedTypes.LiteralPattern
+  = tables.taggedTypes.literalPattern(d.value)
 }

@@ -90,12 +90,6 @@ lazy val omlConverters = Project("omlConverters", file("."))
 
     addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.patch),
 
-    libraryDependencies ++= Seq(
-      "io.circe" %% "circe-core",
-      "io.circe" %% "circe-generic",
-      "io.circe" %% "circe-parser"
-    ).map(_ % Versions_circe.version),
-
     // Avoid unresolvable dependencies from old versions of log4j
     libraryDependencies ~= {
       _ map {
@@ -118,7 +112,8 @@ lazy val omlConverters = Project("omlConverters", file("."))
           n.contains("test") ||
           (f.name.endsWith("log4j-1.2.17.zip") && n == "lib/log4j.log4j-1.2.17.jar") ||
           n == "lib/ch.qos.logback.logback-classic-1.0.7.jar" ||
-          n == "lib/ch.qos.logback.logback-core-1.0.7.jar"
+          n == "lib/ch.qos.logback.logback-core-1.0.7.jar" ||
+          n.startsWith("lib/owlapi-distribution-")
         if (ok) exs += 1 else oks += 1
         ok
       }
@@ -249,5 +244,13 @@ lazy val omlConverters = Project("omlConverters", file("."))
     Seq(
       "gov.nasa.jpl.imce" %% "gov.nasa.jpl.omf.scala.binding.owlapi"
         % Versions_omf_owlapi.version
+        % "compile" withSources())
+  )
+  .dependsOnSourceProjectOrLibraryArtifacts(
+    "omllFrameless",
+    "gov.nasa.jpl.imce.oml.frameless",
+    Seq(
+      "gov.nasa.jpl.imce" %% "gov.nasa.jpl.imce.oml.frameless"
+        % Versions_oml_frameless.version
         % "compile" withSources())
   )

@@ -20,6 +20,7 @@ package gov.nasa.jpl.imce.oml.converters.internal
 
 import ammonite.ops.RelPath
 
+import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.converters.emf2tables
 import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model.bundles._
@@ -242,13 +243,22 @@ object OMLText2Resolver {
         o2ri = prev(e)
         o2rj = mi match {
           case gi: TerminologyGraph =>
-            val (rj, gj) = f.createTerminologyGraph(o2ri.rextent, convertTerminologyGraphKind(gi.getKind), gi.iri())
+            val (rj, gj) = f.createTerminologyGraph(
+              o2ri.rextent,
+              convertTerminologyGraphKind(gi.getKind),
+              tables.taggedTypes.iri(gi.iri()))
             o2ri.copy(rextent = rj, tboxes = o2ri.tboxes + (gi -> gj))
           case bi: Bundle =>
-            val (rj, bj) = f.createBundle(o2ri.rextent, convertTerminologyGraphKind(bi.getKind), bi.iri())
+            val (rj, bj) = f.createBundle(
+              o2ri.rextent,
+              convertTerminologyGraphKind(bi.getKind),
+              tables.taggedTypes.iri(bi.iri()))
             o2ri.copy(rextent = rj, tboxes = o2ri.tboxes + (bi -> bj))
           case di: DescriptionBox =>
-            val (rj, dj) = f.createDescriptionBox(o2ri.rextent, convertDescriptionKind(di.getKind), di.iri())
+            val (rj, dj) = f.createDescriptionBox(
+              o2ri.rextent,
+              convertDescriptionKind(di.getKind),
+              tables.taggedTypes.iri(di.iri()))
             o2ri.copy(rextent = rj, dboxes = o2ri.dboxes + (di -> dj))
         }
         next = prev.updated(e, o2rj)
@@ -267,7 +277,10 @@ object OMLText2Resolver {
       for {
         prev <- acc
         o2ri = prev(e)
-        (rj, pj) = f.createAnnotationProperty(o2ri.rextent, pi.getIri, pi.getAbbrevIRI)
+        (rj, pj) = f.createAnnotationProperty(
+          o2ri.rextent,
+          tables.taggedTypes.iri(pi.getIri),
+          tables.taggedTypes.abbrevIRI(pi.getAbbrevIRI))
         o2rj = o2ri.copy(rextent = rj, aps = o2ri.aps + (pi -> pj))
         next = prev.updated(e, o2rj)
       } yield next
@@ -505,7 +518,10 @@ object OMLText2Resolver {
       for {
         prev <- acc
         o2ri = prev(e)
-        (rj, aj) = f.createAspect(o2ri.rextent, o2ri.tboxes(ai.getTbox), ai.name())
+        (rj, aj) = f.createAspect(
+          o2ri.rextent,
+          o2ri.tboxes(ai.getTbox),
+          tables.taggedTypes.localName(ai.name()))
         o2rj = o2ri.copy(rextent = rj, aspects = o2ri.aspects + (ai -> aj))
         next = prev.updated(e, o2rj)
       } yield next
@@ -527,7 +543,10 @@ object OMLText2Resolver {
       for {
         prev <- acc
         o2ri = prev(e)
-        (rj, cj) = f.createConcept(o2ri.rextent, o2ri.tboxes(ci.getTbox), ci.name())
+        (rj, cj) = f.createConcept(
+          o2ri.rextent,
+          o2ri.tboxes(ci.getTbox),
+          tables.taggedTypes.localName(ci.name()))
         o2rj = o2ri.copy(rextent = rj, concepts = o2ri.concepts + (ci -> cj))
         next = prev.updated(e, o2rj)
       } yield next
@@ -571,9 +590,10 @@ object OMLText2Resolver {
               isReflexive = rri.isIsReflexive,
               isSymmetric = rri.isIsSymmetric,
               isTransitive = rri.isIsTransitive,
-              name = rri.name(),
-              unreifiedPropertyName = rri.getUnreifiedPropertyName,
-              unreifiedInversePropertyName = Option.apply(rri.getUnreifiedInversePropertyName))
+              name = tables.taggedTypes.localName(rri.name()),
+              unreifiedPropertyName = tables.taggedTypes.localName(rri.getUnreifiedPropertyName),
+              unreifiedInversePropertyName = Option.apply(
+                tables.taggedTypes.localName(rri.getUnreifiedInversePropertyName)))
             o2ri.copy(rextent = rj, reifiedRelationships = o2ri.reifiedRelationships + (rri -> rrj)).right
           case (tboxj, sourcej, targetj) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -625,7 +645,7 @@ object OMLText2Resolver {
               isReflexive = uri.isIsReflexive,
               isSymmetric = uri.isIsSymmetric,
               isTransitive = uri.isIsTransitive,
-              name = uri.name())
+              name = tables.taggedTypes.localName(uri.name()))
             o2ri.copy(rextent = rj, unreifiedRelationships = o2ri.unreifiedRelationships + (uri -> urj)).right
           case (tboxj, sourcej, targetj) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -753,7 +773,7 @@ object OMLText2Resolver {
             val (rj, crj) = f.createChainRule(
               extent = o2ri.rextent,
               tbox = tboxj,
-              name = cri.getName,
+              name = tables.taggedTypes.localName(cri.getName),
               head = urj)
             val o2rj1 = o2ri.copy(rextent = rj, chainRules = o2ri.chainRules + (cri -> crj))
             val o2rj2 = segmentsi.foldLeft((o2rj1, Option(crj), Option.empty[api.RuleBodySegment])) {
@@ -836,7 +856,10 @@ object OMLText2Resolver {
       for {
         prev <- acc
         o2ri = prev(e)
-        (rj, scj) = f.createStructure(o2ri.rextent, o2ri.tboxes(sci.getTbox), sci.name())
+        (rj, scj) = f.createStructure(
+          o2ri.rextent,
+          o2ri.tboxes(sci.getTbox),
+          tables.taggedTypes.localName(sci.name()))
         o2rj = o2ri.copy(rextent = rj, structures = o2ri.structures + (sci -> scj))
         next = prev.updated(e, o2rj)
       } yield next
@@ -858,7 +881,10 @@ object OMLText2Resolver {
       for {
         prev <- acc
         o2ri = prev(e)
-        (rj, scj) = f.createScalar(o2ri.rextent, o2ri.tboxes(sci.getTbox), sci.name())
+        (rj, scj) = f.createScalar(
+          o2ri.rextent,
+          o2ri.tboxes(sci.getTbox),
+          tables.taggedTypes.localName(sci.name()))
         o2rj = o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (sci -> scj))
         next = prev.updated(e, o2rj)
       } yield next
@@ -906,7 +932,7 @@ object OMLText2Resolver {
                     length = Option.apply(rri.getLength).map(emf2tables),
                     minLength = Option.apply(rri.getMinLength).map(emf2tables),
                     maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                    name = rri.name)
+                    name = tables.taggedTypes.localName(rri.name))
                 case rri: IRIScalarRestriction =>
                   f.createIRIScalarRestriction(
                     extent = o2ri.rextent,
@@ -915,8 +941,8 @@ object OMLText2Resolver {
                     length = Option.apply(rri.getLength).map(emf2tables),
                     minLength = Option.apply(rri.getMinLength).map(emf2tables),
                     maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                    pattern = Option.apply(rri.getPattern).map(_.value),
-                    name = rri.name)
+                    pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
+                    name = tables.taggedTypes.localName(rri.name))
                 case rri: NumericScalarRestriction =>
                   f.createNumericScalarRestriction(
                     extent = o2ri.rextent,
@@ -926,7 +952,7 @@ object OMLText2Resolver {
                     minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
                     maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
                     maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
-                    name = rri.name)
+                    name = tables.taggedTypes.localName(rri.name))
                 case rri: PlainLiteralScalarRestriction =>
                   f.createPlainLiteralScalarRestriction(
                     extent = o2ri.rextent,
@@ -937,13 +963,13 @@ object OMLText2Resolver {
                     maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
                     pattern = Option.apply(rri.getPattern).map(emf2tables),
                     langRange = Option.apply(rri.getLangRange).map(emf2tables),
-                    name = rri.name)
+                    name = tables.taggedTypes.localName(rri.name))
                 case rri: ScalarOneOfRestriction =>
                   f.createScalarOneOfRestriction(
                     extent = o2ri.rextent,
                     tbox = tboxj,
                     restrictedRange = rsj,
-                    name = rri.name)
+                    name = tables.taggedTypes.localName(rri.name))
                 case rri: StringScalarRestriction =>
                   f.createStringScalarRestriction(
                     extent = o2ri.rextent,
@@ -952,14 +978,14 @@ object OMLText2Resolver {
                     length = Option.apply(rri.getLength).map(emf2tables),
                     minLength = Option.apply(rri.getMinLength).map(emf2tables),
                     maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                    pattern = Option.apply(rri.getPattern).map(emf2tables),
-                    name = rri.name)
+                    pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
+                    name = tables.taggedTypes.localName(rri.name))
                 case rri: SynonymScalarRestriction =>
                   f.createSynonymScalarRestriction(
                     extent = o2ri.rextent,
                     tbox = tboxj,
                     restrictedRange = rsj,
-                    name = rri.name)
+                    name = tables.taggedTypes.localName(rri.name))
                 case rri: TimeScalarRestriction =>
                   f.createTimeScalarRestriction(
                     extent = o2ri.rextent,
@@ -969,7 +995,7 @@ object OMLText2Resolver {
                     minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
                     maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
                     maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
-                    name = rri.name)
+                    name = tables.taggedTypes.localName(rri.name))
               }
               o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (rdri -> rdrj)).right
             case (tboxj, rsj) =>
@@ -1075,7 +1101,7 @@ object OMLText2Resolver {
               tboxj,
               dpdj, dprj,
               dpi.isIsIdentityCriteria,
-              dpi.name())
+              tables.taggedTypes.localName(dpi.name()))
             o2ri.copy(rextent = rj, entityScalarDataProperties = o2ri.entityScalarDataProperties + (dpi -> dpj)).right
           case (tboxj, dpdj, dprj) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1118,7 +1144,7 @@ object OMLText2Resolver {
               tboxj,
               dpdj, dprj,
               dpi.isIsIdentityCriteria,
-              dpi.name())
+              tables.taggedTypes.localName(dpi.name()))
             o2ri.copy(rextent = rj, entityStructuredDataProperties = o2ri.entityStructuredDataProperties + (dpi -> dpj)).right
           case (tboxj, dpdj, dprj) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1160,7 +1186,7 @@ object OMLText2Resolver {
               o2ri.rextent,
               tboxj,
               dpdj, dprj,
-              dpi.name())
+              tables.taggedTypes.localName(dpi.name()))
             o2ri.copy(rextent = rj, scalarDataProperties = o2ri.scalarDataProperties + (dpi -> dpj)).right
           case (tboxj, dpdj, dprj) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1202,7 +1228,7 @@ object OMLText2Resolver {
               o2ri.rextent,
               tboxj,
               dpdj, dprj,
-              dpi.name())
+              tables.taggedTypes.localName(dpi.name()))
             o2ri.copy(rextent = rj, structuredDataProperties = o2ri.structuredDataProperties + (dpi -> dpj)).right
           case (tboxj, dpdj, dprj) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1576,7 +1602,10 @@ object OMLText2Resolver {
     case axi: AnonymousConceptUnionAxiom =>
       o2r.conceptTreeDisjunctions.get(axi.conceptTreeDisjunctionParent) match {
         case Some(p) =>
-          val (rj, axj) = f.createAnonymousConceptUnionAxiom(o2r.rextent, p, axi.getName)
+          val (rj, axj) = f.createAnonymousConceptUnionAxiom(
+            o2r.rextent,
+            p,
+            tables.taggedTypes.localName(axi.getName))
           val next = o2r.copy(
             rextent = rj,
             conceptTreeDisjunctions = o2r.conceptTreeDisjunctions + (axi -> axj),
@@ -1601,7 +1630,10 @@ object OMLText2Resolver {
     val ((dxi, cxj), remaining) = (dxs.head, dxs.tail)
     dxi match {
       case axi: AnonymousConceptUnionAxiom =>
-        val (rj, axj) = f.createAnonymousConceptUnionAxiom(o2r.rextent, cxj, axi.getName)
+        val (rj, axj) = f.createAnonymousConceptUnionAxiom(
+          o2r.rextent,
+          cxj,
+          tables.taggedTypes.localName(axi.getName))
         val next = o2r.copy(
           rextent = rj,
           conceptTreeDisjunctions = o2r.conceptTreeDisjunctions + (axi -> axj),
@@ -1646,7 +1678,11 @@ object OMLText2Resolver {
         (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
           prev.get(cli.getTbox.getExtent).flatMap(_.concepts.get(cli))) match {
           case (Some(dboxj), Some(clj)) =>
-            val (rj, dj) = f.createConceptInstance(o2ri.rextent, dboxj, clj, di.getName)
+            val (rj, dj) = f.createConceptInstance(
+              o2ri.rextent,
+              dboxj,
+              clj,
+              tables.taggedTypes.localName(di.getName))
             o2ri.copy(
               rextent = rj,
               conceptualEntitySingletonInstances = o2ri.conceptualEntitySingletonInstances + (di -> dj)).right
@@ -1682,7 +1718,11 @@ object OMLText2Resolver {
         (prev.get(dboxi.getExtent).flatMap(_.dboxes.get(dboxi)),
           prev.get(cli.getTbox.getExtent).flatMap(_.reifiedRelationships.get(cli))) match {
           case (Some(dboxj), Some(clj)) =>
-            val (rj, dj) = f.createReifiedRelationshipInstance(o2ri.rextent, dboxj, clj, di.getName)
+            val (rj, dj) = f.createReifiedRelationshipInstance(
+              o2ri.rextent,
+              dboxj,
+              clj,
+              tables.taggedTypes.localName(di.getName))
             o2ri.copy(
               rextent = rj,
               conceptualEntitySingletonInstances = o2ri.conceptualEntitySingletonInstances + (di -> dj)).right
@@ -2020,7 +2060,11 @@ object OMLText2Resolver {
                     s"convertAnnotations: Cannot find: ${a0.getProperty} "
                   )).left
               }
-              (el, _) = f.createAnnotationPropertyValue(o2rk.rextent, aSubject, aProperty, a0.getValue.value.value)
+              (el, _) = f.createAnnotationPropertyValue(
+                o2rk.rextent,
+                aSubject,
+                aProperty,
+                tables.taggedTypes.stringDataType(a0.getValue.value.value))
               o2rl = o2rk.copy(rextent = el)
             } yield o2rl
           }
