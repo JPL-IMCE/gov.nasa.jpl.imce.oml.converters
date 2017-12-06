@@ -155,7 +155,7 @@ case class OMLResolver2Text
     }
 
   def elementLookup(e: api.LogicalElement)
-  : Option[common.Element]
+  : Option[common.LogicalElement]
   = e match {
     case m: api.Module =>
       moduleLookup(m)

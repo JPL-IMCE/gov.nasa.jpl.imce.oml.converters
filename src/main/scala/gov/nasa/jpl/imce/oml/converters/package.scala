@@ -64,7 +64,7 @@ package object converters {
   = v.literalType match {
     case tables.LiteralBooleanType =>
       val d = model.common.CommonFactory.eINSTANCE.createLiteralBoolean()
-      d.setValue(java.lang.Boolean.getBoolean(v.value))
+      d.setBool(java.lang.Boolean.getBoolean(v.value))
       d
     case tables.LiteralDateTimeType =>
       val d = model.common.CommonFactory.eINSTANCE.createLiteralDateTime()
@@ -144,11 +144,11 @@ package object converters {
   : tables.LiteralValue
   = v match {
     case d: model.common.LiteralBoolean =>
-      tables.LiteralValue(tables.LiteralBooleanType,if (d.isValue) "true" else "false")
+      tables.LiteralValue(tables.LiteralBooleanType,if (d.isBool) "true" else "false")
     case d: model.common.LiteralDateTime =>
       tables.LiteralValue(tables.LiteralDateTimeType,d.getDateTime.value)
     case d: model.common.LiteralString =>
-      tables.LiteralValue(tables.LiteralStringType,d.value().value)
+      tables.LiteralValue(tables.LiteralStringType,d.value())
     case d: model.common.LiteralUUID =>
       tables.LiteralValue(tables.LiteralUUIDType,d.getUuid.value)
     case d: model.common.LiteralURI =>

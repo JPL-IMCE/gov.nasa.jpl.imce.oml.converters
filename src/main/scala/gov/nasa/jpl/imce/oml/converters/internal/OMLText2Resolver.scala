@@ -132,7 +132,7 @@ case class OMLText2Resolver
       dboxes.get(d)
   }
 
-  def elementLookup(e: Element): Option[api.LogicalElement] = e match {
+  def elementLookup(e: LogicalElement): Option[api.LogicalElement] = e match {
     case x: TerminologyBox =>
       tboxes.get(x)
     case x: DescriptionBox =>
@@ -2064,7 +2064,7 @@ object OMLText2Resolver {
                 o2rk.rextent,
                 aSubject,
                 aProperty,
-                tables.taggedTypes.stringDataType(a0.getValue.value.value))
+                tables.taggedTypes.stringDataType(a0.getValue.value))
               o2rl = o2rk.copy(rextent = el)
             } yield o2rl
           }
