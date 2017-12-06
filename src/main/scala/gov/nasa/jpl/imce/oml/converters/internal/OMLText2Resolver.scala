@@ -132,7 +132,7 @@ case class OMLText2Resolver
       dboxes.get(d)
   }
 
-  def elementLookup(e: Element): Option[api.Element] = e match {
+  def elementLookup(e: Element): Option[api.LogicalElement] = e match {
     case x: TerminologyBox =>
       tboxes.get(x)
     case x: DescriptionBox =>

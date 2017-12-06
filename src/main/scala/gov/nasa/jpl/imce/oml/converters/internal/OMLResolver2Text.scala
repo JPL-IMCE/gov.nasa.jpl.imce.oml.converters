@@ -154,7 +154,7 @@ case class OMLResolver2Text
       structuredDataPropertyTuples.get(ac)
     }
 
-  def elementLookup(e: api.Element)
+  def elementLookup(e: api.LogicalElement)
   : Option[common.Element]
   = e match {
     case m: api.Module =>
@@ -350,7 +350,7 @@ object OMLResolver2Text {
     c93 <- c92.extent.singletonInstanceStructuredDataPropertyContextOfScalarDataPropertyValue.foldLeft(c92.right[EMFProblems])(convertScalarDataPropertyValue)
 
     // Annotations
-    c100 <- c93.extent.elementOfAnnotationPropertyValue.keys.foldLeft(c93.right[EMFProblems])(convertAnnotationPropertyValue)
+    c100 <- c93.extent.logicalElementOfAnnotationPropertyValue.keys.foldLeft(c93.right[EMFProblems])(convertAnnotationPropertyValue)
 
     // Finished!
     cDone = c100

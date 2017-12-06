@@ -313,7 +313,7 @@ object OMLResolver2Ontology {
   }
 
   protected def convertAnnotations(ext: api.Extent)
-  : (ResolverResult, (api.Element, Set[api.AnnotationPropertyValue])) => ResolverResult
+  : (ResolverResult, (api.LogicalElement, Set[api.AnnotationPropertyValue])) => ResolverResult
   = {
     case (acc, (e0, apvs)) =>
       for {
@@ -338,7 +338,7 @@ object OMLResolver2Ontology {
           case x0: api.ModuleEdge =>
             // @TODO
             ().right[Throwables]
-          case x0: api.Element =>
+          case x0: api.LogicalElement =>
             r2o.lookupOtherElement(x0)(ext).flatMap { x1 =>
               x0.moduleContext()(ext) match {
                 case Some(m0) =>
@@ -357,7 +357,7 @@ object OMLResolver2Ontology {
   protected def convertElementAnnotations
   (r2o: OMLResolver2Ontology,
    m: owlapi.common.MutableModule,
-   e: owlapi.common.Element,
+   e: owlapi.common.LogicalElement,
    apvs: Set[api.AnnotationPropertyValue])
   : Throwables \/ Unit
   = apvs.foldLeft(().right[Throwables]) { case (acc, apv) =>
@@ -1766,7 +1766,7 @@ case class OMLResolver2Ontology
         s"OMLResolver2Ontology.lookupSingletonInstanceStructuredDataPropertyContext(rr=${t0.uuid}) failed")).left
   }
 
-  def lookup[U <: api.Element, V <: owlapi.common.Element]
+  def lookup[U <: api.LogicalElement, V <: owlapi.common.LogicalElement]
   (u: U, uv: Map[U, V])
   (implicit ext: api.Extent)
   : core.OMFError.Throwables \/ V
@@ -1816,7 +1816,7 @@ case class OMLResolver2Ontology
       lookup(x, chainRules)
   }
 
-  def lookupOtherElement(e: api.Element)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.common.Element
+  def lookupOtherElement(e: api.LogicalElement)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.common.LogicalElement
   = e match {
     case x: api.ConceptTreeDisjunction =>
       lookup(x, conceptTreeDisjunctions)

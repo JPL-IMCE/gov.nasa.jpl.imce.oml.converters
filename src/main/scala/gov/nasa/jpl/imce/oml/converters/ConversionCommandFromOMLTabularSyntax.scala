@@ -52,7 +52,7 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
       r1 <- toThrowables(resolveTables(initializeResolver(), omlTables))
       r2 <- toThrowables(OMLResolvedTable.aggregateResolvedTables(r1))
       _ = System.out.println(s"${r2.extents.size} extents") // @TODO only 1 extent because all tables are merged.
-      _ = System.out.println(s"${r2.elements.size} elements") // @TODO this is incomplete.
+      _ = System.out.println(s"${r2.logicalElements.size} elements") // @TODO this is incomplete.
       _ = System.out.println(s"${r2.terminologyBoxOfTerminologyBoxStatement.size} TerminologyBoxStatements")
     } yield ()
   }
