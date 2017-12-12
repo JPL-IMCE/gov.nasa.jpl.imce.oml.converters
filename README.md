@@ -127,7 +127,7 @@ OML supports three canonical representations:
    Thanks to [Eclipse Xtext](https://www.eclipse.org/Xtext/), there is a seamless conversion between the
    OML textual representation and an equivalent [Eclipse EMF](https://www.eclipse.org/modeling/emf/) object-oriented representation.
    
-2) [OML normalized tabular relational schema](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.tables) (`*.oml.json.zip`)
+2) [OML normalized tabular relational schema](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.tables) (`*.omlzip`)
 
    This normalized relational schema is designed for the following objectives:
    - Support high-performance, distributed data analysis of OML models on [Apache Spark](http://spark.apache.org/) clusters.
@@ -178,7 +178,7 @@ OML supports three canonical representations:
   # For `*.owl` and `*.owl`, this comparison only reports which files are different between the two directories.
   # The comparison does not report the differences in these files.
   # 
-  # For `*.oml.json.zip`, this comparison reports line-level differences (added/deleted) for each OML table.
+  # For `*.omlzip`, this comparison reports line-level differences (added/deleted) for each OML table.
   #
   # 2) Convert all OML textual concrete syntax files *.oml
   # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
@@ -186,7 +186,7 @@ OML supports three canonical representations:
   # 3) Convert all OWL2-DL ontology syntax files *.owl
   # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
   # 
-  # 4) Convert all normalized tabular syntax files *.oml.json.zip
+  # 4) Convert all normalized tabular syntax files *.omlzip
   # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
   # 
   # where:
@@ -202,7 +202,7 @@ OML supports three canonical representations:
    For `*.owl` and `*.owl`, this comparison only reports which files are different between the two directories.
    The comparison does not report the differences in these files.
    
-   For `*.oml.json.zip`, this comparison reports line-level differences (added/deleted) for each OML table.
+   For `*.omlzip`, this comparison reports line-level differences (added/deleted) for each OML table.
    
 ### Convert from OML textual concrete Syntax
 
@@ -217,7 +217,7 @@ OML supports three canonical representations:
 
 - `omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d <dir>] -json`
        
-   Use the `oml.catalog.xml` file to convert all `*.oml.json.zip` files from the OML tabular representation 
+   Use the `oml.catalog.xml` file to convert all `*.omlzip` files from the OML tabular representation 
    to corresponding OML representations in all 3 formats.
     
 ### Convert from OML ontologies

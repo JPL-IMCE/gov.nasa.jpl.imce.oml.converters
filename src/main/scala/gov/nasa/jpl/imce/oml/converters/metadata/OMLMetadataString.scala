@@ -118,7 +118,7 @@ object OMLMetadataString {
   type ImportedModuleIRI = ImportedModuleIRI.T
 
   /**
-    * The relative filename of an OML Module (without extension: .oml, .oml.json.zip, .owl)
+    * The relative filename of an OML Module (without extension: .oml, .omlzip, .owl)
     */
   val RelativeFilename : OMLMetadataStringImpl = new OMLMetadataStringImpl {
 

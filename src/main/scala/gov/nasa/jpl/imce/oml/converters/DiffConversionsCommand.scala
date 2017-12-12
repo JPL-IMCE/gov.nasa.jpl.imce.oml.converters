@@ -48,7 +48,7 @@ case object DiffConversionsCommand {
       else
         Some(f1 -> f2)
     }
-    System.out.println(s"\n=> ${zips.size} differences for *.oml.json.zip")
+    System.out.println(s"\n=> ${zips.size} differences for *.omlzip")
     zips.foreach { case (f1, f2) =>
       System.out.println(s"\n==> ${f1.stripPrefix(prefix1)}")
       val u1 = (%% unzip("-c", f1)).out.lines.drop(1)

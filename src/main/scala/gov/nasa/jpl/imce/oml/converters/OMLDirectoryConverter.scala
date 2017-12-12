@@ -141,7 +141,7 @@ object OMLDirectoryConverter {
        |  For `*.owl` and `*.owl`, this comparison only reports which files are different between the two directories.
        |  The comparison does not report the differences in these files.
        |
-       |  For `*.oml.json.zip`, this comparison reports line-level differences (added/deleted) for each OML table.
+       |  For `*.omlzip`, this comparison reports line-level differences (added/deleted) for each OML table.
        |
        |2) Convert all OML textual concrete syntax files *.oml
        |omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
@@ -149,7 +149,7 @@ object OMLDirectoryConverter {
        |3) Convert all OWL2-DL ontology syntax files *.owl
        |omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
        |
-       |4) Convert all normalized tabular syntax files *.oml.json.zip
+       |4) Convert all normalized tabular syntax files *.omlzip
        |omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
        |
        |  where:

@@ -118,7 +118,7 @@ case class OMLText2Resolver
   : RelPath
   = omlFile.copy(segments =
     omlFile.segments.dropRight(1) :+
-      omlFile.segments.last.stripSuffix(".oml")+".oml.json.zip")
+      omlFile.segments.last.stripSuffix(".oml")+".omlzip")
 
   def includesAPIModule(m: api.Module): Boolean = tboxes.values.find(_ == m).orElse(dboxes.values.find(_ == m)).isDefined
 

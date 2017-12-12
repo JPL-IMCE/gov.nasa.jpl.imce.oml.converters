@@ -36,7 +36,7 @@ package object converters {
         normalizedPath.stripSuffix(".owl")
       else if (normalizedPath.endsWith("/"))
         normalizedPath.stripSuffix("/")
-      else normalizedPath) + ".oml.json.zip"
+      else normalizedPath) + ".omlzip"
 
     val f1 = new URL(normalizedTablesPath)
     val outputFile =

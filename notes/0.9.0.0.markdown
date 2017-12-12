@@ -35,3 +35,5 @@ gov.nasa.jpl.imce.oml.converters 0.9.0.0 is a build based on OML 0.9
 - [#25 Update for the type-safe OML API](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/25)
 
 - [#26 Update due to OML LogicalElement & ValueCrossReferenceTuple abstractions](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/26)
+
+- [#27 Update for '*.omlzip'](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/27)
