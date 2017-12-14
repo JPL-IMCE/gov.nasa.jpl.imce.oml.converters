@@ -1558,6 +1558,96 @@ object OMLText2Resolver {
     }
   }
 
+  protected def convertSubDataPropertyOfAxioms
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: SubDataPropertyOfAxiom => s })
+    ss.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = axi.getTbox
+        subi = axi.getSubProperty()
+        supi = axi.getSuperProperty()
+        (rj, axj: \/[EMFProblems, api.SubDataPropertyOfAxiom]) =
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(supi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(subi)),
+          prev.get(subi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(supi))) match {
+          case (Some(tboxj), Some(subj: api.EntityScalarDataProperty), Some(supj: api.EntityScalarDataProperty)) =>
+            f.createSubDataPropertyOfAxiom(o2ri.rextent, tboxj, subj, supj) match {
+              case (rk, ak) => rk -> ak.right
+            }
+          case (tboxj, subj, supj) =>
+            o2ri.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertSubDataPropertyOfAxioms: Cannot find: " +
+                s"tbox: ${tboxi.abbrevIRI()}" +
+                s"subProperty: ${subi.abbrevIRI()}" +
+                s"superProperty: ${supi.abbrevIRI()}"
+            )).left
+        }
+        o2rj <- axj match {
+          case \/-(axrj) =>
+            o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axrj)).right
+          case -\/(error) =>
+            error.left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
+    }
+  }
+
+  protected def convertSubObjectPropertyOfAxioms
+  (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   entry: (Extent, OMLText2Resolver))
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val (e, _) = entry
+    val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
+    val ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: SubObjectPropertyOfAxiom => s })
+    ss.foldLeft(state) { case (acc, axi) =>
+      for {
+        prev <- acc
+        o2ri = prev(e)
+        tboxi = axi.getTbox
+        subi = axi.getSubProperty()
+        supi = axi.getSuperProperty()
+        (rj, axj: \/[EMFProblems, api.SubObjectPropertyOfAxiom]) =
+        (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(supi.getTbox.getExtent).flatMap(_.unreifiedRelationships.get(subi)),
+          prev.get(subi.getTbox.getExtent).flatMap(_.unreifiedRelationships.get(supi))) match {
+          case (Some(tboxj), Some(subj: api.UnreifiedRelationship), Some(supj: api.UnreifiedRelationship)) =>
+            f.createSubObjectPropertyOfAxiom(o2ri.rextent, tboxj, subj, supj) match {
+              case (rk, ak) => rk -> ak.right
+            }
+          case (tboxj, subj, supj) =>
+            o2ri.rextent -> new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertSubObjectPropertyOfAxioms: Cannot find: " +
+                s"tbox: ${tboxi.abbrevIRI()}" +
+                s"subProperty: ${subi.abbrevIRI()}" +
+                s"superProperty: ${supi.abbrevIRI()}"
+            )).left
+        }
+        o2rj <- axj match {
+          case \/-(axrj) =>
+            o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axrj)).right
+          case -\/(error) =>
+            error.left
+        }
+        next = prev.updated(e, o2rj)
+      } yield next
+    }
+  }
+
   protected def convertRootConceptTaxonomyAxioms
   (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
    entry: (Extent, OMLText2Resolver))
@@ -2193,9 +2283,11 @@ object OMLText2Resolver {
     c80 = c73
 
     c81 <- c80.foldLeft(c80.right[EMFProblems])(convertSpecializationAxioms)
+    c82 <- c81.foldLeft(c81.right[EMFProblems])(convertSubDataPropertyOfAxioms)
+    c83 <- c82.foldLeft(c82.right[EMFProblems])(convertSubObjectPropertyOfAxioms)
 
     // Disjunctions
-    c90 = c81
+    c90 = c83
 
     c91 <- c90.foldLeft(c90.right[EMFProblems])(convertRootConceptTaxonomyAxioms)
 

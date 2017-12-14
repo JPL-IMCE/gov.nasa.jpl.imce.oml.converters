@@ -231,8 +231,9 @@ object OMLResolver2Ontology {
     // Specializations
 
     c90 = c8N
-    c90 <- extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c90.right[Throwables])(convertSpecializationAxiom(extent))
-    c9N = c90
+    c91 <- extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c90.right[Throwables])(convertSpecializationAxiom(extent))
+    c92 <- extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c91.right[Throwables])(convertSubPropertyOfAxiom(extent))
+    c9N = c92
 
     // Disjunctions
 
@@ -936,6 +937,33 @@ object OMLResolver2Ontology {
                 s" for defining SpecializationAxiom: $ax0")).left
         }
       } yield r2o.copy(termAxioms = r2o.termAxioms + (ax0 -> ax1))
+    case (acc, _) =>
+      acc
+  }
+
+  // Sub{Data|Object}PropertyOfAxioms
+
+  protected def convertSubPropertyOfAxiom(implicit ext: api.Extent)
+  : (ResolverResult, (api.TerminologyBoxStatement, api.TerminologyBox)) => ResolverResult
+  = {
+    case (acc, (ax0: api.SubDataPropertyOfAxiom, t0)) =>
+      for {
+        r2o <- acc
+        t1 <- r2o.getTbox(t0)
+        sub1 <- r2o.lookupEntityScalarDataProperty(ax0.subProperty)
+        sup1 <- r2o.lookupEntityScalarDataProperty(ax0.superProperty)
+        ax1 <- r2o.ops.addSubDataPropertyOfAxiom(t1, sub1, sup1)(r2o.omfStore)
+      } yield r2o.copy(termAxioms = r2o.termAxioms + (ax0 -> ax1))
+
+    case (acc, (ax0: api.SubObjectPropertyOfAxiom, t0)) =>
+      for {
+        r2o <- acc
+        t1 <- r2o.getTbox(t0)
+        sub1 <- r2o.lookupUnreifiedRelationship(ax0.subProperty)
+        sup1 <- r2o.lookupUnreifiedRelationship(ax0.superProperty)
+        ax1 <- r2o.ops.addSubObjectPropertyOfAxiom(t1, sub1, sup1)(r2o.omfStore)
+      } yield r2o.copy(termAxioms = r2o.termAxioms + (ax0 -> ax1))
+
     case (acc, _) =>
       acc
   }

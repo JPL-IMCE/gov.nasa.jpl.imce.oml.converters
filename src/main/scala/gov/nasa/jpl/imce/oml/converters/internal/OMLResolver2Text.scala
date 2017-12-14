@@ -329,9 +329,13 @@ object OMLResolver2Text {
 
     c52 <- c51.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c51.right[EMFProblems])(convertSpecializationAxiom)
 
+    // Sub{Data|Object}PropertyOfAxioms
+
+    c53 <- c52.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c52.right[EMFProblems])(convertSubPropertyOfAxiom)
+
     // Disjunctions
 
-    c60 <- c52.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c52.right[EMFProblems])(convertRootConceptTaxonomyAxiom)
+    c60 <- c53.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c53.right[EMFProblems])(convertRootConceptTaxonomyAxiom)
 
     // ChainRule, RuleBodySegment, SegmentPredicates
     c70 <- c60.extent.terminologyBoxOfTerminologyBoxStatement.foldLeft(c60.right[EMFProblems])(convertChainRule)
@@ -1156,7 +1160,6 @@ object OMLResolver2Text {
     }
   }
 
-
   protected val convertSpecializationAxiom
   : (ConversionResult, (api.TerminologyBoxStatement, api.TerminologyBox)) => ConversionResult
   = {
@@ -1197,6 +1200,59 @@ object OMLResolver2Text {
                 s"tbox: $t0" +
                 s" for defining SpecializationAxiom: $ax0")).left[terminologies.SpecializationAxiom]
         }
+      } yield r2t.copy(conversions = r2t.conversions.copy(termAxioms = r2t.conversions.termAxioms + (ax0 -> ax1)))
+    case (acc, _) =>
+      acc
+  }
+
+  protected val convertSubPropertyOfAxiom
+  : (ConversionResult, (api.TerminologyBoxStatement, api.TerminologyBox)) => ConversionResult
+  = {
+    case (acc, (ax0: api.SubDataPropertyOfAxiom, t0)) =>
+      for {
+        r2t <- acc
+        ax1 <- (
+          r2t.conversions.tboxLookup(t0),
+          r2t.conversions.entityScalarDataProperties.get(ax0.subProperty),
+          r2t.conversions.entityScalarDataProperties.get(ax0.superProperty)) match {
+          case (
+            Some(t1),
+            Some(sup: terminologies.EntityScalarDataProperty),
+            Some(sub: terminologies.EntityScalarDataProperty)) =>
+            val s1 = terminologies.TerminologiesFactory.eINSTANCE.createSubDataPropertyOfAxiom()
+            s1.setTbox(t1)
+            s1.setSubProperty(sub)
+            s1.setSuperProperty(sup)
+            s1.right[EMFProblems]
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertSubPropertyOfAxiom: Failed to resolve " +
+                s"tbox: $t0" +
+                s" for defining ubDataPropertyOfAxiom: $ax0")).left[terminologies.SpecializationAxiom]
+        }
+      } yield r2t.copy(conversions = r2t.conversions.copy(termAxioms = r2t.conversions.termAxioms + (ax0 -> ax1)))
+    case (acc, (ax0: api.SubObjectPropertyOfAxiom, t0)) =>
+      for {
+        r2t <- acc
+        ax1 <- (
+          r2t.conversions.tboxLookup(t0),
+          r2t.conversions.unreifiedRelationships.get(ax0.subProperty),
+          r2t.conversions.unreifiedRelationships.get(ax0.superProperty)) match {
+            case (
+              Some(t1),
+              Some(sup: terminologies.UnreifiedRelationship),
+              Some(sub: terminologies.UnreifiedRelationship)) =>
+              val s1 = terminologies.TerminologiesFactory.eINSTANCE.createSubObjectPropertyOfAxiom()
+              s1.setTbox(t1)
+              s1.setSubProperty(sub)
+              s1.setSuperProperty(sup)
+              s1.right[EMFProblems]
+            case _ =>
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"convertSubPropertyOfAxiom: Failed to resolve " +
+                  s"tbox: $t0" +
+                  s" for defining ubDataPropertyOfAxiom: $ax0")).left[terminologies.SpecializationAxiom]
+          }
       } yield r2t.copy(conversions = r2t.conversions.copy(termAxioms = r2t.conversions.termAxioms + (ax0 -> ax1)))
     case (acc, _) =>
       acc

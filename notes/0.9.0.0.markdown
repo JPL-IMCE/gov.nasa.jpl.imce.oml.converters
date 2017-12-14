@@ -37,3 +37,5 @@ gov.nasa.jpl.imce.oml.converters 0.9.0.0 is a build based on OML 0.9
 - [#26 Update due to OML LogicalElement & ValueCrossReferenceTuple abstractions](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/26)
 
 - [#27 Update for '*.omlzip'](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/27)
+
+- [#28 Support for OML SubObjectPropertyOf and SubDataPropertyOf](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/28)
