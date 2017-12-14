@@ -1578,8 +1578,8 @@ object OMLText2Resolver {
         supi = axi.getSuperProperty()
         (rj, axj: \/[EMFProblems, api.SubDataPropertyOfAxiom]) =
         (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
-          prev.get(supi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(subi)),
-          prev.get(subi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(supi))) match {
+          prev.get(subi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(subi)),
+          prev.get(supi.getTbox.getExtent).flatMap(_.entityScalarDataProperties.get(supi))) match {
           case (Some(tboxj), Some(subj: api.EntityScalarDataProperty), Some(supj: api.EntityScalarDataProperty)) =>
             f.createSubDataPropertyOfAxiom(o2ri.rextent, tboxj, subj, supj) match {
               case (rk, ak) => rk -> ak.right
@@ -1623,8 +1623,8 @@ object OMLText2Resolver {
         supi = axi.getSuperProperty()
         (rj, axj: \/[EMFProblems, api.SubObjectPropertyOfAxiom]) =
         (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
-          prev.get(supi.getTbox.getExtent).flatMap(_.unreifiedRelationships.get(subi)),
-          prev.get(subi.getTbox.getExtent).flatMap(_.unreifiedRelationships.get(supi))) match {
+          prev.get(subi.getTbox.getExtent).flatMap(_.unreifiedRelationships.get(subi)),
+          prev.get(supi.getTbox.getExtent).flatMap(_.unreifiedRelationships.get(supi))) match {
           case (Some(tboxj), Some(subj: api.UnreifiedRelationship), Some(supj: api.UnreifiedRelationship)) =>
             f.createSubObjectPropertyOfAxiom(o2ri.rextent, tboxj, subj, supj) match {
               case (rk, ak) => rk -> ak.right
