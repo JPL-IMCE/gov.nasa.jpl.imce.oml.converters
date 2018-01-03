@@ -162,6 +162,20 @@ OML supports three canonical representations:
 
 - Print OML Converter usage information
 
+  ```
+  omlDirectoryConverter -- [text|owl|json] [-cat <oml.catalog.xml>]+ -out <out.dir> [--clear] [flags]
+  
+  where [flags] = ([flag] )*
+  and [flag] is one of: [-o|--owl], [-t|--text], [-j|--json], [-p|--parquet]
+  ```
+  
+  ```
+  omlDirectoryConverter -- parquet [-dir <dir>]+ -out <out.dir> [--clear] [flags]
+  
+  where [flags] = ([flag] )*
+  and [flag] is one of: [-o|--owl], [-t|--text], [-j|--json], [-p|--parquet]
+  ```
+  
   ```bash
   $ OMLConverter/bin/omlDirectoryConverter
   #

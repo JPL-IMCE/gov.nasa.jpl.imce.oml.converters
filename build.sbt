@@ -40,13 +40,13 @@ lazy val omlConverters = Project("omlConverters", file("."))
 
     scalaVersion := Versions.scala,
 
-    topLevelDirectory := Some("OMLConverter"),
+    topLevelDirectory := Some("OMLConverters"),
 
     // 'omlDirectoryConverter' will be a command-line script to run
-    // the single application, gov.nasa.jpl.imce.oml.converters.OMLDirectoryConverter
-    mainClass in Compile := Some("gov.nasa.jpl.imce.oml.converters.OMLDirectoryConverter"),
+    // the single application, gov.nasa.jpl.imce.oml.processor.OMLConverter
+    mainClass in Compile := Some("gov.nasa.jpl.imce.oml.processor.OMLConverter"),
 
-    executableScriptName := "omlDirectoryConverter",
+    executableScriptName := "omlConverter",
 
     // skip doc on stage
     mappings in (Compile, packageDoc) := Seq(),
@@ -87,6 +87,8 @@ lazy val omlConverters = Project("omlConverters", file("."))
           .withUrl(Some(url(
             s"${omlProductRepo.value}/gov/nasa/jpl/imce/oml/gov.nasa.jpl.imce.oml.product/${Versions_oml_core.version}/gov.nasa.jpl.imce.oml.product-${Versions_oml_core.version}-linux.gtk.x86_64.tar.gz")))
     ),
+    dependencyOverrides += "com.fasterxml.jackson.module" % "jackson-module-paranamer" % Versions.spark_jackson % "compile",
+    dependencyOverrides += "com.fasterxml.jackson.module" %% "jackson-module-scala" % Versions.spark_jackson % "compile",
 
     addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.patch),
 
@@ -100,6 +102,7 @@ lazy val omlConverters = Project("omlConverters", file("."))
         case m => m
       }
     },
+
     mappings in Universal := {
       val s = streams.value
       val prev = (mappings in Universal).value
@@ -236,7 +239,12 @@ lazy val omlConverters = Project("omlConverters", file("."))
       jars
     },
     unmanagedJars in Compile := extractOMLProduct.value.classpath ++ owlapiLibs.value,
-    unmanagedJars in (Compile, doc) := extractOMLProduct.value.classpath ++ owlapiLibs.value
+    unmanagedJars in (Compile, doc) := extractOMLProduct.value.classpath ++ owlapiLibs.value,
+
+    fork in run := true,
+    javaOptions in run ++= Seq(
+      "-Dlog4j.debug=true",
+      "-Dlog4j.configuration=log4j.properties")
   )
   .dependsOnSourceProjectOrLibraryArtifacts(
     "omf-scala-binding-owlapi",

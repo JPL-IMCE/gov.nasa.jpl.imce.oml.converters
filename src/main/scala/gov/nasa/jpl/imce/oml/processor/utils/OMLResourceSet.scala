@@ -16,7 +16,7 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.converters.utils
+package gov.nasa.jpl.imce.oml.processor.utils
 
 import ammonite.ops.{Path,RelPath}
 

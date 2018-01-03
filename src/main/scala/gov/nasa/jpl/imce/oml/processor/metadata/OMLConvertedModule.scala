@@ -16,7 +16,7 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.converters.metadata
+package gov.nasa.jpl.imce.oml.processor.metadata
 
 import io.circe._
 

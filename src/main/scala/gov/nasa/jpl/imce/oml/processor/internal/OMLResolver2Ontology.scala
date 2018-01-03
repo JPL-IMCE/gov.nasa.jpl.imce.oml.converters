@@ -16,7 +16,7 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.converters.internal
+package gov.nasa.jpl.imce.oml.processor.internal
 
 import java.lang.{IllegalArgumentException, System}
 import java.util.UUID
@@ -36,7 +36,7 @@ import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable.{::, Iterable, List, Map, Nil, Seq, Set}
 import scala.{Boolean, Function, None, Option, Some, StringContext, Unit}
-import scala.Predef.ArrowAssoc
+import scala.Predef.{require,ArrowAssoc}
 import scalaz._
 import Scalaz._
 
@@ -289,28 +289,48 @@ object OMLResolver2Ontology {
   }
 
   protected def convertAnnotationProperty(m1: MutableTboxOrDbox)
-  : (ResolverResult, (api.taggedTypes.AnnotationPropertyUUID, api.AnnotationProperty)) => ResolverResult
+  : (ResolverResult, (api.Module, Set[api.AnnotationProperty])) => ResolverResult
   = {
-    case (acc, (uuid, ap0)) =>
+    case (acci, (m0, aps0)) =>
       for {
-        r2o <- acc
-        ap1 <- m1 match {
-          case -\/(mtbox) =>
-            r2o.ops.addTerminologyAnnotationProperty(
-              mtbox,
-              tables.AnnotationProperty(
-                uuid,
-                tables.taggedTypes.iri(ap0.iri), 
-                tables.taggedTypes.abbrevIRI(ap0.abbrevIRI)))(r2o.omfStore)
-          case \/-(mdbox) =>
-            r2o.ops.addDescriptionAnnotationProperty(
-              mdbox,
-              tables.AnnotationProperty(
-                uuid,
-                tables.taggedTypes.iri(ap0.iri), 
-                tables.taggedTypes.abbrevIRI(ap0.abbrevIRI)))(r2o.omfStore)
+        prev <- acci
+        prevCount = prev.aps.size
+        next <- m0 match {
+          case t0: api.TerminologyBox =>
+            aps0.foldLeft(acci) { case (accj, ap0) =>
+              for {
+                r2o <- accj
+                t1 <- r2o.getTbox(t0)
+                ap1 <- r2o.ops.addTerminologyAnnotationProperty(
+                  t1,
+                  tables.AnnotationProperty(
+                    ap0.uuid,
+                    t1.uuid,
+                    tables.taggedTypes.iri(ap0.iri),
+                    tables.taggedTypes.abbrevIRI(ap0.abbrevIRI)))(r2o.omfStore)
+                updated = r2o.copy(aps = r2o.aps + (ap0 -> ap1))
+              } yield updated
+            }
+          case d0: api.DescriptionBox =>
+            aps0.foldLeft(acci) { case (accj, ap0) =>
+              for {
+                r2o <- accj
+                d1 <- r2o.getDbox(d0)
+                ap1 <- r2o.ops.addDescriptionAnnotationProperty(
+                  d1,
+                  tables.AnnotationProperty(
+                    ap0.uuid,
+                    d1.uuid,
+                    tables.taggedTypes.iri(ap0.iri),
+                    tables.taggedTypes.abbrevIRI(ap0.abbrevIRI)))(r2o.omfStore)
+                updated = r2o.copy(aps = r2o.aps + (ap0 -> ap1))
+              } yield updated
+            }
         }
-      } yield r2o.copy(aps = r2o.aps + (ap0 -> ap1))
+        nextCount = next.aps.size
+        incCount = aps0.size
+        _ = require(prevCount + incCount == nextCount)
+      } yield next
   }
 
   protected def convertAnnotations(ext: api.Extent)
@@ -1471,18 +1491,26 @@ case class OMLResolver2Ontology
       = ext
         .annotationProperties
         .foldLeft[core.OMFError.Throwables \/ OMLResolver2Ontology](this.right) {
-        case (\/-(r2o), (uuid, ap0)) =>
-          val apUUID = uuid.toString
-          g1
-            .annotationProperties()
-            .find(_.uuid == apUUID) match {
-            case Some(ap1) =>
-              r2o.copy(aps = r2o.aps + (ap0 -> ap1)).right
-            case _ =>
-              Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
-                s"withBuiltIn: Failed to lookup annotation property: $ap0 from ${g1.iri}")).left
-
-          }
+        case (acc1, (t0: api.TerminologyBox, aps0)) =>
+          for {
+            r2o <- acc1
+            t1 <- r2o.getTbox(t0)
+            next <- aps0.foldLeft(acc1) { case (acc2, ap0) =>
+              for {
+                prev <- acc2
+                apUUID = ap0.uuid
+                aps1 = t1.annotationProperties()
+                f1 = aps1.find(_.uuid == apUUID.toString)
+                updated <- f1 match {
+                    case Some(ap1) =>
+                      prev.copy(aps = prev.aps + (ap0 -> ap1)).right
+                    case _ =>
+                      Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
+                        s"withBuiltIn: Failed to lookup annotation property: $ap0 from ${g1.iri}")).left
+                  }
+              } yield updated
+            }
+          } yield next
         case (acc, _) =>
           acc
       }

@@ -16,7 +16,7 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.converters.utils
+package gov.nasa.jpl.imce.oml.processor.utils
 
 import org.eclipse.emf.common.util.EList
 

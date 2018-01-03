@@ -16,29 +16,23 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.converters
+package gov.nasa.jpl.imce.oml.processor
 
 import java.lang.System
 import java.nio.file.Paths
 
-import ammonite.ops.Path
-import gov.nasa.jpl.imce.oml.converters.utils.OMLResourceSet
+import ammonite.ops.{Path, up}
 import gov.nasa.jpl.imce.oml.graphs.hierarchicalTopologicalSort
 import gov.nasa.jpl.imce.oml.{filesystem, resolver}
-import gov.nasa.jpl.imce.oml.resolver.impl.OMLResolvedFactoryImpl
+import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
-import gov.nasa.jpl.imce.oml.uuid.JVMUUIDGenerator
 import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.binding.owlapi.common.ImmutableModule
-import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
-import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.{ImmutableBundle, ImmutableTerminologyGraph}
 import gov.nasa.jpl.omf.scala.core.OMFError
 import gov.nasa.jpl.omf.scala.core.tables.OMFTabularExport
 import org.apache.xml.resolver.Catalog
-import org.eclipse.emf.common.util.{URI => EURI}
 
 import scala.collection.immutable.{Seq, Set}
-import scala.util.control.Exception.nonFatalCatch
 import scala.{Int, None, Option, Ordering, Some, StringContext, Unit}
 import scala.Predef.ArrowAssoc
 import scalaz._
@@ -51,14 +45,19 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
   override val filePredicate = filesystem.omlOWLFilePredicate _
 
-  override def convert(inCatalog: Path, inputFiles: Seq[Path], outputDir: Path, outCatalog: Path)
+  override def convert
+  (inCatalog: Path,
+   inputFiles: Seq[Path],
+   outputDir: Path,
+   outCatalog: Path,
+   conversions: ConversionCommand.OutputConversions)
   : OMFError.Throwables \/ Unit
   = for {
     in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(inCatalog)
     (inStore, inCat) = in_store_cat
     out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
     (outStore, outCat) = out_store_cat
-    result <- convert(inStore, inCat, inputFiles, outputDir, outStore, outCat)
+    result <- convert(inStore, inCat, inputFiles, outputDir, outStore, outCat, outCatalog, conversions)
   } yield result
 
   def convert
@@ -67,7 +66,9 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
    inputFiles: Seq[Path],
    outputDir: Path,
    outStore: OWLAPIOMFGraphStore,
-   outCat: Catalog)
+   outCat: Catalog,
+   outCatalog: Path,
+   conversions: ConversionCommand.OutputConversions)
   : OMFError.Throwables \/ Unit
   = {
     implicit val mOrder = new Ordering[OWLAPIOMF#ImmutableModule] {
@@ -157,7 +158,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         gl
       }
 
-      gorder <- hierarchicalTopologicalSort(Seq(g3), Seq.empty).map(_.reverse)
+      gorder <- hierarchicalTopologicalSort(Seq(g3)).map(_.reverse)
 
       _ = gorder.foreach { g =>
         val iri = g.iri.toString
@@ -168,12 +169,10 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         System.out.println(s"convert from OWL(gorder): ${g.iri} => $omlIRI")
       }
 
-      // 1) Convert from OMF/OWLAPI => OML Tables
-
-      tables <- OMFTabularExport.toTables[OWLAPIOMF](gorder)(inStore, inStore.ops)
+      ts <- OMFTabularExport.toTables[OWLAPIOMF](gorder)(inStore, inStore.ops)
 
       _ = {
-        (gorder zip tables).foreach { case (gi, (im, ti)) =>
+        (gorder zip ts).foreach { case (gi, (im, ti)) =>
           if (gi.iri != im.iri) {
             System.out.println(s"convert from OWL(tables)  gi=${gi.iri}")
             System.out.println(s"convert from OWL(tables)  im=${im.iri}")
@@ -182,150 +181,69 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         }
       }
 
-      _ <- tables.foldLeft {
-        ().right[OMFError.Throwables]
-      } { case (acc, (im, table)) =>
+      // 1) Convert from OMF/OWLAPI => OML Tables
 
-        for {
-          _ <- acc
-          tablesURI = outStore.catalogIRIMapper.resolveIRI(im.iri, saveResolutionStrategyForOMLTables).toURI
-          tablesFile = Paths.get(tablesURI).toFile
-
-          _ <- OMLSpecificationTables
-            .saveOMLSpecificationTables(table, tablesFile)
-            .toDisjunction
-            .leftMap(Set[java.lang.Throwable](_))
-
-          _ = System.out.println(s"Saved oml.tables in: $tablesFile")
-
-        } yield ()
-      }
+      _ <- if (conversions.toOMLZip || conversions.isEmpty)
+        toTables(outStore, ts)
+      else
+        \/-(())
 
       // 2) Convert from OML Tables => OML Resolver
 
-      omlUUIDg = JVMUUIDGenerator()
-
-      factory = OMLResolvedFactoryImpl(omlUUIDg)
-
-      resolved <- tables.foldLeft {
-        resolver.OMLTablesResolver.initializeTablesResolver(factory).right[OMFError.Throwables]
-      } { case (acc, (im, table)) =>
-
-        for {
-          prev <- acc
-          current = prev.copy(queue = table)
-
-          _ = System.out.println(s"OMLTablesResolver: ${im.iri}")
-
-          res <- resolver.OMLTablesResolver.resolve(current)
-            .toDisjunction
-            .leftMap(Set[java.lang.Throwable](_))
-
-          extent = res.context
-
-          _ <- if (!res.queue.isEmpty)
-            Set[java.lang.Throwable](OMFError.omfError(
-              s"Conversion of ${im.iri} incomplete:\n"+res.queue.show
-            )).left[Unit]
-          else
-            ().right[OMFError.Throwables]
-
-          nB = extent.bundles.size
-          nG = extent.terminologyGraphs.size
-          nD = extent.descriptionBoxes.size
-
-          toBundle = nB == 1 && nG == 0 && nD == 0
-          toGraph = nB == 0 && nG == 1 && nD == 0
-          toDescription = nB == 0 && nG == 0 && nD == 1
-
-          _ <- im match {
-            case _: ImmutableBundle =>
-              if (toBundle)
-                ().right[OMFError.Throwables]
-              else
-                Set[java.lang.Throwable](OMFError.omfError(
-                  s"Bundle conversion of ${im.iri} incomplete"
-                )).left[Unit]
-
-            case _: ImmutableTerminologyGraph =>
-              if (toGraph)
-                ().right[OMFError.Throwables]
-              else
-                Set[java.lang.Throwable](OMFError.omfError(
-                  s"TerminologyGraph conversion of ${im.iri} incomplete"
-                )).left[Unit]
-
-
-            case _: ImmutableDescriptionBox =>
-              if (toDescription)
-                ().right[OMFError.Throwables]
-              else
-                Set[java.lang.Throwable](OMFError.omfError(
-                  s"DescriptionBox conversion of ${im.iri} incomplete"
-                )).left[Unit]
-
-
-          }
-
-          next = resolver.OMLTablesResolver.accumulateResultContext(res)
-        } yield next
-      }
-
-      extents = resolved.otherContexts // allContexts === Extent.empty ++ otherContexts
+      extents <- resolver.resolveTables(
+        resolver.initializeResolver(),
+        ts.map { case (m, t) => tables.taggedTypes.iri(m.iri.toString) -> t})
 
       // 3) Convert from OML Resolver => OML Textual Concrete Syntax
 
-      rs = OMLResourceSet.initializeResourceSet()
-
-      r2t <- extents.foldLeft {
-        internal.OMLResolver2Text().right[OMFError.Throwables]
-      } { case (acc, apiExtent) =>
-        for {
-          prev <- acc
-          next <- internal.OMLResolver2Text.convert(apiExtent, rs, prev).leftMap(_.toThrowables)
-        } yield next
-      }
-
-      extentResources = {
-        r2t.mappings.map { case (iri, (_, omlExtent)) =>
-
-          val omlIRI = if (iri.endsWith("/"))
-            iri.replaceFirst("^(.*)/([a-zA-Z0-9.]+)/$","$1/$2.oml")
-          else
-            iri + ".oml"
-          val resolvedIRI = outCat.resolveURI(omlIRI)
-          val uri: EURI = EURI.createURI(resolvedIRI)
-          val r = rs.createResource(uri)
-          r.getContents.add(omlExtent)
-          r
-        }
-      }
-
-      _ <- (().right[OMFError.Throwables] /: extentResources) { case (acc, r) =>
-        for {
-          _ <- acc
-          _ <- nonFatalCatch[OMFError.Throwables \/ Unit]
-            .withApply { (t: java.lang.Throwable) =>
-              System.err.println(
-                s"OMLConverterFromOntologySyntax (Error while saving to OML): ${t.getMessage}")
-              t.printStackTrace(System.err)
-              Set(t).left[Unit]
-            }
-            .apply {
-              r.save(null)
-              System.out.println(s"Saved ${r.getURI}")
-              ().right[OMFError.Throwables]
-            }
-        } yield ()
-      }
+      _ <- if (conversions.toText)
+        internal
+          .toText(outCatalog, extents)
+          .leftMap(_.toThrowables)
+      else
+        \/-(())
 
       // 4) Convert from OML Resolver => OMF/OWLAPI again
 
-      _ <- internal.OMLResolver2Ontology.convert(extents, outStore)
+      _ <- if (conversions.toOWL)
+        internal
+          .OMLResolver2Ontology
+          .convert(extents, outStore)
+      else
+        \/-(())
+
+      // 5) Convert from OML Tables => Parquet
+
+      _ <- if (conversions.toParquet)
+        internal
+        .toParquet(outCatalog / up, ts.map(_._2))
+      else
+        \/-(())
 
     } yield ()
 
     result
+  }
+
+  protected def toTables(outStore: OWLAPIOMFGraphStore, ts: Seq[(ImmutableModule, OMLSpecificationTables)])
+  : OMFError.Throwables \/ Unit
+  = ts.foldLeft {
+    ().right[OMFError.Throwables]
+  } { case (acc, (im, t)) =>
+
+    for {
+      _ <- acc
+      tURI = outStore.catalogIRIMapper.resolveIRI(im.iri, saveResolutionStrategyForOMLTables).toURI
+      tFile = Paths.get(tURI).toFile
+
+      _ <- OMLSpecificationTables
+        .saveOMLSpecificationTables(t, tFile)
+        .toDisjunction
+        .leftMap(Set[java.lang.Throwable](_))
+
+      _ = System.out.println(s"Saved oml.tables in: $tFile")
+
+    } yield ()
   }
 
 }

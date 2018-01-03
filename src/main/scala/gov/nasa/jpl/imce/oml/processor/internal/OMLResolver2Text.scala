@@ -16,13 +16,13 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.converters.internal
+package gov.nasa.jpl.imce.oml.processor.internal
 
 import java.util.UUID
 
-import gov.nasa.jpl.imce.oml.converters.tables2emf
-import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable.filterable
-import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
+import gov.nasa.jpl.imce.oml.processor.tables2emf
+import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable.filterable
+import gov.nasa.jpl.imce.oml.processor.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model._
 import gov.nasa.jpl.imce.oml.resolver.api
 import gov.nasa.jpl.imce.oml.tables
@@ -32,7 +32,7 @@ import org.eclipse.xtext.resource.XtextResourceSet
 
 import scala.collection.immutable._
 import scala.{None, Option, Some, StringContext}
-import scala.Predef.{ArrowAssoc,String}
+import scala.Predef.{require,ArrowAssoc,String}
 import scalaz.Scalaz._
 import scalaz._
 
@@ -153,6 +153,24 @@ case class OMLResolver2Text
     case ac: api.StructuredDataPropertyTuple =>
       structuredDataPropertyTuples.get(ac)
     }
+
+  def annotationPropertyLookup(ap0: api.AnnotationProperty)
+  : Option[common.AnnotationProperty]
+  = aps.get(ap0).orElse {
+    mappings.foldLeft[Option[common.AnnotationProperty]](None) {
+      case (Some(ap1), _) =>
+        Some(ap1)
+      case (None, (_: tables.taggedTypes.IRI, (e0: api.Extent, e1: common.Extent))) =>
+        if (e0.moduleOfAnnotationProperty.contains(ap0)) {
+          import scala.collection.JavaConverters.asScalaBufferConverter
+
+          require(e1.getModules.size == 1)
+          val ap1 = e1.getModules.get(0).getAnnotationProperties.asScala.find(_.getIri == ap0.iri)
+          ap1
+        } else
+          None
+    }
+  }
 
   def elementLookup(e: api.LogicalElement)
   : Option[common.LogicalElement]
@@ -280,7 +298,7 @@ object OMLResolver2Text {
     c01 = c013
 
     // AnnotationProperties
-    c02 <- c01.extent.annotationProperties.foldLeft(c01.right[EMFProblems])(convertAnnotationProperty)
+    c02 <- c01.extent.annotationProperties.foldLeft(c01.right[EMFProblems])(convertModuleAnnotationProperties)
 
     // TerminologyExtensions
     c03 <- c02.extent.terminologyBoxOfTerminologyBoxAxiom.foldLeft(c02.right[EMFProblems])(convertTerminologyExtension)
@@ -419,22 +437,26 @@ object OMLResolver2Text {
 
   // AnnotationProperty
 
-  protected val convertAnnotationProperty
-  : (ConversionResult, (UUID, api.AnnotationProperty)) => ConversionResult
+  protected val convertModuleAnnotationProperties
+  : (ConversionResult, (api.Module, Set[api.AnnotationProperty])) => ConversionResult
   = {
-    case (acc, (_, ap0)) =>
+    case (acc, (m0, aps0)) =>
       for {
         r2t <- acc
-        next = r2t.conversions.aps.get(ap0) match {
+        next <- r2t.conversions.moduleLookup(m0) match {
+          case Some(m1) =>
+            val next = aps0.foldLeft(r2t) { case (acc, ap0) =>
+              val ap1 = common.CommonFactory.eINSTANCE.createAnnotationProperty()
+              ap1.setModule(m1)
+              ap1.setAbbrevIRI(ap0.abbrevIRI)
+              ap1.setIri(ap0.iri)
+              acc.copy(conversions = acc.conversions.copy(aps = r2t.conversions.aps + (ap0 -> ap1)))
+            }
+            next.right
           case None =>
-            val ap1 = common.CommonFactory.eINSTANCE.createAnnotationProperty()
-            ap1.setExtent(r2t.omlExtent)
-            ap1.setAbbrevIRI(ap0.abbrevIRI)
-            ap1.setIri(ap0.iri)
-            //          java.lang.System.out.println(s"convertAnnotationProperty[${r2t.iri}](abbrevIRI=${ap0.abbrevIRI}, iri=${ap0.iri}")
-            r2t.copy(conversions = r2t.conversions.copy(aps = r2t.conversions.aps + (ap0 -> ap1)))
-          case Some(_) =>
-            r2t
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertModuleAnnotationProperties: Failed to resolve " +
+                s"module: $m0")).left
         }
       } yield next
   }
@@ -1788,7 +1810,7 @@ object OMLResolver2Text {
         r2t <- acc
         apv1 = common.CommonFactory.eINSTANCE.createAnnotationPropertyValue()
         _ <- (
-          r2t.conversions.aps.get(apv0.property),
+          r2t.conversions.annotationPropertyLookup(apv0.property),
           r2t.conversions.elementLookup(apv0.subject)
         ) match {
           case (Some(ap1), Some(e1)) =>
