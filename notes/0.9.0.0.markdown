@@ -49,3 +49,5 @@ gov.nasa.jpl.imce.oml.converters 0.9.0.0 is a build based on OML 0.9
 - [#32 Add support for OML / SQL](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/32)
 
 - [#33 Simplify OML conversion application](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/33)
+
+- [#34 Update '--clear' option to delete output folder (if exists) and create it](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/34)

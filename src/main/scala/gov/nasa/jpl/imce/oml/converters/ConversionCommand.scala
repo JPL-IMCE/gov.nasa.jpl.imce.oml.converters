@@ -18,7 +18,7 @@
 
 package gov.nasa.jpl.imce.oml.converters
 
-import ammonite.ops.Path
+import ammonite.ops.{Path, rm}
 import java.io.File
 import java.lang.IllegalArgumentException
 
@@ -65,7 +65,7 @@ object ConversionCommand {
     def addDir1Folder(folder: File): Request
     def addDir2Folder(folder: File): Request
 
-    def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
   }
 
   object Request {
@@ -115,7 +115,7 @@ object ConversionCommand {
     override def addDir1Folder(folder: File): Request = this
     override def addDir2Folder(folder: File): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Left("No request specified.")
   }
 
@@ -133,7 +133,7 @@ object ConversionCommand {
     override def addDir2Folder(folder: File): Request
     = copy(dir2 = Path.expandUser(folder))
 
-    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = (Request.checkDirectory(dir1), Request.checkDirectory(dir2)) match {
       case (Nil, Nil) =>
         Right(())
@@ -159,7 +159,7 @@ object ConversionCommand {
 
     override def addDir2Folder(folder: File): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Left("No input catalog specified!")
 
   }
@@ -178,8 +178,8 @@ object ConversionCommand {
 
     override def addDir2Folder(folder: File): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
-    = output.check(outputFolder)
+    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    = output.check(outputFolder, deleteIfExists)
 
     def conversionCommand()
     : OMFError.Throwables \/ ConversionCommand
@@ -207,7 +207,7 @@ object ConversionCommand {
     override def addDir1Folder(folder: File): Request = this
     override def addDir2Folder(folder: File): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Left("No input parquet folder specified!")
   }
 
@@ -223,11 +223,11 @@ object ConversionCommand {
     override def addDir1Folder(folder: File): Request = this
     override def addDir2Folder(folder: File): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Request.checkDirectory(folder) match {
       case Nil =>
         if ("oml.parquet" == folder.segments.last)
-          output.check(outputFolder)
+          output.check(outputFolder, deleteIfExists)
         else
           Left(s"Input parquet folder must end in 'oml.parquet' ($folder)")
       case m =>
@@ -245,7 +245,7 @@ object ConversionCommand {
     override def addDir1Folder(folder: File): Request = this
     override def addDir2Folder(folder: File): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Left("No SQL server specified!")
 
   }
@@ -260,8 +260,8 @@ object ConversionCommand {
     override def addDir1Folder(folder: File): Request = this
     override def addDir2Folder(folder: File): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
-    = output.check(outputFolder)
+    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    = output.check(outputFolder, deleteIfExists)
   }
 
   case class OutputConversions
@@ -273,13 +273,17 @@ object ConversionCommand {
 
     def isEmpty: Boolean = !toOWL && !toText && !toOMLZip && !toParquet && toSQL.isEmpty
 
-    def check(outputFolder: Path): Either[String, Unit]
+    def check(outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = nonFatalCatch[Either[String, Unit]]
       .withApply { t =>
         Left(t.getMessage)
       }
       .apply {
-        outputFolder.toIO.mkdirs()
+        if (deleteIfExists) {
+          if (outputFolder.toIO.exists())
+            rm(outputFolder)
+          outputFolder.toIO.mkdirs()
+        }
         Request.checkDirectory(outputFolder) match {
           case Nil =>
             Right(())

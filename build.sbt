@@ -44,7 +44,7 @@ lazy val omlConverters = Project("omlConverters", file("."))
 
     // 'omlDirectoryConverter' will be a command-line script to run
     // the single application, gov.nasa.jpl.imce.oml.processor.OMLConverter
-    mainClass in Compile := Some("gov.nasa.jpl.imce.oml.processor.OMLConverter"),
+    mainClass in Compile := Some("gov.nasa.jpl.imce.oml.converters.OMLConverter"),
 
     executableScriptName := "omlConverter",
 

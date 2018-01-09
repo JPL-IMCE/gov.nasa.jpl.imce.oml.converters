@@ -168,7 +168,7 @@ object OMLConverter {
       }
 
     opt[Unit]("clear")
-      .text("Clears output folder before writing conversion results.")
+      .text("Make sure the output folder is deleted (if it exists) and is created empty before writing conversion results.")
       .optional()
       .action { (_, c) =>
         c.copy(deleteOutputIfExists = true)
@@ -214,7 +214,7 @@ object OMLConverter {
         c.copy(output = c.output.copy(toSQL = Some(server)))
       }
 
-    checkConfig(o => o.input.check(o.output, o.outputFolder))
+    checkConfig(o => o.input.check(o.output, o.outputFolder, o.deleteOutputIfExists))
 
   }
 
