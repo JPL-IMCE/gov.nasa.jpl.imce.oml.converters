@@ -1,4 +1,4 @@
-package gov.nasa.jpl.imce.oml.processor
+package gov.nasa.jpl.imce.oml.converters
 
 import java.lang.System
 import ammonite.ops._

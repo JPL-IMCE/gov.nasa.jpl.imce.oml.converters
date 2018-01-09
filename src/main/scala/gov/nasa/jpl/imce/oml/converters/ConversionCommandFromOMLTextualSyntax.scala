@@ -16,28 +16,32 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.processor
+package gov.nasa.jpl.imce.oml.converters
 
 import java.lang.System
+import java.util.Properties
 
-import ammonite.ops.{up,Path}
+import ammonite.ops.{Path, up}
 import org.eclipse.emf.ecore.util.EcoreUtil
-import gov.nasa.jpl.imce.oml.processor.utils.{EMFProblems, OMLResourceSet}
-import gov.nasa.jpl.imce.oml.resolver._
+import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
+import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.resolver.{Extent2Tables, FileSystemUtilities, api, impl}
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
-import gov.nasa.jpl.imce.oml.{filesystem, uuid}
+import gov.nasa.jpl.imce.oml.uuid
 import gov.nasa.jpl.omf.scala.core.OMFError
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
 
 import scala.collection.immutable.{List, Seq, Set}
 import scala.util.{Failure, Success}
 import scala.util.control.Exception.nonFatalCatch
-import scala.{StringContext, Unit}
+import scala.{None, Some, StringContext, Unit}
 import scalaz._
 import Scalaz._
 
 case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
-  override val filePredicate = filesystem.omlTextFilePredicate _
+  override val filePredicate = FileSystemUtilities.omlTextFilePredicate _
 
   override def convert
   (inCatalog: Path,
@@ -52,6 +56,22 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         -\/(Set(t))
     }
     .apply {
+      val conf = new SparkConf()
+        .setMaster("local")
+        .setAppName(this.getClass.getSimpleName)
+
+      implicit val spark = SparkSession
+        .builder()
+        .config(conf)
+        .getOrCreate()
+      implicit val sqlContext = spark.sqlContext
+
+      val props = new Properties()
+      props.setProperty("useSSL", "false")
+
+      props.setProperty("dumpQueriesOnException", "true")
+      props.setProperty("enablePacketDebug", "true")
+
       val inDir: Path = inCatalog / up
 
       val result = for {
@@ -122,6 +142,26 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
             .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
         else
           ().right[EMFProblems]
+
+        // Convert to SQL
+
+        _ <- conversions.toSQL match {
+          case Some(server) =>
+            val tables =
+              o2rMap
+                .map { case (_, o2r) => Extent2Tables.convert(o2r.rextent) }
+                .to[Seq]
+                .reduceLeft(OMLSpecificationTables.mergeTables)
+            OMLSpecificationTypedDatasets
+              .sqlWriteOMLSpecificationTables(tables, server, props) match {
+              case Success(_) =>
+                ().right[EMFProblems]
+              case Failure(t) =>
+                EMFProblems(exceptions = List(t)).left
+            }
+          case None =>
+            ().right[EMFProblems]
+        }
 
       } yield ()
 

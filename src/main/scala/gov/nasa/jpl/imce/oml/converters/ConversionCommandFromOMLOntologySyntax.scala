@@ -16,20 +16,25 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.processor
+package gov.nasa.jpl.imce.oml.converters
 
 import java.lang.System
 import java.nio.file.Paths
+import java.util.Properties
 
 import ammonite.ops.{Path, up}
-import gov.nasa.jpl.imce.oml.graphs.hierarchicalTopologicalSort
-import gov.nasa.jpl.imce.oml.{filesystem, resolver}
+import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
+import gov.nasa.jpl.imce.oml.resolver.FileSystemUtilities
+import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.binding.owlapi.common.ImmutableModule
 import gov.nasa.jpl.omf.scala.core.OMFError
 import gov.nasa.jpl.omf.scala.core.tables.OMFTabularExport
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
 import org.apache.xml.resolver.Catalog
 
 import scala.collection.immutable.{Seq, Set}
@@ -37,13 +42,14 @@ import scala.{Int, None, Option, Ordering, Some, StringContext, Unit}
 import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
+import scala.util.{Failure, Success}
 import scalax.collection.Graph
 import scalax.collection.GraphEdge.DiEdge
 import scalax.collection.GraphPredef.EdgeAssoc
 
 case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
-  override val filePredicate = filesystem.omlOWLFilePredicate _
+  override val filePredicate = FileSystemUtilities.omlOWLFilePredicate _
 
   override def convert
   (inCatalog: Path,
@@ -74,6 +80,23 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
     implicit val mOrder = new Ordering[OWLAPIOMF#ImmutableModule] {
       override def compare(x: ImmutableModule, y: ImmutableModule): Int = x.iri.toString.compareTo(y.iri.toString)
     }
+
+    val conf = new SparkConf()
+      .setMaster("local")
+      .setAppName(this.getClass.getSimpleName)
+
+    implicit val spark = SparkSession
+      .builder()
+      .config(conf)
+      .getOrCreate()
+
+    implicit val sqlContext = spark.sqlContext
+
+    val props = new Properties()
+    props.setProperty("useSSL", "false")
+
+    props.setProperty("dumpQueriesOnException", "true")
+    props.setProperty("enablePacketDebug", "true")
 
     val result
     : OMFError.Throwables \/ Unit
@@ -158,7 +181,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         gl
       }
 
-      gorder <- hierarchicalTopologicalSort(Seq(g3)).map(_.reverse)
+      gorder <- GraphUtilities.hierarchicalTopologicalSort(Seq(g3)).map(_.reverse)
 
       _ = gorder.foreach { g =>
         val iri = g.iri.toString
@@ -190,8 +213,8 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
       // 2) Convert from OML Tables => OML Resolver
 
-      extents <- resolver.resolveTables(
-        resolver.initializeResolver(),
+      extents <- ResolverUtilities.resolveTables(
+        ResolverUtilities.initializeResolver(),
         ts.map { case (m, t) => tables.taggedTypes.iri(m.iri.toString) -> t})
 
       // 3) Convert from OML Resolver => OML Textual Concrete Syntax
@@ -216,9 +239,25 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
       _ <- if (conversions.toParquet)
         internal
-        .toParquet(outCatalog / up, ts.map(_._2))
+          .toParquet(outCatalog / up, ts.map(_._2))
       else
         \/-(())
+
+      // 6) Convert from OML Tables => SQL
+
+      _ <- conversions.toSQL match {
+        case Some(server) =>
+          val tables = ts.map(_._2).reduceLeft(OMLSpecificationTables.mergeTables)
+          OMLSpecificationTypedDatasets
+            .sqlWriteOMLSpecificationTables(tables, server, props) match {
+            case Success(_) =>
+              \/-(())
+            case Failure(t) =>
+              -\/(Set(t))
+          }
+        case None =>
+          \/-(())
+      }
 
     } yield ()
 
