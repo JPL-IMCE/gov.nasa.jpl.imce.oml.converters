@@ -16,22 +16,26 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.processor
+package gov.nasa.jpl.imce.oml.converters
 
 import java.lang.System
+import java.util.Properties
 
-import ammonite.ops.{Path,up}
+import ammonite.ops.{Path, up}
 import gov.nasa.jpl.imce.oml.covariantTag.@@
-import gov.nasa.jpl.imce.oml.{filesystem, resolver}
-import gov.nasa.jpl.imce.oml.graphs.hierarchicalTopologicalSort
-import gov.nasa.jpl.imce.oml.resolver
-import gov.nasa.jpl.imce.oml.tables
+import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.resolver.FileSystemUtilities
+import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
+import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
+import gov.nasa.jpl.imce.oml.resolver.TableUtilities
 import gov.nasa.jpl.imce.oml.tables.{OMLSpecificationTables, taggedTypes}
 import gov.nasa.jpl.omf.scala.binding.owlapi.OWLAPIOMFGraphStore
 import gov.nasa.jpl.omf.scala.core.OMFError
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
 import org.apache.xml.resolver.Catalog
 
-import scala.{Int, Ordering, StringContext, Unit}
+import scala.{Int, None, Ordering, Some, StringContext, Unit}
 import scala.collection.immutable.{Map, Seq, Set}
 import scala.util.{Failure, Success, Try}
 import scala.Predef.{ArrowAssoc, String}
@@ -42,7 +46,7 @@ import scalax.collection.GraphPredef.EdgeAssoc
 
 case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
-  override val filePredicate = filesystem.omlJsonZipFilePredicate _
+  override val filePredicate = FileSystemUtilities.omlJsonZipFilePredicate _
 
   implicit def toThrowables[T](v: Try[T]): OMFError.Throwables \/ T = v match {
     case Success(t) =>
@@ -85,16 +89,31 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
    conversions: ConversionCommand.OutputConversions)
   : OMFError.Throwables \/ Unit
   = {
+    val conf = new SparkConf()
+      .setMaster("local")
+      .setAppName(this.getClass.getSimpleName)
+
+    implicit val spark = SparkSession
+      .builder()
+      .config(conf)
+      .getOrCreate()
+    implicit val sqlContext = spark.sqlContext
+
+    val props = new Properties()
+    props.setProperty("useSSL", "false")
+
+    props.setProperty("dumpQueriesOnException", "true")
+    props.setProperty("enablePacketDebug", "true")
 
     // 1) Read OML Tables
 
     val allTables
     : Seq[OMLSpecificationTables]
-    = inputFiles.par.map(tables.reader.readOMLZipFile).to[Seq]
+    = inputFiles.par.map(TableUtilities.readOMLZipFile).to[Seq]
 
     val allModules
     : Map[taggedTypes.IRI, OMLSpecificationTables]
-    = allTables.foldLeft(Map.empty[taggedTypes.IRI, OMLSpecificationTables]) { _ ++ tables.reader.tableModules(_) }
+    = allTables.foldLeft(Map.empty[taggedTypes.IRI, OMLSpecificationTables]) { _ ++ TableUtilities.tableModules(_) }
 
     val g0
     : Graph[taggedTypes.IRI, DiEdge]
@@ -105,12 +124,12 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
     val g1
     : Graph[taggedTypes.IRI, DiEdge]
     = (g0 /: allTables) { case (gi, ti) =>
-      val gj = gi ++ tables.reader.tableEdges(ti).map { case (src, dst) => src ~> dst }
+      val gj = gi ++ TableUtilities.tableEdges(ti).map { case (src, dst) => src ~> dst }
       gj
     }
 
     for {
-      gorder <- hierarchicalTopologicalSort(Seq(g1)).map(_.reverse)
+      gorder <- GraphUtilities.hierarchicalTopologicalSort(Seq(g1)).map(_.reverse)
 
       _ = gorder.foreach { m =>
         System.out.println(s"convert from OWL(tables): $m")
@@ -120,8 +139,8 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
       // 2) Convert from OML Tables => OML Resolver
 
-      extents <- resolver.resolveTables(
-        resolver.initializeResolver(),
+      extents <- ResolverUtilities.resolveTables(
+        ResolverUtilities.initializeResolver(),
         ts)
 
       // 3) Convert from OML Resolver => OML Textual Concrete Syntax
@@ -149,6 +168,22 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
           .toParquet(outCatalog / up, ts.map(_._2))
       else
         \/-(())
+
+      // 6) Convert from OML Tables => SQL
+
+      _ <- conversions.toSQL match {
+        case Some(server) =>
+          val tables = ts.map(_._2).reduceLeft(OMLSpecificationTables.mergeTables)
+          OMLSpecificationTypedDatasets
+            .sqlWriteOMLSpecificationTables(tables, server, props) match {
+            case Success(_) =>
+              \/-(())
+            case Failure(t) =>
+              -\/(Set(t))
+          }
+        case None =>
+          \/-(())
+      }
 
     } yield ()
   }
