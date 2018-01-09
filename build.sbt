@@ -92,6 +92,8 @@ lazy val omlConverters = Project("omlConverters", file("."))
 
     addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.patch),
 
+    libraryDependencies += "mysql" % "mysql-connector-java" % "5.1.+",
+
     // Avoid unresolvable dependencies from old versions of log4j
     libraryDependencies ~= {
       _ map {

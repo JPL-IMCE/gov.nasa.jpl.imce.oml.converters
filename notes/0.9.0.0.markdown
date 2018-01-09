@@ -40,4 +40,12 @@ gov.nasa.jpl.imce.oml.converters 0.9.0.0 is a build based on OML 0.9
 
 - [#28 Support for OML SubObjectPropertyOf and SubDataPropertyOf](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/28)
 
+- [#29 Finish conversion support from `*.omlzip`](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/29)
+
 - [#30 Typo on OMLText2Resolver.convertSub{Data|Object}PropertyOfAxioms](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/30)
+
+- [#31 OML AnnotationProperty refactoring](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/31)
+
+- [#32 Add support for OML / SQL](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/32)
+
+- [#33 Simplify OML conversion application](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/33)
