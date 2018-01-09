@@ -16,19 +16,19 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.processor.internal
+package gov.nasa.jpl.imce.oml.converters.internal
 
 import ammonite.ops.RelPath
 
 import gov.nasa.jpl.imce.oml.tables
-import gov.nasa.jpl.imce.oml.processor.emf2tables
-import gov.nasa.jpl.imce.oml.processor.utils.EMFProblems
+import gov.nasa.jpl.imce.oml.converters.emf2tables
+import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model.bundles._
 import gov.nasa.jpl.imce.oml.model.common._
 import gov.nasa.jpl.imce.oml.model.descriptions._
 import gov.nasa.jpl.imce.oml.model.graphs._
 import gov.nasa.jpl.imce.oml.model.terminologies._
-import gov.nasa.jpl.imce.oml.resolver
+import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.resolver.api
 import gov.nasa.jpl.imce.oml.tables.{ClosedWorldDesignations, OpenWorldDefinitions, TerminologyKind => TTerminologyKind}
 import gov.nasa.jpl.imce.oml.tables.{Final, Partial, DescriptionKind => TDescriptionKind}
@@ -310,7 +310,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -346,7 +346,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -383,7 +383,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -421,7 +421,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val bundles = e.getModules.selectByKindOf { case b: Bundle => b }
@@ -456,7 +456,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
@@ -491,7 +491,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
@@ -526,7 +526,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -551,7 +551,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -576,7 +576,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -631,7 +631,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -771,7 +771,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -864,7 +864,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -889,7 +889,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -914,7 +914,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     for {
       s <- state
@@ -1034,7 +1034,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1096,7 +1096,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1139,7 +1139,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1182,7 +1182,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1224,7 +1224,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1266,7 +1266,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1312,7 +1312,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1410,7 +1410,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1527,7 +1527,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1581,7 +1581,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1626,7 +1626,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val tboxes = e.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
@@ -1671,7 +1671,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val bundles = e.getModules.selectByKindOf { case b: Bundle => b }
@@ -1770,7 +1770,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
@@ -1810,7 +1810,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
@@ -1850,7 +1850,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
@@ -1889,7 +1889,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
@@ -1928,7 +1928,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
@@ -1970,7 +1970,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
@@ -2032,7 +2032,7 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Extent, OMLText2Resolver]
   = {
-    import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable._
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
     val (e, _) = entry
     val dboxes = e.getModules.selectByKindOf { case dbox: DescriptionBox => dbox }
@@ -2244,7 +2244,7 @@ object OMLText2Resolver {
         ext.descriptionBoxRefinementByUUID.values.map(_ -> ext)
     }
 
-    sortedModuleExtents <- resolver.sortExtents(modules, moduleEdges).leftMap(ts => EMFProblems(exceptions = ts.to[List]))
+    sortedModuleExtents <- ResolverUtilities.sortExtents(modules, moduleEdges).leftMap(ts => EMFProblems(exceptions = ts.to[List]))
 
     // Relationships
     c30 = c2N

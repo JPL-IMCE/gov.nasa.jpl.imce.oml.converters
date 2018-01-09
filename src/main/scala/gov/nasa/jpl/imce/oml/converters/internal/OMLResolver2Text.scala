@@ -16,13 +16,13 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.processor.internal
+package gov.nasa.jpl.imce.oml.converters.internal
 
 import java.util.UUID
 
-import gov.nasa.jpl.imce.oml.processor.tables2emf
-import gov.nasa.jpl.imce.oml.processor.utils.EMFFilterable.filterable
-import gov.nasa.jpl.imce.oml.processor.utils.EMFProblems
+import gov.nasa.jpl.imce.oml.converters.tables2emf
+import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable.filterable
+import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model._
 import gov.nasa.jpl.imce.oml.resolver.api
 import gov.nasa.jpl.imce.oml.tables

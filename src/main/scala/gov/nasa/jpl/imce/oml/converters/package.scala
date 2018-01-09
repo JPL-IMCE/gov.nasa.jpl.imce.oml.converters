@@ -26,7 +26,7 @@ import org.semanticweb.owlapi.model.IRI
 import scala.{None, Option, Some}
 import scala.Predef.{String, augmentString}
 
-package object processor {
+package object converters {
 
   def saveResolutionStrategyForOMLTables(resolved: String): Option[IRI] = {
     val normalized = new URI(resolved)

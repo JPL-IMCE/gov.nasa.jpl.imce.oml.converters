@@ -16,7 +16,7 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.processor
+package gov.nasa.jpl.imce.oml.converters
 
 import ammonite.ops.Path
 import java.io.File
@@ -49,12 +49,16 @@ trait ConversionCommand {
 
 object ConversionCommand {
 
+  sealed abstract trait ConversionFrom
+  case object ConversionFromUnspecified extends ConversionFrom
+  case object ConversionFromOWL extends ConversionFrom
+  case object ConversionFromText extends ConversionFrom
+  case object ConversionFromOWLZip extends ConversionFrom
+  case object ConversionFromParquet extends ConversionFrom
+  case object ConversionFromSQL extends ConversionFrom
+
   sealed abstract trait Request {
-    val fromOWL: Boolean=false
-    val fromText: Boolean=false
-    val fromOMLZip: Boolean=false
-    val fromParquet: Boolean=false
-    def isEmpty: Boolean = !fromOWL && !fromText && !fromOMLZip && !fromParquet
+    val from: ConversionFrom=ConversionFromUnspecified
 
     def addCatalog(catalog: File): Request
     def addParquetFolder(folder: File): Request
@@ -143,15 +147,11 @@ object ConversionCommand {
   }
 
   case class CatalogInputConversion
-  (override val fromOWL: Boolean=false,
-   override val fromText: Boolean=false,
-   override val fromOMLZip: Boolean=false,
-   override val fromParquet: Boolean=false,
-   catalog: Option[Path] = Option.empty
+  (override val from: ConversionFrom=ConversionFromUnspecified
   ) extends Request {
 
     override def addCatalog(catalogFile: File): Request
-    = copy(catalog = Some(Path(catalogFile)))
+    = CatalogInputConversionWithCatalog(from, Path(catalogFile))
 
     override def addParquetFolder(folder: File): Request = this
 
@@ -160,79 +160,118 @@ object ConversionCommand {
     override def addDir2Folder(folder: File): Request = this
 
     override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
-    = catalog match {
-      case None =>
-        Left("No input catalog specified!")
-      case Some(cat) =>
-        Request.checkFile(cat, Some("oml.catalog.xml")) match {
-          case Nil =>
-            output.check(outputFolder)
-          case m =>
-            Left("Invalid OML catalog." + m.mkString("\n", "\n", "\n"))
-        }
-    }
+    = Left("No input catalog specified!")
+
+  }
+
+  case class CatalogInputConversionWithCatalog
+  (override val from: ConversionFrom=ConversionFromUnspecified,
+   catalog: Path
+  ) extends Request {
+
+    override def addCatalog(catalogFile: File): Request
+    = copy(catalog = Path(catalogFile))
+
+    override def addParquetFolder(folder: File): Request = this
+
+    override def addDir1Folder(folder: File): Request = this
+
+    override def addDir2Folder(folder: File): Request = this
+
+    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    = output.check(outputFolder)
 
     def conversionCommand()
-    : OMFError.Throwables \/ (ConversionCommand, Path)
-    = catalog match {
-      case None =>
+    : OMFError.Throwables \/ ConversionCommand
+    = from match {
+      case ConversionFromOWL =>
+        \/-(ConversionCommandFromOMLOntologySyntax)
+      case ConversionFromText =>
+        \/-(ConversionCommandFromOMLTextualSyntax)
+      case ConversionFromOWLZip =>
+        \/-(ConversionCommandFromOMLTabularSyntax)
+      case _ =>
         -\/(Set(new IllegalArgumentException(
-          s"Unspecified OML catalog!"
+          s"Unspecified OML catalog-based conversion (available commands: owl, text, json)."
         )))
-      case Some(cat) =>
-        if (fromOWL)
-          \/-(ConversionCommandFromOMLOntologySyntax -> cat)
-        else if (fromText)
-          \/-(ConversionCommandFromOMLTextualSyntax -> cat)
-        else if (fromOMLZip)
-          \/-(ConversionCommandFromOMLTabularSyntax -> cat)
-        else
-          -\/(Set(new IllegalArgumentException(
-            s"Unspecified OML catalog-based conversion (available commands: owl, text, json)."
-          )))
     }
   }
 
-  case class ParquetInputConversion
-  (override val fromOWL: Boolean=false,
-   override val fromText: Boolean=false,
-   override val fromOMLZip: Boolean=false,
-   override val fromParquet: Boolean=false,
-   folder: Option[Path] = Option.empty
-  ) extends Request {
-
+  case class ParquetInputConversion() extends Request {
+    override val from: ConversionFrom=ConversionFromUnspecified
     override def addCatalog(catalog: File): Request = this
 
     override def addParquetFolder(dir: File): Request
-    = copy(folder = Some(Path(dir)))
+    = ParquetInputConversionWithFolder(folder = Path(dir))
 
     override def addDir1Folder(folder: File): Request = this
     override def addDir2Folder(folder: File): Request = this
 
     override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
-    = folder match {
-      case None =>
-        Left("No input parquet folder specified!")
-      case Some(d) =>
-        Request.checkDirectory(d) match {
-          case Nil =>
-            if ("oml.parquet" == d.segments.last)
-              output.check(outputFolder)
-            else
-              Left(s"Input parquet folder must end in 'oml.parquet' ($folder)")
-          case m =>
-            Left("Invalid input parquet folder." + m.mkString("\n","\n","\n"))
-        }
+    = Left("No input parquet folder specified!")
+  }
+
+  case class ParquetInputConversionWithFolder
+  (folder: Path) extends Request {
+    override val from: ConversionFrom=ConversionFromUnspecified
+
+    override def addCatalog(catalog: File): Request = this
+
+    override def addParquetFolder(dir: File): Request
+    = copy(folder = Path(dir))
+
+    override def addDir1Folder(folder: File): Request = this
+    override def addDir2Folder(folder: File): Request = this
+
+    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    = Request.checkDirectory(folder) match {
+      case Nil =>
+        if ("oml.parquet" == folder.segments.last)
+          output.check(outputFolder)
+        else
+          Left(s"Input parquet folder must end in 'oml.parquet' ($folder)")
+      case m =>
+        Left("Invalid input parquet folder." + m.mkString("\n","\n","\n"))
     }
+  }
+
+  case class SQLInputConversion() extends Request {
+    override val from: ConversionFrom=ConversionFromSQL
+
+    override def addCatalog(catalog: File): Request = this
+
+    override def addParquetFolder(dir: File): Request = this
+
+    override def addDir1Folder(folder: File): Request = this
+    override def addDir2Folder(folder: File): Request = this
+
+    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    = Left("No SQL server specified!")
+
+  }
+
+  case class SQLInputConversionWithServer(server: String) extends Request {
+    override val from: ConversionFrom=ConversionFromSQL
+
+    override def addCatalog(catalog: File): Request = this
+
+    override def addParquetFolder(dir: File): Request = this
+
+    override def addDir1Folder(folder: File): Request = this
+    override def addDir2Folder(folder: File): Request = this
+
+    override def check(output: OutputConversions, outputFolder: Path): Either[String, Unit]
+    = output.check(outputFolder)
   }
 
   case class OutputConversions
   (toOWL: Boolean=false,
    toText: Boolean=false,
    toOMLZip: Boolean=false,
-   toParquet: Boolean=false) {
+   toParquet: Boolean=false,
+   toSQL: Option[String]=None) {
 
-    def isEmpty: Boolean = !toOWL && !toText && !toOMLZip && !toParquet
+    def isEmpty: Boolean = !toOWL && !toText && !toOMLZip && !toParquet && toSQL.isEmpty
 
     def check(outputFolder: Path): Either[String, Unit]
     = nonFatalCatch[Either[String, Unit]]

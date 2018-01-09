@@ -16,16 +16,16 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.processor
+package gov.nasa.jpl.imce.oml.converters
 
 import java.io.File
-import java.lang.{IllegalArgumentException, System}
+import java.lang.System
+import java.util.Properties
 
-import ammonite.ops.{Path, cp, mkdir, rm, up}
-import gov.nasa.jpl.imce.oml.filesystem
+import ammonite.ops.{Path, up}
+import gov.nasa.jpl.imce.oml.resolver.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
-import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
@@ -33,8 +33,7 @@ import scala.collection.immutable._
 import scala.{Array, Boolean, None, Some, StringContext, Unit}
 import scala.Predef.{String, augmentString, wrapRefArray}
 import scala.util.{Failure, Success}
-import scala.util.control.Exception.nonFatalCatch
-import scalaz.{-\/, \/, \/-}
+import scalaz._
 
 object OMLConverter {
 
@@ -45,13 +44,13 @@ object OMLConverter {
    outputFolder: Path = Path("/dev/null")
   )
 
-  val optionsParser = new scopt.OptionParser[Options]("omlDirectoryConverter") {
+  val optionsParser = new scopt.OptionParser[Options]("omlConverter") {
 
     cmd("text")
       .text("Convert from OML textual syntax files, '*.oml'")
       .optional()
       .action { (_, c) =>
-        c.copy(input = ConversionCommand.CatalogInputConversion(fromText = true))
+        c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromText))
       }
 
     note("")
@@ -60,7 +59,7 @@ object OMLConverter {
       .text("Convert from OML files in OWL2-DL + SWRL rules, '*.owl'")
       .optional()
       .action { (_, c) =>
-        c.copy(input = ConversionCommand.CatalogInputConversion(fromOWL = true))
+        c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWL))
       }
 
     note("")
@@ -69,7 +68,7 @@ object OMLConverter {
       .text("Convert from archives of OML tabular json files, '*.omlzip'")
       .optional()
       .action { (_, c) =>
-        c.copy(input = ConversionCommand.CatalogInputConversion(fromOMLZip = true))
+        c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWLZip))
       }
 
     note("")
@@ -78,8 +77,25 @@ object OMLConverter {
       .text("Convert from folders of OML parquet table files, '<dir>/<oml table>.parquet'.")
       .optional()
       .action { (_, c) =>
-        c.copy(input = ConversionCommand.ParquetInputConversion(fromParquet = true))
+        c.copy(input = ConversionCommand.ParquetInputConversion())
       }
+
+    note("")
+
+    cmd("sql")
+      .text("Convert from an SQL server.")
+      .optional()
+      .action { (_, c) =>
+        c.copy(input = ConversionCommand.SQLInputConversion())
+      }
+      .children(
+        arg[String]("<server>")
+          .text("SQL server")
+          .required()
+          .action { (server, c) =>
+            c.copy(input = ConversionCommand.SQLInputConversionWithServer(server))
+          }
+      )
 
     note("")
 
@@ -89,25 +105,23 @@ object OMLConverter {
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CompareDirectories())
       }
-      .children {
+      .children(
         arg[File]("<dir1>")
           .text("Left side comparison, <dir1>.")
           .required()
           .validate(ConversionCommand.Request.validateExistingFolder("Invalid argument <dir1>."))
           .action { (f, c) =>
             c.copy(input = c.input.addDir1Folder(f))
-          }
-          .children {
+          },
 
-            arg[File]("<dir2>")
-              .text("Right side comparison, <dir2>.")
-              .required()
-              .validate(ConversionCommand.Request.validateExistingFolder("Invalid argument <dir2>."))
-              .action { (f, c) =>
-                c.copy(input = c.input.addDir2Folder(f))
-              }
+        arg[File]("<dir2>")
+          .text("Right side comparison, <dir2>.")
+          .required()
+          .validate(ConversionCommand.Request.validateExistingFolder("Invalid argument <dir2>."))
+          .action { (f, c) =>
+            c.copy(input = c.input.addDir2Folder(f))
           }
-      }
+      )
 
     note("")
     note("Options:")
@@ -192,6 +206,14 @@ object OMLConverter {
         c.copy(output = c.output.copy(toParquet = true))
       }
 
+    opt[String]("sql")
+      .text("Output conversion includes OML stored on an SQL server.")
+      .abbr("s")
+      .optional()
+      .action { (server, c) =>
+        c.copy(output = c.output.copy(toSQL = Some(server)))
+      }
+
     checkConfig(o => o.input.check(o.output, o.outputFolder))
 
   }
@@ -207,13 +229,17 @@ object OMLConverter {
           case ConversionCommand.CompareDirectories(dir1, dir2) =>
             DiffConversionsCommand.diff(dir1, dir2)
 
-          case p: ConversionCommand.ParquetInputConversion =>
+          case p: ConversionCommand.ParquetInputConversionWithFolder =>
             parquetInputConversion(p, options.output, options.deleteOutputIfExists, options.outputFolder)
 
-          case c: ConversionCommand.CatalogInputConversion =>
+          case c: ConversionCommand.CatalogInputConversionWithCatalog =>
             catalogInputConversion(c, options.output, options.deleteOutputIfExists, options.outputFolder)
 
-          case ConversionCommand.NoRequest() =>
+          case s: ConversionCommand.SQLInputConversionWithServer =>
+            ConversionCommandFromOMLSQL
+              .sqlInputConversion(s, options.output, options.deleteOutputIfExists, options.outputFolder)
+
+          case _ =>
             System.err.println("Abnormal exit; no operation performed.")
         }
 
@@ -223,17 +249,12 @@ object OMLConverter {
   }
 
   def parquetInputConversion
-  (p: ConversionCommand.ParquetInputConversion,
+  (p: ConversionCommand.ParquetInputConversionWithFolder,
    output: ConversionCommand.OutputConversions,
    deleteOutputIfExists: Boolean,
    outputFolder: Path)
   : Unit
   = {
-    System.out.println(p)
-    System.out.println(s"output conversions: $output")
-    System.out.println(s"clear: $deleteOutputIfExists")
-    System.out.println(s"output folder: $outputFolder")
-
     val conf = new SparkConf()
       .setMaster("local")
       .setAppName(this.getClass.getSimpleName)
@@ -244,52 +265,44 @@ object OMLConverter {
       .getOrCreate()
     implicit val sqlContext = spark.sqlContext
 
+    val props = new Properties()
+    props.setProperty("useSSL", "false")
+
+    props.setProperty("dumpQueriesOnException", "true")
+    props.setProperty("enablePacketDebug", "true")
+
     val ok = for {
-      dir <- p.folder match {
-        case None =>
-          Failure(new IllegalArgumentException("Unspecified OML parquet folder"))
-        case Some(d) =>
-          Success(d)
-      }
-      omlTables <- OMLSpecificationTypedDatasets.parquetReadOMLSpecificationTables(dir)
+      omlTables <-
+        OMLSpecificationTypedDatasets
+          .parquetReadOMLSpecificationTables(p.folder) match {
+          case Success(tables) =>
+            \/-(tables)
+          case Failure(t) =>
+            -\/(Set(t))
+        }
       _ <- if (output.toOMLZip)
-        OMLSpecificationTables.saveOMLSpecificationTables(omlTables, outputFolder.toIO)
+        OMLSpecificationTables
+          .saveOMLSpecificationTables(omlTables, outputFolder.toIO) match {
+          case Success(_) =>
+            \/-(())
+          case Failure(t) =>
+            -\/(Set(t))
+        }
       else
-        Success(())
-    } yield ()
+        \/-(())
 
-    ok match {
-      case Success(_) =>
-        ()
-      case Failure(t) =>
-        throw t
-    }
-  }
-
-  def catalogInputConversion
-  (c: ConversionCommand.CatalogInputConversion,
-   output: ConversionCommand.OutputConversions,
-   deleteOutputIfExists: Boolean,
-   outputDir: Path)
-  : Unit
-  = {
-
-    System.out.println(c)
-    System.out.println(s"output conversions: $output")
-    System.out.println(s"clear: $deleteOutputIfExists")
-    System.out.println(s"output folder: $outputDir")
-
-    val ok = for {
-      conv_cat <- c.conversionCommand()
-      (conversion, inCatalog) = conv_cat
-      _ = System.out.println(s"conversion=$conversion")
-      inputDir = inCatalog / up
-      _ = System.out.println(s"input dir=$inputDir")
-      outCatalog <- makeOutputDirectoryAndCopyCatalog(deleteOutputIfExists, outputDir, inCatalog)
-      inputFiles = filesystem.lsRecOML(inputDir, conversion.filePredicate)
-      _ = System.out.println(s"input files=${inputFiles.size}")
-      _ <- conversion.convert(inCatalog, inputFiles, outputDir, outCatalog, output)
-
+      _ <- output.toSQL match {
+        case Some(url) =>
+          OMLSpecificationTypedDatasets
+            .sqlWriteOMLSpecificationTables(omlTables, url, props) match {
+            case Success(_) =>
+              \/-(())
+            case Failure(t) =>
+              -\/(Set(t))
+          }
+        case None =>
+          \/-(())
+      }
     } yield ()
 
     ok match {
@@ -305,84 +318,37 @@ object OMLConverter {
     }
   }
 
-  def checkCatalogFile(cat: String)
-  : OMFError.Throwables \/ Path
+  def catalogInputConversion
+  (c: ConversionCommand.CatalogInputConversionWithCatalog,
+   output: ConversionCommand.OutputConversions,
+   deleteOutputIfExists: Boolean,
+   outputFolder: Path)
+  : Unit
   = {
-    val catalog = new java.io.File(cat)
-    if (cat.endsWith(".catalog.xml") && catalog.exists() && catalog.canRead && catalog.isAbsolute)
-      \/-(Path(catalog))
-    else
-      -\/(Set(new IllegalArgumentException(s"Invalid OASIS XML catalog absolute file: $cat")))
-  }
+    val ok = for {
+      conversion <- c.conversionCommand()
+      inCatalog = c.catalog
+      _ = System.out.println(s"conversion=$conversion")
+      inputDir = inCatalog / up
+      _ = System.out.println(s"input dir=$inputDir")
+      outCatalog <- internal.makeOutputDirectoryAndCopyCatalog(deleteOutputIfExists, outputFolder, inCatalog)
+      inputFiles = FileSystemUtilities.lsRecOML(inputDir, conversion.filePredicate)
+      _ = System.out.println(s"input files=${inputFiles.size}")
+      _ <- conversion.convert(inCatalog, inputFiles, outputFolder, outCatalog, output)
 
-  def makeOutputDirectoryAndCopyCatalog(deleteIfExists: Boolean, outDir: Path, inCatalog: Path)
-  : OMFError.Throwables \/ Path
-  = nonFatalCatch[OMFError.Throwables \/ Path]
-    .withApply {
-      (t: java.lang.Throwable) =>
-        -\/(Set(t))
+    } yield ()
+
+    ok match {
+      case \/-(_) =>
+        ()
+      case -\/(ts) =>
+        System.err.println(s"### ${ts.size} Conversion Errors! ###")
+        ts.foreach { t =>
+          System.err.println(t.getMessage)
+          t.printStackTrace(System.err)
+        }
+        System.exit(-1)
     }
-    .apply {
-      for {
-        _ <- if (outDir.toIO.exists()) {
-          if (deleteIfExists) {
-            rm(outDir)
-            \/-(())
-          } else
-            -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Output directory already exists: $outDir")))
-        } else
-          \/-(())
-        _ = mkdir(outDir)
-        outCatalog = outDir / inCatalog.segments.last
-        _ = cp(inCatalog, outCatalog)
-      } yield outCatalog
-    }
-
-  def checkConversionCommand(cmd: String)
-  : OMFError.Throwables \/ ConversionCommand
-  = cmd match {
-    case "-text" =>
-      \/-(ConversionCommandFromOMLTextualSyntax)
-    case "-owl" =>
-      \/-(ConversionCommandFromOMLOntologySyntax)
-    case "-json" =>
-      \/-(ConversionCommandFromOMLTabularSyntax)
-    case _ =>
-      -\/(Set(new IllegalArgumentException(
-        s"Unrecognized OML conversion command: $cmd (available options: -text, -owl, -json"
-      )))
   }
-
-  def usage(): String =
-    s"""
-       |Usage:
-       |
-       |0) Get information about extended options
-       |omlDirectoryConverter -h
-       |
-       |1) Compare recursively OML files (text, owl, json) between two directories
-       |omlDirectoryConverter -- -diff <dir1> <dir2>
-       |
-       |  where <dir1> and <dir2> are absolute paths to directories, each containing an oml.catalog.xml file.
-       |
-       |  For `*.owl` and `*.owl`, this comparison only reports which files are different between the two directories.
-       |  The comparison does not report the differences in these files.
-       |
-       |  For `*.omlzip`, this comparison reports line-level differences (added/deleted) for each OML table.
-       |
-       |2) Convert all OML textual concrete syntax files *.oml
-       |omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
-       |
-       |3) Convert all OWL2-DL ontology syntax files *.owl
-       |omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
-       |
-       |4) Convert all normalized tabular syntax files *.omlzip
-       |omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
-       |
-       |  where:
-       |  <oml.catalog.xml> is an OASIS XML catalog file named 'oml.catalog.xml' for resolving OML IRIs to OML files
-       |  <out.dir> is a new directory that will be created as long as it does not exist (-out) or
-       |          will be deleted if it exists and created again (-d)
-     """.stripMargin
 
 }

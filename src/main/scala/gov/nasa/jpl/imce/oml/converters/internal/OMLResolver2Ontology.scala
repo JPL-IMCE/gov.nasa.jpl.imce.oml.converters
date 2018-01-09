@@ -16,14 +16,14 @@
  * License Terms
  */
 
-package gov.nasa.jpl.imce.oml.processor.internal
+package gov.nasa.jpl.imce.oml.converters.internal
 
 import java.lang.{IllegalArgumentException, System}
 import java.util.UUID
 
 import gov.nasa.jpl.imce.oml.resolver.Filterable._
 import gov.nasa.jpl.imce.oml.resolver.api
-import gov.nasa.jpl.imce.oml.resolver.toUUIDString
+import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities.toUUIDString
 import gov.nasa.jpl.imce.oml.{resolver, tables}
 import gov.nasa.jpl.omf.scala.binding.owlapi
 import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
