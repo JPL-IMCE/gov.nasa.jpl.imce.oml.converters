@@ -703,12 +703,16 @@ object OMLResolver2Ontology {
           }
           dr1 match {
             case \/-(next) =>
-              convertRestrictedDataRanges(\/-(next), drs.tail, queue, true)
+              convertRestrictedDataRanges(\/-(next), drs.tail, queue, progress = true)
             case -\/(errors) =>
               -\/(errors)
           }
-        case (Some(t1), None) =>
-          convertRestrictedDataRanges(acc, drs.tail, drs.head :: queue)
+        case (Some(_), None) =>
+          val rest = drs.tail
+          if (rest.isEmpty)
+            convertRestrictedDataRanges(acc, drs.head :: queue, List.empty, progress)
+          else
+            convertRestrictedDataRanges(acc, rest, drs.head :: queue)
         case (None, _) =>
           Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
             s"convertRestrictedDataRanges: Failed to resolve " +

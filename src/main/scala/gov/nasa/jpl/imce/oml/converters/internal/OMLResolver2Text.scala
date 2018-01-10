@@ -31,7 +31,7 @@ import gov.nasa.jpl.imce.oml.tables.{Final, Partial, DescriptionKind => TDescrip
 import org.eclipse.xtext.resource.XtextResourceSet
 
 import scala.collection.immutable._
-import scala.{None, Option, Some, StringContext}
+import scala.{Boolean, None, Option, Some, StringContext}
 import scala.Predef.{require,ArrowAssoc,String}
 import scalaz.Scalaz._
 import scalaz._
@@ -777,13 +777,18 @@ object OMLResolver2Text {
   protected def convertRestrictedDataRanges
   (acc: ConversionResult,
    drs: Iterable[(api.RestrictedDataRange, api.TerminologyBox)],
-   queue: List[(api.RestrictedDataRange, api.TerminologyBox)])
+   queue: List[(api.RestrictedDataRange, api.TerminologyBox)],
+   progress: Boolean = false)
   : ConversionResult
   = if (drs.isEmpty) {
     if (queue.isEmpty)
       acc
-    else
+    else if (progress)
       convertRestrictedDataRanges(acc, queue, List.empty)
+    else
+      new EMFProblems(new java.lang.IllegalArgumentException(
+        s"convertRestrictedDataRanges: no progress with ${queue.size} data ranges in the queue: " +
+          queue.map(_._1.name).mkString(", "))).left
   }
   else
     acc match {
@@ -844,12 +849,17 @@ object OMLResolver2Text {
             dr1.setTbox(t1)
             dr1.setName(normalizeName(dr0.name))
             dr1.setRestrictedRange(rr1)
-            convertRestrictedDataRanges(
-              r2t.copy(conversions = r2t.conversions.copy(dataRanges = r2t.conversions.dataRanges + (dr0 -> dr1))).right[EMFProblems],
-              drs.tail,
-              queue)
-          case (Some(t1), None) =>
-            convertRestrictedDataRanges(acc, drs.tail, drs.head :: queue)
+            val next = r2t.copy(
+              conversions = r2t.conversions.copy(
+                dataRanges = r2t.conversions.dataRanges + (dr0 -> dr1))
+            ).right[EMFProblems]
+            convertRestrictedDataRanges(next, drs.tail, queue, progress = true)
+          case (Some(_), None) =>
+            val rest = drs.tail
+            if (rest.isEmpty)
+              convertRestrictedDataRanges(acc, drs.head :: queue, List.empty, progress)
+            else
+              convertRestrictedDataRanges(acc, rest, drs.head :: queue)
           case (None, _) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertRestrictedDataRanges: Failed to resolve " +

@@ -930,103 +930,131 @@ object OMLText2Resolver {
       (ei, _) = e_o2r
       tboxes = ei.getModules.selectByKindOf { case tbox: TerminologyBox => tbox }
       ss = tboxes.flatMap(_.getBoxStatements.selectByKindOf { case s: RestrictedDataRange => s })
-      result <- ss.foldLeft(state) { case (acc, rdri) =>
-        for {
-          prev <- acc
-          o2ri = prev(ei)
-          tboxi = rdri.getTbox
-          rsi = rdri.getRestrictedRange
-          o2rj <-
-          (prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
-            prev.get(rsi.getTbox.getExtent).flatMap(_.dataRanges.get(rsi))) match {
-            case (Some(tboxj), Some(rsj)) =>
-              val (rj, rdrj) = rdri match {
-                case rri: BinaryScalarRestriction =>
-                  f.createBinaryScalarRestriction(
-                    extent = o2ri.rextent,
-                    tbox = tboxj,
-                    restrictedRange = rsj,
-                    length = Option.apply(rri.getLength).map(emf2tables),
-                    minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                    maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                    name = tables.taggedTypes.localName(rri.name))
-                case rri: IRIScalarRestriction =>
-                  f.createIRIScalarRestriction(
-                    extent = o2ri.rextent,
-                    tbox = tboxj,
-                    restrictedRange = rsj,
-                    length = Option.apply(rri.getLength).map(emf2tables),
-                    minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                    maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                    pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
-                    name = tables.taggedTypes.localName(rri.name))
-                case rri: NumericScalarRestriction =>
-                  f.createNumericScalarRestriction(
-                    extent = o2ri.rextent,
-                    tbox = tboxj,
-                    restrictedRange = rsj,
-                    minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
-                    minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
-                    maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
-                    maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
-                    name = tables.taggedTypes.localName(rri.name))
-                case rri: PlainLiteralScalarRestriction =>
-                  f.createPlainLiteralScalarRestriction(
-                    extent = o2ri.rextent,
-                    tbox = tboxj,
-                    restrictedRange = rsj,
-                    length = Option.apply(rri.getLength).map(emf2tables),
-                    minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                    maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                    pattern = Option.apply(rri.getPattern).map(emf2tables),
-                    langRange = Option.apply(rri.getLangRange).map(emf2tables),
-                    name = tables.taggedTypes.localName(rri.name))
-                case rri: ScalarOneOfRestriction =>
-                  f.createScalarOneOfRestriction(
-                    extent = o2ri.rextent,
-                    tbox = tboxj,
-                    restrictedRange = rsj,
-                    name = tables.taggedTypes.localName(rri.name))
-                case rri: StringScalarRestriction =>
-                  f.createStringScalarRestriction(
-                    extent = o2ri.rextent,
-                    tbox = tboxj,
-                    restrictedRange = rsj,
-                    length = Option.apply(rri.getLength).map(emf2tables),
-                    minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                    maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                    pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
-                    name = tables.taggedTypes.localName(rri.name))
-                case rri: SynonymScalarRestriction =>
-                  f.createSynonymScalarRestriction(
-                    extent = o2ri.rextent,
-                    tbox = tboxj,
-                    restrictedRange = rsj,
-                    name = tables.taggedTypes.localName(rri.name))
-                case rri: TimeScalarRestriction =>
-                  f.createTimeScalarRestriction(
-                    extent = o2ri.rextent,
-                    tbox = tboxj,
-                    restrictedRange = rsj,
-                    minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
-                    minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
-                    maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
-                    maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
-                    name = tables.taggedTypes.localName(rri.name))
-              }
-              o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (rdri -> rdrj)).right
-            case (tboxj, rsj) =>
-              new EMFProblems(new java.lang.IllegalArgumentException(
-                s"convertRestrictedDataRanges(${rdri.iri()}): Failed to resolve " +
-                  tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
-                  rsj.fold(s" restricted data range: ${rsi.iri}")(_ => "")
-              )).left
-          }
-          next = prev.updated(ei, o2rj)
-        } yield next
-      }
+      result <- convertRestrictedDataRanges(ei, state, ss, List.empty)
     } yield result
   }
+
+  @scala.annotation.tailrec
+  protected def convertRestrictedDataRanges
+  (ei: Extent,
+   acc: EMFProblems \/ Map[Extent, OMLText2Resolver],
+   rdrs: Iterable[RestrictedDataRange],
+   queue: List[RestrictedDataRange],
+   progress: Boolean = false)
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Extent, OMLText2Resolver]
+  = if (rdrs.isEmpty) {
+    if (queue.isEmpty)
+      acc
+    else if (progress)
+      convertRestrictedDataRanges(ei, acc, queue, List.empty)
+    else
+      new EMFProblems(new java.lang.IllegalArgumentException(
+        s"convertRestrictedDataRanges(...): Failed to resolve " +
+          queue.map(_.getName).mkString(", ")
+      )).left
+  } else
+    acc match {
+      case \/-(prev) =>
+        val rdri: RestrictedDataRange = rdrs.head
+        val o2ri: OMLText2Resolver = prev(ei)
+        val tboxi: TerminologyBox = rdri.getTbox
+        val rsi: DataRange = rdri.getRestrictedRange
+        ( prev.get(tboxi.getExtent).flatMap(_.tboxes.get(tboxi)),
+          prev.get(rsi.getTbox.getExtent).flatMap(_.dataRanges.get(rsi)) ) match {
+          case (Some(tboxj), Some(rsj)) =>
+            val (rj, rdrj) = rdri match {
+              case rri: BinaryScalarRestriction =>
+                f.createBinaryScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  length = Option.apply(rri.getLength).map(emf2tables),
+                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                  name = tables.taggedTypes.localName(rri.name))
+              case rri: IRIScalarRestriction =>
+                f.createIRIScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  length = Option.apply(rri.getLength).map(emf2tables),
+                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                  pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
+                  name = tables.taggedTypes.localName(rri.name))
+              case rri: NumericScalarRestriction =>
+                f.createNumericScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
+                  minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
+                  maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
+                  maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
+                  name = tables.taggedTypes.localName(rri.name))
+              case rri: PlainLiteralScalarRestriction =>
+                f.createPlainLiteralScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  length = Option.apply(rri.getLength).map(emf2tables),
+                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                  pattern = Option.apply(rri.getPattern).map(emf2tables),
+                  langRange = Option.apply(rri.getLangRange).map(emf2tables),
+                  name = tables.taggedTypes.localName(rri.name))
+              case rri: ScalarOneOfRestriction =>
+                f.createScalarOneOfRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  name = tables.taggedTypes.localName(rri.name))
+              case rri: StringScalarRestriction =>
+                f.createStringScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  length = Option.apply(rri.getLength).map(emf2tables),
+                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                  pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
+                  name = tables.taggedTypes.localName(rri.name))
+              case rri: SynonymScalarRestriction =>
+                f.createSynonymScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  name = tables.taggedTypes.localName(rri.name))
+              case rri: TimeScalarRestriction =>
+                f.createTimeScalarRestriction(
+                  extent = o2ri.rextent,
+                  tbox = tboxj,
+                  restrictedRange = rsj,
+                  minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
+                  minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
+                  maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
+                  maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
+                  name = tables.taggedTypes.localName(rri.name))
+            }
+            val o2rj = o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (rdri -> rdrj))
+            convertRestrictedDataRanges(ei, prev.updated(ei, o2rj).right, rdrs.tail, queue, progress = true)
+          case (Some(_), None) =>
+            val rest = rdrs.tail
+            if (rest.isEmpty)
+              convertRestrictedDataRanges(ei, acc, rdri :: queue, List.empty, progress)
+            else
+              convertRestrictedDataRanges(ei, acc, rest, rdri :: queue)
+          case (tboxj, rsj) =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertRestrictedDataRanges(${rdri.iri()}): Failed to resolve " +
+                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                rsj.fold(s" restricted data range: ${rsi.iri}")(_ => "")
+            )).left
+        }
+      case _ =>
+        acc
+    }
 
   protected def convertScalarOneOfLiteralAxioms
   (state: EMFProblems \/ Map[Extent, OMLText2Resolver],
