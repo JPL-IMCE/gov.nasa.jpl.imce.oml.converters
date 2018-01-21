@@ -19,18 +19,20 @@
 package gov.nasa.jpl.imce.oml.converters
 
 import java.io.File
-import java.lang.System
+import java.lang.{IllegalArgumentException, System}
 import java.util.Properties
 
-import ammonite.ops.{Path, up}
-import gov.nasa.jpl.imce.oml.resolver.FileSystemUtilities
+import ammonite.ops.{Path, pwd, up}
+import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager}
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
+import org.apache.xml.resolver.tools.CatalogResolver
 
 import scala.collection.immutable._
-import scala.{Array, Boolean, None, Some, StringContext, Unit}
+import scala.{Array, Boolean, None, Option, Some, StringContext, Unit}
 import scala.Predef.{String, augmentString, wrapRefArray}
 import scala.util.{Failure, Success}
 import scalaz._
@@ -41,13 +43,24 @@ object OMLConverter {
   (input: ConversionCommand.Request = ConversionCommand.NoRequest(),
    output: ConversionCommand.OutputConversions = ConversionCommand.OutputConversions(),
    deleteOutputIfExists: Boolean = false,
-   outputFolder: Path = Path("/dev/null")
+   outputFolder: Path = Path("/dev/null"),
+   verboseFiles: Boolean = false
   )
+
+  def getAbsolutePath(f: File)
+  : Path
+  = {
+    val p = if (f.toString.startsWith("~"))
+      Path.expandUser(f)
+    else
+      Path.apply(f, pwd)
+    p
+  }
 
   val optionsParser = new scopt.OptionParser[Options]("omlConverter") {
 
     cmd("text")
-      .text("Convert from OML textual syntax files, '*.oml'")
+      .text("Relative to an `oml.catalog.xml`, converts all OML textual syntax files, '*.oml' and/or '*.omlzip'")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromText))
@@ -56,7 +69,7 @@ object OMLConverter {
     note("")
 
     cmd("owl")
-      .text("Convert from OML files in OWL2-DL + SWRL rules, '*.owl'")
+      .text("Relative to an `oml.catalog.xml`, converts all OML files in OWL2-DL + SWRL rules, '*.owl'")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWL))
@@ -65,7 +78,7 @@ object OMLConverter {
     note("")
 
     cmd("json")
-      .text("Convert from archives of OML tabular json files, '*.omlzip'")
+      .text("Relative to an `oml.catalog.xml`, converts all OML tabular json archive files, '*.omlzip'")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWLZip))
@@ -111,7 +124,7 @@ object OMLConverter {
           .required()
           .validate(ConversionCommand.Request.validateExistingFolder("Invalid argument <dir1>."))
           .action { (f, c) =>
-            c.copy(input = c.input.addDir1Folder(f))
+            c.copy(input = c.input.addDir1Folder(getAbsolutePath(f)))
           },
 
         arg[File]("<dir2>")
@@ -119,7 +132,7 @@ object OMLConverter {
           .required()
           .validate(ConversionCommand.Request.validateExistingFolder("Invalid argument <dir2>."))
           .action { (f, c) =>
-            c.copy(input = c.input.addDir2Folder(f))
+            c.copy(input = c.input.addDir2Folder(getAbsolutePath(f)))
           }
       )
 
@@ -128,34 +141,34 @@ object OMLConverter {
     note("")
 
     help("help")
-      .text("Prints usage information about the OML Directory Converter.")
+      .text(s"Prints usage information about the OML Directory Converter (pwd = $pwd}")
 
     note("")
 
     opt[File]("cat")
       .text(
         """An OASIS XML Catalog file named 'oml.catalog.xml'.
-          |                          Applicable only for 'text', 'owl', 'json' commands.
+          |                           Applicable only for 'text', 'owl', 'json' commands.
         """.stripMargin)
       .abbr("c")
       .optional()
       .maxOccurs(1)
       .validate(ConversionCommand.Request.validateCatalog)
       .action { (catalog, c) =>
-        c.copy(input = c.input.addCatalog(catalog))
+        c.copy(input = c.input.addCatalog(getAbsolutePath(catalog)))
       }
 
     opt[File]("dir")
       .text(
         """A folder of OML parquet table files: '<dir>/<oml table>.parquet'.
-          |                          Applicable only for 'parquet' command.
+          |                           Applicable only for 'parquet' command.
         """.stripMargin)
       .abbr("d")
       .optional()
       .maxOccurs(1)
       .validate(ConversionCommand.Request.validateExistingFolder("Invalid parquet folder."))
       .action { (folder, c) =>
-        c.copy(input = c.input.addParquetFolder(folder))
+        c.copy(input = c.input.addParquetFolder(getAbsolutePath(folder)))
       }
 
     opt[File]("output")
@@ -164,7 +177,15 @@ object OMLConverter {
       .optional()
       .maxOccurs(1)
       .action { (folder, c) =>
-        c.copy(outputFolder = Path.expandUser(folder))
+        c.copy(outputFolder = getAbsolutePath(folder))
+      }
+
+    opt[Unit]("verbose.files")
+      .abbr("v:files")
+      .text("Verbose: show the input files to be processed")
+      .optional()
+      .action { (_, c) =>
+        c.copy(verboseFiles = true)
       }
 
     opt[Unit]("clear")
@@ -221,7 +242,7 @@ object OMLConverter {
   def main(argv: Array[String]): Unit = {
 
     optionsParser.parse(argv, Options()) match {
-      case Some(Options(ConversionCommand.NoRequest(), _, _, _)) =>
+      case Some(Options(ConversionCommand.NoRequest(), _, _, _, _)) =>
         System.err.println("Abnormal exit; no command requested.")
 
       case Some(options) =>
@@ -233,7 +254,7 @@ object OMLConverter {
             parquetInputConversion(p, options.output, options.deleteOutputIfExists, options.outputFolder)
 
           case c: ConversionCommand.CatalogInputConversionWithCatalog =>
-            catalogInputConversion(c, options.output, options.deleteOutputIfExists, options.outputFolder)
+            catalogInputConversion(c, options.output, options.deleteOutputIfExists, options.outputFolder, options.verboseFiles)
 
           case s: ConversionCommand.SQLInputConversionWithServer =>
             ConversionCommandFromOMLSQL
@@ -322,17 +343,38 @@ object OMLConverter {
   (c: ConversionCommand.CatalogInputConversionWithCatalog,
    output: ConversionCommand.OutputConversions,
    deleteOutputIfExists: Boolean,
-   outputFolder: Path)
+   outputFolder: Path,
+   verboseFiles: Boolean)
   : Unit
   = {
     val ok = for {
       conversion <- c.conversionCommand()
       inCatalog = c.catalog
       _ = System.out.println(s"conversion=$conversion")
+
+      omlCM = new OMLCatalogManager()
+      _ = omlCM.setUseStaticCatalog(false)
+      _ = omlCM.setCatalogClassName("gov.nasa.jpl.imce.oml.extensions.OMLCatalog")
+      omlCR = new CatalogResolver(omlCM)
+      omlCat <- Option.apply(omlCR.getCatalog) match {
+        case Some(oc: OMLCatalog) =>
+          oc.parseCatalog(inCatalog.toIO.toURI.toURL)
+          \/-(oc)
+        case Some(c) =>
+          -\/(Set[java.lang.Throwable](new IllegalArgumentException(
+            s"OMLCatalogManager & CatalogResolver should have produced an OMLCatalog, not: ${c.getClass.getName}"
+          )))
+        case None =>
+          -\/(Set[java.lang.Throwable](new IllegalArgumentException(
+            s"OMLCatalogManager & CatalogResolver should have produced an OMLCatalog, got none!"
+          )))
+      }
       inputDir = inCatalog / up
-      _ = System.out.println(s"input dir=$inputDir")
+      _ = System.out.println(s"Input catalog=$inCatalog")
       outCatalog <- internal.makeOutputDirectoryAndCopyCatalog(deleteOutputIfExists, outputFolder, inCatalog)
-      inputFiles = FileSystemUtilities.lsRecOML(inputDir, conversion.filePredicate)
+      inputFiles = FileSystemUtilities.lsRecOML(
+        omlCat, inCatalog, conversion.filePredicate,
+        if (verboseFiles) Some(System.out) else None)
       _ = System.out.println(s"input files=${inputFiles.size}")
       _ <- conversion.convert(inCatalog, inputFiles, outputFolder, outCatalog, output)
 

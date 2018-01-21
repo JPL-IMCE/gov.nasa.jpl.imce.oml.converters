@@ -18,7 +18,7 @@
 
 package gov.nasa.jpl.imce.oml.converters
 
-import ammonite.ops.{Path, rm}
+import ammonite.ops.Path
 import java.io.File
 import java.lang.IllegalArgumentException
 
@@ -60,10 +60,10 @@ object ConversionCommand {
   sealed abstract trait Request {
     val from: ConversionFrom=ConversionFromUnspecified
 
-    def addCatalog(catalog: File): Request
-    def addParquetFolder(folder: File): Request
-    def addDir1Folder(folder: File): Request
-    def addDir2Folder(folder: File): Request
+    def addCatalog(catalog: Path): Request
+    def addParquetFolder(folder: Path): Request
+    def addDir1Folder(folder: Path): Request
+    def addDir2Folder(folder: Path): Request
 
     def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
   }
@@ -110,10 +110,10 @@ object ConversionCommand {
 
   case class NoRequest() extends Request {
 
-    override def addCatalog(catalog: File): Request = this
-    override def addParquetFolder(folder: File): Request = this
-    override def addDir1Folder(folder: File): Request = this
-    override def addDir2Folder(folder: File): Request = this
+    override def addCatalog(catalog: Path): Request = this
+    override def addParquetFolder(folder: Path): Request = this
+    override def addDir1Folder(folder: Path): Request = this
+    override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Left("No request specified.")
@@ -124,14 +124,14 @@ object ConversionCommand {
    dir2: Path = Path("/dev/null")
   ) extends Request {
 
-    override def addCatalog(catalog: File): Request = this
-    override def addParquetFolder(folder: File): Request = this
+    override def addCatalog(catalog: Path): Request = this
+    override def addParquetFolder(folder: Path): Request = this
 
-    override def addDir1Folder(folder: File): Request
-    = copy(dir1 = Path.expandUser(folder))
+    override def addDir1Folder(folder: Path): Request
+    = copy(dir1 = folder)
 
-    override def addDir2Folder(folder: File): Request
-    = copy(dir2 = Path.expandUser(folder))
+    override def addDir2Folder(folder: Path): Request
+    = copy(dir2 = folder)
 
     override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = (Request.checkDirectory(dir1), Request.checkDirectory(dir2)) match {
@@ -150,14 +150,14 @@ object ConversionCommand {
   (override val from: ConversionFrom=ConversionFromUnspecified
   ) extends Request {
 
-    override def addCatalog(catalogFile: File): Request
-    = CatalogInputConversionWithCatalog(from, Path(catalogFile))
+    override def addCatalog(catalogFile: Path): Request
+    = CatalogInputConversionWithCatalog(from, catalogFile)
 
-    override def addParquetFolder(folder: File): Request = this
+    override def addParquetFolder(folder: Path): Request = this
 
-    override def addDir1Folder(folder: File): Request = this
+    override def addDir1Folder(folder: Path): Request = this
 
-    override def addDir2Folder(folder: File): Request = this
+    override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Left("No input catalog specified!")
@@ -169,14 +169,14 @@ object ConversionCommand {
    catalog: Path
   ) extends Request {
 
-    override def addCatalog(catalogFile: File): Request
-    = copy(catalog = Path(catalogFile))
+    override def addCatalog(catalogFile: Path): Request
+    = copy(catalog = catalogFile)
 
-    override def addParquetFolder(folder: File): Request = this
+    override def addParquetFolder(folder: Path): Request = this
 
-    override def addDir1Folder(folder: File): Request = this
+    override def addDir1Folder(folder: Path): Request = this
 
-    override def addDir2Folder(folder: File): Request = this
+    override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = output.check(outputFolder, deleteIfExists)
@@ -199,13 +199,13 @@ object ConversionCommand {
 
   case class ParquetInputConversion() extends Request {
     override val from: ConversionFrom=ConversionFromUnspecified
-    override def addCatalog(catalog: File): Request = this
+    override def addCatalog(catalog: Path): Request = this
 
-    override def addParquetFolder(dir: File): Request
-    = ParquetInputConversionWithFolder(folder = Path(dir))
+    override def addParquetFolder(dir: Path): Request
+    = ParquetInputConversionWithFolder(folder = dir)
 
-    override def addDir1Folder(folder: File): Request = this
-    override def addDir2Folder(folder: File): Request = this
+    override def addDir1Folder(folder: Path): Request = this
+    override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Left("No input parquet folder specified!")
@@ -215,13 +215,13 @@ object ConversionCommand {
   (folder: Path) extends Request {
     override val from: ConversionFrom=ConversionFromUnspecified
 
-    override def addCatalog(catalog: File): Request = this
+    override def addCatalog(catalog: Path): Request = this
 
-    override def addParquetFolder(dir: File): Request
-    = copy(folder = Path(dir))
+    override def addParquetFolder(dir: Path): Request
+    = copy(folder = dir)
 
-    override def addDir1Folder(folder: File): Request = this
-    override def addDir2Folder(folder: File): Request = this
+    override def addDir1Folder(folder: Path): Request = this
+    override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Request.checkDirectory(folder) match {
@@ -238,12 +238,12 @@ object ConversionCommand {
   case class SQLInputConversion() extends Request {
     override val from: ConversionFrom=ConversionFromSQL
 
-    override def addCatalog(catalog: File): Request = this
+    override def addCatalog(catalog: Path): Request = this
 
-    override def addParquetFolder(dir: File): Request = this
+    override def addParquetFolder(dir: Path): Request = this
 
-    override def addDir1Folder(folder: File): Request = this
-    override def addDir2Folder(folder: File): Request = this
+    override def addDir1Folder(folder: Path): Request = this
+    override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = Left("No SQL server specified!")
@@ -253,12 +253,12 @@ object ConversionCommand {
   case class SQLInputConversionWithServer(server: String) extends Request {
     override val from: ConversionFrom=ConversionFromSQL
 
-    override def addCatalog(catalog: File): Request = this
+    override def addCatalog(catalog: Path): Request = this
 
-    override def addParquetFolder(dir: File): Request = this
+    override def addParquetFolder(dir: Path): Request = this
 
-    override def addDir1Folder(folder: File): Request = this
-    override def addDir2Folder(folder: File): Request = this
+    override def addDir1Folder(folder: Path): Request = this
+    override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = output.check(outputFolder, deleteIfExists)
@@ -279,17 +279,7 @@ object ConversionCommand {
         Left(t.getMessage)
       }
       .apply {
-        if (deleteIfExists) {
-          if (outputFolder.toIO.exists())
-            rm(outputFolder)
-          outputFolder.toIO.mkdirs()
-        }
-        Request.checkDirectory(outputFolder) match {
-          case Nil =>
-            Right(())
-          case ms =>
-            Left("Invalid output folder." + ms.mkString("\n", "\n", "\n"))
-        }
+        Right(())
       }
 
   }

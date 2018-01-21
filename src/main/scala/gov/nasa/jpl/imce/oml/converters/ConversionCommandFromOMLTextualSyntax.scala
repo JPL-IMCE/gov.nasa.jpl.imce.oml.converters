@@ -23,9 +23,9 @@ import java.util.Properties
 
 import ammonite.ops.{Path, up}
 import org.eclipse.emf.ecore.util.EcoreUtil
-import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
+import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, FileSystemUtilities, OMLResourceSet}
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
-import gov.nasa.jpl.imce.oml.resolver.{Extent2Tables, FileSystemUtilities, api, impl}
+import gov.nasa.jpl.imce.oml.resolver.{Extent2Tables, api, impl}
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.imce.oml.uuid
 import gov.nasa.jpl.omf.scala.core.OMFError

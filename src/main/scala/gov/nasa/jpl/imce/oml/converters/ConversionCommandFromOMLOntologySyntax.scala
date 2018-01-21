@@ -23,9 +23,9 @@ import java.nio.file.Paths
 import java.util.Properties
 
 import ammonite.ops.{Path, up}
+import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
-import gov.nasa.jpl.imce.oml.resolver.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
