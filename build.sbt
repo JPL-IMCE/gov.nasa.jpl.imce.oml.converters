@@ -204,8 +204,16 @@ lazy val omlConverters = Project("omlConverters", file("."))
           plugins ** "org.eclipse.xtext.generator_*.jar" +++
           plugins ** "org.eclipse.xtext_*.jar"
 
+      val jarFiles = jars.get.sortBy(_.name)
+
+      s.log.info(s"jar files: ${jarFiles.size}")
+      jarFiles.foreach { f =>
+        s.log.info(s"=+ $f")
+      }
       // Delete unused files.
-      val other = ((upd ** "*") --- upd --- plugins --- jars).get
+
+      val all = (upd ** "*").get.filter(_.isFile).to[Set]
+      val other = all -- jarFiles.to[Set]
       s.log.info(s"other: ${other.size}")
       other.foreach { f =>
         if (f.isFile)

@@ -1,0 +1,11 @@
+gov.nasa.jpl.imce.oml.converters 0.9.1 is a build based on OML 0.9.0
+
+# Issues Resolved:
+
+- [#36 Update for OML 0.9.1 APIs.](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/36)
+
+- [#37 sub/sup properties flipped for OML Sub\[Object|Data\]PropertyAxioms](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/37)
+
+- [#38 Use CatalogEntry rewrite rules to find which paths need to be search for file conversions](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/38)
+
+- [#39 Diff command fails when there are no differences](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/39)
