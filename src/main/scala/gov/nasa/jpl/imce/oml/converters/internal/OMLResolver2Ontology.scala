@@ -23,7 +23,7 @@ import java.util.UUID
 
 import gov.nasa.jpl.imce.oml.resolver.Filterable._
 import gov.nasa.jpl.imce.oml.resolver.api
-import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities.toUUIDString
+import gov.nasa.jpl.imce.oml.resolver.Extent2Tables.toUUIDString
 import gov.nasa.jpl.imce.oml.{resolver, tables}
 import gov.nasa.jpl.omf.scala.binding.owlapi
 import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
@@ -36,7 +36,7 @@ import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable.{::, Iterable, List, Map, Nil, Seq, Set}
 import scala.{Boolean, Function, None, Option, Some, StringContext, Unit}
-import scala.Predef.{require,ArrowAssoc}
+import scala.Predef.{require,String,ArrowAssoc}
 import scalaz._
 import Scalaz._
 
@@ -514,6 +514,16 @@ object OMLResolver2Ontology {
     case (acc, (rr0: api.ReifiedRelationship, t0)) =>
       for {
         r2o <- acc
+        ns0 = rr0.allNestedElements()
+        fwd0 <- ns0.find { case _: api.ForwardProperty => true } match {
+          case Some(p: api.ForwardProperty) =>
+            \/-(p)
+          case _ =>
+            -\/(Set[java.lang.Throwable](new IllegalArgumentException(
+              s"Missing ForwardProperty on ${rr0.abbrevIRI()}"
+            )))
+        }
+        inv0 = ns0.selectByKindOf { case i: api.InverseProperty => i }.headOption
         t1 <- r2o.getTbox(t0)
         rs1 <- r2o.entityLookup(rr0.source)
         rt1 <- r2o.entityLookup(rr0.target)
@@ -548,10 +558,23 @@ object OMLResolver2Ontology {
               Iterable(core.RelationshipCharacteristics.isTransitive)
             else Iterable()),
           tables.taggedTypes.localName(rr0.name),
-          tables.taggedTypes.localName(rr0.unreifiedPropertyName),
-          rr0.unreifiedInversePropertyName.map(tables.taggedTypes.localName(_))
+          fwd0.name,
+          inv0.map(_.name)
         )(r2o.omfStore)
-      } yield r2o.copy(reifiedRelationships = r2o.reifiedRelationships + (rr0 -> rr1))
+        invPair <- (inv0, rr1.inverseProperty) match {
+          case (Some(i0), Some(i1)) =>
+            Some(i0 -> i1).right
+          case (None, None) =>
+            None.right
+          case _ =>
+            -\/(Set[java.lang.Throwable](new IllegalArgumentException(
+              s"convertReifiedRelationship: inconsistent inverse properties for ${rr0.abbrevIRI()}"
+            )))
+        }
+      } yield r2o.copy(
+        reifiedRelationships = r2o.reifiedRelationships + (rr0 -> rr1),
+        forwardProperties = r2o.forwardProperties + (fwd0 -> rr1.forwardProperty),
+        inverseProperties = r2o.inverseProperties ++ invPair)
     case (acc, _) =>
       acc
   }
@@ -825,7 +848,7 @@ object OMLResolver2Ontology {
         t1 <- r2o.getTbox(t0)
         d1 <- r2o.entityLookup(er0.restrictedDomain)
         r1 <- r2o.entityLookup(er0.restrictedRange)
-        rel1 <- r2o.entityRelationshipLookup(er0.restrictedRelation)
+        rel1 <- r2o.restrictableRelationshipLookup(er0.restrictedRelationship)
         er1 <- er0 match {
           case _: api.EntityExistentialRestrictionAxiom =>
             r2o.ops.addEntityExistentialRestrictionAxiom(t1, d1, rel1, r1)(r2o.omfStore)
@@ -1085,79 +1108,118 @@ object OMLResolver2Ontology {
         case \/-(s1) =>
           val conv
           : Throwables \/ (OMLResolver2Ontology, owlapi.types.terms.SegmentPredicate)
-          = p0 match {
-            case p0: api.AspectPredicate =>
-              r2o.lookupAspect(p0.aspect)(ext).flatMap { a1 =>
-                r2o.ops.addAspectPredicate(t1, s1, a1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(aspectPredicates = r2o.aspectPredicates + (p0 -> p1)), p1)
+          = (p0.predicate,
+           p0.reifiedRelationshipSource,
+           p0.reifiedRelationshipInverseSource,
+           p0.reifiedRelationshipTarget,
+           p0.reifiedRelationshipInverseTarget,
+           p0.unreifiedRelationshipInverse) match {
+
+            case (Some(a0: api.Aspect), _, _, _, _, _) =>
+              r2o.lookupAspect(a0)(ext).flatMap { a1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, predicate=Some(a1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
                 }
               }
 
-            case p0: api.ConceptPredicate =>
-              r2o.lookupConcept(p0.concept)(ext).flatMap { c1 =>
-                r2o.ops.addConceptPredicate(t1, s1, c1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(conceptPredicates = r2o.conceptPredicates + (p0 -> p1)), p1)
+            case (Some(c0: api.Concept), _, _, _, _, _) =>
+              r2o.lookupConcept(c0)(ext).flatMap { c1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, predicate=Some(c1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
                 }
               }
 
-            case p0: api.ReifiedRelationshipPredicate =>
-              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
-                r2o.ops.addReifiedRelationshipPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(reifiedRelationshipPredicates = r2o.reifiedRelationshipPredicates + (p0 -> p1)), p1)
+            case (Some(rr0: api.ReifiedRelationship), _, _, _, _, _) =>
+              r2o.lookupReifiedRelationship(rr0)(ext).flatMap { rr1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, predicate=Some(rr1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
                 }
               }
 
-            case p0: api.ReifiedRelationshipPropertyPredicate =>
-              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
-                r2o.ops.addReifiedRelationshipPropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(reifiedRelationshipPropertyPredicates = r2o.reifiedRelationshipPropertyPredicates + (p0 -> p1)), p1)
-                }
-              }
-            case p0: api.ReifiedRelationshipInversePropertyPredicate =>
-              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
-                r2o.ops.addReifiedRelationshipInversePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(reifiedRelationshipInversePropertyPredicates = r2o.reifiedRelationshipInversePropertyPredicates + (p0 -> p1)), p1)
+            case (Some(fwd0: api.ForwardProperty), _, _, _, _, _) =>
+              r2o.lookupReifiedRelationship(fwd0.reifiedRelationship)(ext).flatMap { rr1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, predicate=Some(rr1.forwardProperty))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
                 }
               }
 
-            case p0: api.ReifiedRelationshipSourcePropertyPredicate =>
-              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
-                r2o.ops.addReifiedRelationshipSourcePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(reifiedRelationshipSourcePropertyPredicates = r2o.reifiedRelationshipSourcePropertyPredicates + (p0 -> p1)), p1)
-                }
-              }
-            case p0: api.ReifiedRelationshipSourceInversePropertyPredicate =>
-              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
-                r2o.ops.addReifiedRelationshipSourceInversePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(reifiedRelationshipSourceInversePropertyPredicates = r2o.reifiedRelationshipSourceInversePropertyPredicates + (p0 -> p1)), p1)
-                }
-              }
-
-            case p0: api.ReifiedRelationshipTargetPropertyPredicate =>
-              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
-                r2o.ops.addReifiedRelationshipTargetPropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(reifiedRelationshipTargetPropertyPredicates = r2o.reifiedRelationshipTargetPropertyPredicates + (p0 -> p1)), p1)
-                }
-              }
-            case p0: api.ReifiedRelationshipTargetInversePropertyPredicate =>
-              r2o.lookupReifiedRelationship(p0.reifiedRelationship)(ext).flatMap { rr1 =>
-                r2o.ops.addReifiedRelationshipTargetInversePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(reifiedRelationshipTargetInversePropertyPredicates = r2o.reifiedRelationshipTargetInversePropertyPredicates + (p0 -> p1)), p1)
+            case (Some(inv0: api.InverseProperty), _, _, _, _, _) =>
+              r2o.lookupReifiedRelationship(inv0.reifiedRelationship)(ext).flatMap { rr1 =>
+                rr1.inverseProperty match {
+                  case Some(inv) =>
+                    r2o.ops.addSegmentPredicate(t1, s1, predicate = Some(inv))(r2o.omfStore).map { p1 =>
+                      (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
+                    }
+                  case _ =>
+                    -\/(Set[java.lang.Throwable](new IllegalArgumentException("")
+                    ))
                 }
               }
 
-            case p0: api.UnreifiedRelationshipPropertyPredicate =>
-              r2o.lookupUnreifiedRelationship(p0.unreifiedRelationship)(ext).flatMap { rr1 =>
-                r2o.ops.addUnreifiedRelationshipPropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(unreifiedRelationshipPropertyPredicates = r2o.unreifiedRelationshipPropertyPredicates + (p0 -> p1)), p1)
+            case (Some(ur0: api.UnreifiedRelationship), _, _, _, _, _) =>
+              r2o.lookupUnreifiedRelationship(ur0)(ext).flatMap { ur1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, predicate=Some(ur1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
                 }
               }
-            case p0: api.UnreifiedRelationshipInversePropertyPredicate =>
-              r2o.lookupUnreifiedRelationship(p0.unreifiedRelationship)(ext).flatMap { rr1 =>
-                r2o.ops.addUnreifiedRelationshipInversePropertyPredicate(t1, s1, rr1)(r2o.omfStore).map { p1 =>
-                  (r2o.copy(unreifiedRelationshipInversePropertyPredicates = r2o.unreifiedRelationshipInversePropertyPredicates + (p0 -> p1)), p1)
+
+            case (None, Some(rr0), _, _, _, _) =>
+              r2o.lookupReifiedRelationship(rr0)(ext).flatMap { rr1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, reifiedRelationshipSource=Some(rr1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
                 }
               }
+
+            case (None, _, Some(rr0), _, _, _) =>
+              r2o.lookupReifiedRelationship(rr0)(ext).flatMap { rr1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, reifiedRelationshipInverseSource=Some(rr1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case (None, _, _,Some(rr0), _, _) =>
+              r2o.lookupReifiedRelationship(rr0)(ext).flatMap { rr1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, reifiedRelationshipTarget=Some(rr1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case (None, _, _, _, Some(rr0), _) =>
+              r2o.lookupReifiedRelationship(rr0)(ext).flatMap { rr1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, reifiedRelationshipInverseTarget=Some(rr1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case (None, _, _, _, _, Some(ur0)) =>
+              r2o.lookupUnreifiedRelationship(ur0)(ext).flatMap { ur1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, unreifiedRelationshipInverse=Some(ur1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
+                }
+              }
+
+            case (pred, source, isource, target, itarget, uinv) =>
+              Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
+                s"OWLResolver2Ontology.convertRuleBodySegment(ruleBodySegment=$s0) unresolved:\n" +
+                  pred.fold[String]("- no predicate"){ x =>
+                    s"- predicate: ${x.term().abbrevIRI()(ext)}"
+                  } +
+                  source.fold[String]("- no reifiedRelationshipSource"){ x =>
+                    s"- reifiedRelationshipSource: ${x.abbrevIRI()(ext)}"
+                  } +
+                  isource.fold[String]("- no reifiedRelationshipInverseSource"){ x =>
+                    s"- reifiedRelationshipInverseSource: ${x.abbrevIRI()(ext)}"
+                  } +
+                  target.fold[String]("- no reifiedRelationshipTarget"){ x =>
+                    s"- reifiedRelationshipTarget: ${x.abbrevIRI()(ext)}"
+                  } +
+                  itarget.fold[String]("- no reifiedRelationshipInverseTarget"){ x =>
+                    s"- reifiedRelationshipInverseTarget: ${x.abbrevIRI()(ext)}"
+                  } +
+                  uinv.fold[String]("- no unreifiedRelationshipInverse"){ x =>
+                    s"- unreifiedRelationshipInverse: ${x.abbrevIRI()(ext)}"
+                  }
+              )).left
           }
           conv match {
             case \/-((updated, p1)) =>
@@ -1345,6 +1407,14 @@ case class OMLResolver2Ontology
  : Map[api.ReifiedRelationship, owlapi.types.terms.ReifiedRelationship]
  = Map.empty,
 
+ forwardProperties
+ : Map[api.ForwardProperty, owlapi.types.terms.ForwardProperty]
+ = Map.empty,
+
+ inverseProperties
+ : Map[api.InverseProperty, owlapi.types.terms.InverseProperty]
+ = Map.empty,
+
  unreifiedRelationships
  : Map[api.UnreifiedRelationship, owlapi.types.terms.UnreifiedRelationship]
  = Map.empty,
@@ -1393,48 +1463,8 @@ case class OMLResolver2Ontology
  : Map[api.RuleBodySegment, owlapi.types.terms.RuleBodySegment]
  = Map.empty,
 
- aspectPredicates
- : Map[api.AspectPredicate, owlapi.types.terms.AspectPredicate]
- = Map.empty,
-
- conceptPredicates
- : Map[api.ConceptPredicate, owlapi.types.terms.ConceptPredicate]
- = Map.empty,
-
- reifiedRelationshipPredicates
- : Map[api.ReifiedRelationshipPredicate, owlapi.types.terms.ReifiedRelationshipPredicate]
- = Map.empty,
-
- reifiedRelationshipPropertyPredicates
- : Map[api.ReifiedRelationshipPropertyPredicate, owlapi.types.terms.ReifiedRelationshipPropertyPredicate]
- = Map.empty,
-
- reifiedRelationshipInversePropertyPredicates
- : Map[api.ReifiedRelationshipInversePropertyPredicate, owlapi.types.terms.ReifiedRelationshipInversePropertyPredicate]
- = Map.empty,
-
- reifiedRelationshipSourcePropertyPredicates
- : Map[api.ReifiedRelationshipSourcePropertyPredicate, owlapi.types.terms.ReifiedRelationshipSourcePropertyPredicate]
- = Map.empty,
-
- reifiedRelationshipSourceInversePropertyPredicates
- : Map[api.ReifiedRelationshipSourceInversePropertyPredicate, owlapi.types.terms.ReifiedRelationshipSourceInversePropertyPredicate]
- = Map.empty,
-
- reifiedRelationshipTargetPropertyPredicates
- : Map[api.ReifiedRelationshipTargetPropertyPredicate, owlapi.types.terms.ReifiedRelationshipTargetPropertyPredicate]
- = Map.empty,
-
- reifiedRelationshipTargetInversePropertyPredicates
- : Map[api.ReifiedRelationshipTargetInversePropertyPredicate, owlapi.types.terms.ReifiedRelationshipTargetInversePropertyPredicate]
- = Map.empty,
-
- unreifiedRelationshipPropertyPredicates
- : Map[api.UnreifiedRelationshipPropertyPredicate, owlapi.types.terms.UnreifiedRelationshipPropertyPredicate]
- = Map.empty,
-
- unreifiedRelationshipInversePropertyPredicates
- : Map[api.UnreifiedRelationshipInversePropertyPredicate, owlapi.types.terms.UnreifiedRelationshipInversePropertyPredicate]
+ segmentPredicates
+ : Map[api.SegmentPredicate, owlapi.types.terms.SegmentPredicate]
  = Map.empty,
 
  conceptualEntitySingletonInstances
@@ -1703,13 +1733,41 @@ case class OMLResolver2Ontology
         s"OMLResolver2Ontology.entityLookup(e=${e0.iri()}) failed")).left
   }
 
-  def entityRelationshipLookup(e0: api.EntityRelationship)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.EntityRelationship
-  = (reifiedRelationships ++ unreifiedRelationships).get(e0) match {
-    case Some(e1) =>
-      e1.right
-    case None =>
-      Set[java.lang.Throwable](new IllegalArgumentException(
-        s"OMLResolver2Ontology.entityRelationshipLookup(e=${e0.iri()}) failed")).left
+  def restrictableRelationshipLookup(e0: api.RestrictableRelationship)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.common.RestrictableRelationship
+  = e0 match {
+    case u0: api.UnreifiedRelationship =>
+      unreifiedRelationships.get(u0) match {
+        case Some(u1) =>
+          u1.right
+        case _ =>
+          Set[java.lang.Throwable](new IllegalArgumentException(
+            s"OMLResolver2Ontology.restrictableRelationshipLookup(unreifiedRelationship=${u0.iri()}) failed")).left
+      }
+    case f0: api.ForwardProperty =>
+      forwardProperties.get(f0) match {
+        case Some(f1) =>
+          f1.right
+        case _ =>
+          Set[java.lang.Throwable](new IllegalArgumentException(
+            s"OMLResolver2Ontology.restrictableRelationshipLookup(forwardProperty=${f0.iri()}) failed")).left
+      }
+    case f0: api.InverseProperty =>
+      inverseProperties.get(f0) match {
+        case Some(f1) =>
+          f1.right
+        case _ =>
+          Set[java.lang.Throwable](new IllegalArgumentException(
+            s"OMLResolver2Ontology.restrictableRelationshipLookup(inverseProperty=${f0.iri()}) failed")).left
+      }
+  }
+
+  def entityRelationshipLookup(e0: api.EntityRelationship)(implicit ext: api.Extent)
+  : core.OMFError.Throwables \/ owlapi.types.terms.EntityRelationship
+  = e0 match {
+    case rr0: api.ReifiedRelationship =>
+      lookup(rr0, reifiedRelationships)
+    case ur0: api.UnreifiedRelationship =>
+      lookup(ur0, unreifiedRelationships)
   }
 
   def lookupEntityScalarDataProperty(d0: api.EntityScalarDataProperty)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.EntityScalarDataProperty
@@ -1884,28 +1942,8 @@ case class OMLResolver2Ontology
       lookup(x, disjointUnionOfConceptAxioms)
     case x: api.RuleBodySegment =>
       lookup(x, ruleBodySegments)
-    case x: api.AspectPredicate =>
-      lookup(x, aspectPredicates)
-    case x: api.ConceptPredicate =>
-      lookup(x, conceptPredicates)
-    case x: api.ReifiedRelationshipPredicate =>
-      lookup(x, reifiedRelationshipPredicates)
-    case x: api.ReifiedRelationshipPropertyPredicate =>
-      lookup(x, reifiedRelationshipPropertyPredicates)
-    case x: api.ReifiedRelationshipInversePropertyPredicate =>
-      lookup(x, reifiedRelationshipInversePropertyPredicates)
-    case x: api.ReifiedRelationshipSourcePropertyPredicate =>
-      lookup(x, reifiedRelationshipSourcePropertyPredicates)
-    case x: api.ReifiedRelationshipSourceInversePropertyPredicate =>
-      lookup(x, reifiedRelationshipSourceInversePropertyPredicates)
-    case x: api.ReifiedRelationshipTargetPropertyPredicate =>
-      lookup(x, reifiedRelationshipTargetPropertyPredicates)
-    case x: api.ReifiedRelationshipTargetInversePropertyPredicate =>
-      lookup(x, reifiedRelationshipTargetInversePropertyPredicates)
-    case x: api.UnreifiedRelationshipPropertyPredicate =>
-      lookup(x, unreifiedRelationshipPropertyPredicates)
-    case x: api.UnreifiedRelationshipInversePropertyPredicate =>
-      lookup(x, unreifiedRelationshipInversePropertyPredicates)
+    case x: api.SegmentPredicate =>
+      lookup(x, segmentPredicates)
     case x: api.RestrictionScalarDataPropertyValue =>
       lookup(x, restrictionScalarDataPropertyValues)
     case x: api.StructuredDataPropertyTuple =>
