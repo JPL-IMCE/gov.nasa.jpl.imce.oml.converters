@@ -4,7 +4,7 @@ import java.lang.System
 import ammonite.ops._
 import org.scalatest.Assertions.intercept
 import scala.collection.immutable.{Iterable,Seq,Vector}
-import scala.{Int,None,Some,StringContext,Unit}
+import scala.{Either,Int,None,Some,StringContext,Unit}
 import scala.Predef.{augmentString,require,ArrowAssoc,String}
 
 case object DiffConversionsCommand {
@@ -19,7 +19,12 @@ case object DiffConversionsCommand {
 
     implicit val pw = pwd
     val diffs = intercept[ShelloutException] {
+      // If there are differences (i.e., non-zero exit), this will throw ShelloutException
       %% diff("-rq", dir1.toString, dir2.toString)
+
+      // If there are no differences, then throw a ShelloutException with no output.
+      val chunks = scala.collection.mutable.Buffer.empty[Either[Bytes, Bytes]]
+      throw ShelloutException(CommandResult(0, chunks))
     }
 
     val lines = diffs.result.out.lines
