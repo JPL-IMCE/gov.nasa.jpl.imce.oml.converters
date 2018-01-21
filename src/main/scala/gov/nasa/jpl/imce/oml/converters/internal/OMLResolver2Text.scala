@@ -1249,8 +1249,8 @@ object OMLResolver2Text {
           r2t.conversions.entityScalarDataProperties.get(ax0.superProperty)) match {
           case (
             Some(t1),
-            Some(sup: terminologies.EntityScalarDataProperty),
-            Some(sub: terminologies.EntityScalarDataProperty)) =>
+            Some(sub: terminologies.EntityScalarDataProperty),
+            Some(sup: terminologies.EntityScalarDataProperty)) =>
             val s1 = terminologies.TerminologiesFactory.eINSTANCE.createSubDataPropertyOfAxiom()
             s1.setTbox(t1)
             s1.setSubProperty(sub)
@@ -1272,8 +1272,8 @@ object OMLResolver2Text {
           r2t.conversions.unreifiedRelationships.get(ax0.superProperty)) match {
             case (
               Some(t1),
-              Some(sup: terminologies.UnreifiedRelationship),
-              Some(sub: terminologies.UnreifiedRelationship)) =>
+              Some(sub: terminologies.UnreifiedRelationship),
+              Some(sup: terminologies.UnreifiedRelationship)) =>
               val s1 = terminologies.TerminologiesFactory.eINSTANCE.createSubObjectPropertyOfAxiom()
               s1.setTbox(t1)
               s1.setSubProperty(sub)
