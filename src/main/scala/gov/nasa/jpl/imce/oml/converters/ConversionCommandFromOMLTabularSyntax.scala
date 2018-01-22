@@ -46,7 +46,7 @@ import scalax.collection.GraphPredef.EdgeAssoc
 
 case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
-  override val filePredicate = FileSystemUtilities.omlJsonZipFilePredicate _
+  override val filePredicate = FileSystemUtilities.OMLJsonZipFilePredicate
 
   implicit def toThrowables[T](v: Try[T]): OMFError.Throwables \/ T = v match {
     case Success(t) =>
@@ -64,24 +64,23 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
   }
 
   override def convert
-  (inCatalog: Path,
-   inputFiles: Seq[Path],
+  (omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
   : OMFError.Throwables \/ Unit
   = for {
-    in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(inCatalog)
+    in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
     (inStore, inCat) = in_store_cat
     out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
     (outStore, outCat) = out_store_cat
-    result <- convert(inStore, inCat, inputFiles, outputDir, outStore, outCat, outCatalog, conversions)
+    result <- convert(inStore, inCat, omlCatalogScope, outputDir, outStore, outCat, outCatalog, conversions)
   } yield result
 
   def convert
   (inStore: OWLAPIOMFGraphStore,
    inCat: Catalog,
-   inputFiles: Seq[Path],
+   omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outStore: OWLAPIOMFGraphStore,
    outCat: Catalog,
@@ -109,7 +108,7 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
     val allTables
     : Seq[OMLSpecificationTables]
-    = inputFiles.par.map(TableUtilities.readOMLZipFile).to[Seq]
+    = omlCatalogScope.omlFiles.par.map(TableUtilities.readOMLZipFile).to[Seq]
 
     val allModules
     : Map[taggedTypes.IRI, OMLSpecificationTables]

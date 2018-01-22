@@ -49,27 +49,25 @@ import scalax.collection.GraphPredef.EdgeAssoc
 
 case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
-  override val filePredicate = FileSystemUtilities.omlOWLFilePredicate _
+  override val filePredicate = FileSystemUtilities.OMLOntologyFilePredicate
 
   override def convert
-  (inCatalog: Path,
-   inputFiles: Seq[Path],
+  (omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
   : OMFError.Throwables \/ Unit
   = for {
-    in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(inCatalog)
+    in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
     (inStore, inCat) = in_store_cat
     out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
     (outStore, outCat) = out_store_cat
-    result <- convert(inStore, inCat, inputFiles, outputDir, outStore, outCat, outCatalog, conversions)
+    result <- convert(inStore, omlCatalogScope, outputDir, outStore, outCat, outCatalog, conversions)
   } yield result
 
   def convert
   (inStore: OWLAPIOMFGraphStore,
-   inCat: Catalog,
-   inputFiles: Seq[Path],
+   omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outStore: OWLAPIOMFGraphStore,
    outCat: Catalog,
@@ -101,7 +99,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
     val result
     : OMFError.Throwables \/ Unit
     = for {
-      m2i <- inputFiles.foldLeft {
+      m2i <- omlCatalogScope.omlFiles.foldLeft {
         emptyMutable2ImmutableModuleMap.right[OMFError.Throwables]
       } { case (acc, inputFile) =>
         for {

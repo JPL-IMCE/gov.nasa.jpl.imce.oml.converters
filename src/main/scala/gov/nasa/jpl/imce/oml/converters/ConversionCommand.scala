@@ -22,28 +22,28 @@ import ammonite.ops.Path
 import java.io.File
 import java.lang.IllegalArgumentException
 
+import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager}
 import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.xml.resolver.tools.CatalogResolver
 import org.semanticweb.owlapi.apibinding.OWLManager
 
-import scala.collection.immutable.{Nil, Seq, Set}
+import scala.collection.immutable.{Map, Nil, Seq, Set}
 import scala.util.control.Exception.nonFatalCatch
-import scala.{Boolean, Either, Left, None, Option, Right, Some, StringContext, Unit}
+import scala.{Boolean, Either, Int, Left, None, Option, Right, Some, StringContext, Unit}
 import scala.Predef.{ArrowAssoc, String}
 import scalaz.{-\/, \/, \/-}
 
 trait ConversionCommand {
 
-  val filePredicate: (Path) => Boolean
+  val filePredicate: FileSystemUtilities.OMLFilePredicate
 
   def convert
-  (inCatalog: Path,
-   inputFiles: Seq[Path],
-   outputDir: Path,
-   outCatalog: Path,
-   conversions: ConversionCommand.OutputConversions)
+  (omlCatalogScope: OMLCatalogScope,
+    outputDir: Path,
+    outCatalog: Path,
+    conversions: ConversionCommand.OutputConversions)
   : OMFError.Throwables \/ Unit
 }
 
@@ -61,6 +61,7 @@ object ConversionCommand {
     val from: ConversionFrom=ConversionFromUnspecified
 
     def addCatalog(catalog: Path): Request
+    def addMergeFolder(folder: Path): Request
     def addParquetFolder(folder: Path): Request
     def addDir1Folder(folder: Path): Request
     def addDir2Folder(folder: Path): Request
@@ -111,6 +112,7 @@ object ConversionCommand {
   case class NoRequest() extends Request {
 
     override def addCatalog(catalog: Path): Request = this
+    override def addMergeFolder(folder: Path): Request = this
     override def addParquetFolder(folder: Path): Request = this
     override def addDir1Folder(folder: Path): Request = this
     override def addDir2Folder(folder: Path): Request = this
@@ -119,12 +121,53 @@ object ConversionCommand {
     = Left("No request specified.")
   }
 
+  case class MergeCatalogs
+  (folders: Seq[Path] = Seq.empty) extends Request {
+
+    override def addCatalog(catalog: Path): Request = this
+
+    override def addMergeFolder(folder: Path): Request
+    = this.copy(folders = this.folders :+ folder)
+
+    override def addParquetFolder(folder: Path): Request = this
+
+    override def addDir1Folder(folder: Path): Request = this
+
+    override def addDir2Folder(folder: Path): Request = this
+
+    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    = if (folders.isEmpty)
+        Left("No OML Catalogs specified.")
+    else {
+      val catalogOccurences
+      : Map[Path, Int]
+      = folders.foldLeft(Map.empty[Path, Int]) { case (acc, folder) =>
+        acc.updated(folder, acc.get(folder).fold(1)(_ + 1))
+      }
+
+      val redundantCatalogs
+      : Map[Path, Int]
+      = catalogOccurences.filter(_._2 > 1)
+
+      if (redundantCatalogs.isEmpty)
+        Right(())
+      else
+        Left(
+          redundantCatalogs
+            .foldLeft(s"${redundantCatalogs.size} redundant 'oml.parquet' folders specified!\n") { case (acc, (c, n)) =>
+            acc + s"=> $n options duplicate 'oml.parquet' folders: $c\n"
+          })
+    }
+  }
+
   case class CompareDirectories
   (dir1: Path = Path("/dev/null"),
    dir2: Path = Path("/dev/null")
   ) extends Request {
 
     override def addCatalog(catalog: Path): Request = this
+    override def addMergeFolder(catalog: Path): Request = this
+
     override def addParquetFolder(folder: Path): Request = this
 
     override def addDir1Folder(folder: Path): Request
@@ -153,6 +196,8 @@ object ConversionCommand {
     override def addCatalog(catalogFile: Path): Request
     = CatalogInputConversionWithCatalog(from, catalogFile)
 
+    override def addMergeFolder(catalog: Path): Request = this
+
     override def addParquetFolder(folder: Path): Request = this
 
     override def addDir1Folder(folder: Path): Request = this
@@ -171,6 +216,8 @@ object ConversionCommand {
 
     override def addCatalog(catalogFile: Path): Request
     = copy(catalog = catalogFile)
+
+    override def addMergeFolder(catalog: Path): Request = this
 
     override def addParquetFolder(folder: Path): Request = this
 
@@ -201,6 +248,8 @@ object ConversionCommand {
     override val from: ConversionFrom=ConversionFromUnspecified
     override def addCatalog(catalog: Path): Request = this
 
+    override def addMergeFolder(catalog: Path): Request = this
+
     override def addParquetFolder(dir: Path): Request
     = ParquetInputConversionWithFolder(folder = dir)
 
@@ -216,6 +265,8 @@ object ConversionCommand {
     override val from: ConversionFrom=ConversionFromUnspecified
 
     override def addCatalog(catalog: Path): Request = this
+
+    override def addMergeFolder(catalog: Path): Request = this
 
     override def addParquetFolder(dir: Path): Request
     = copy(folder = dir)
@@ -240,6 +291,8 @@ object ConversionCommand {
 
     override def addCatalog(catalog: Path): Request = this
 
+    override def addMergeFolder(catalog: Path): Request = this
+
     override def addParquetFolder(dir: Path): Request = this
 
     override def addDir1Folder(folder: Path): Request = this
@@ -254,6 +307,8 @@ object ConversionCommand {
     override val from: ConversionFrom=ConversionFromSQL
 
     override def addCatalog(catalog: Path): Request = this
+
+    override def addMergeFolder(catalog: Path): Request = this
 
     override def addParquetFolder(dir: Path): Request = this
 

@@ -24,8 +24,9 @@ import ammonite.ops.{Path, cp, mkdir, rm, write}
 import gov.nasa.jpl.imce.oml.model
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
-import gov.nasa.jpl.imce.oml.model.extensions.OMLExtensions
+import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLExtensions}
 import gov.nasa.jpl.imce.oml.resolver
+import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.SparkConf
@@ -34,7 +35,7 @@ import org.eclipse.emf.common.util.{URI => EURI}
 
 import scala.collection.immutable.{Seq, Set}
 import scala.{Boolean, StringContext, Unit}
-import scala.Predef.{String, augmentString}
+import scala.Predef.{String, augmentString, require}
 import scalaz._
 import Scalaz._
 import scala.util.{Failure, Success}
@@ -178,4 +179,18 @@ package object internal {
     }
   }
 
+  protected[converters] def resolveOutputCatalogFileWithExtension
+  (outCat: OMLCatalog,
+   iri: tables.taggedTypes.IRI,
+   extension: String)
+  : OMFError.Throwables \/ Path
+  = nonFatalCatch[OMFError.Throwables \/ Path]
+    .withApply { t =>
+      -\/(Set[java.lang.Throwable](t))
+    }
+    .apply {
+      val resolved = outCat.resolveURI(iri + extension)
+      require(resolved.startsWith("file:"))
+      \/-(Path(resolved.stripPrefix("file:")))
+    }
 }

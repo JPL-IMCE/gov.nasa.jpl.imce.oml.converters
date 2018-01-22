@@ -18,8 +18,9 @@
 
 package gov.nasa.jpl.imce.oml.converters.utils
 
-import ammonite.ops.{Path,RelPath}
+import ammonite.ops.Path
 
+import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.model.common.Extent
 import gov.nasa.jpl.imce.oml.dsl.OMLStandaloneSetup
 import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager, OMLExtensions}
@@ -132,8 +133,8 @@ object OMLResourceSet {
   } yield e
 
   def loadOMLResources(rs: XtextResourceSet, dir: Path, omlFiles: Seq[Path])
-  : EMFProblems \/ Map[Extent, RelPath]
-  = omlFiles.foldLeft(Map.empty[Extent, RelPath].right[EMFProblems]) {
+  : EMFProblems \/ Map[Extent, tables.taggedTypes.IRI]
+  = omlFiles.foldLeft(Map.empty[Extent, tables.taggedTypes.IRI].right[EMFProblems]) {
     case (acc, f) =>
       for {
         extents <- acc
@@ -146,14 +147,13 @@ object OMLResourceSet {
                 f
             )).left
         }
-        relFile = omlFile.relativeTo(dir)
         extent <- OMLResourceSet.loadOMLResource(
           rs,
           URI.createFileURI(omlFile.toString))
-        _ <- {
+        iri <- {
           val nbModules = extent.getModules.size
           if (1 == nbModules)
-            ().right
+            tables.taggedTypes.iri(extent.getModules.get(0).iri()).right
           else if (nbModules > 1)
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"loadOMLResources: read $nbModules instead of 1 modules for $omlFile"
@@ -163,7 +163,7 @@ object OMLResourceSet {
               s"loadOMLResources: no module read for $omlFile"
             )).left
         }
-      } yield extents + (extent -> relFile)
+      } yield extents + (extent -> iri)
   }
 
 }
