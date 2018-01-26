@@ -7,15 +7,16 @@ import java.util.Properties
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.covariantTag.@@
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
 import gov.nasa.jpl.imce.oml.resolver.{GraphUtilities, ResolverUtilities, TableUtilities}
 import gov.nasa.jpl.imce.oml.tables
+import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.omf.scala.core.OMFError
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SQLContext, SparkSession}
 
 import scala.collection.immutable.{Seq, Set}
 import scala.{Boolean, Int, None, Option, Ordering, Some, StringContext, Unit}
-import scala.Predef.{ArrowAssoc,String}
+import scala.Predef.{ArrowAssoc, String}
 import scalaz._
 import Scalaz._
 import scala.util.{Failure, Success}
@@ -52,26 +53,16 @@ object ConversionCommandFromOMLMerge {
    deleteOutputIfExists: Boolean,
    outputFolder: Path,
    verboseFiles: Option[PrintStream])
-  : Unit
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
-    val conf = new SparkConf()
-      .setMaster("local")
-      .setAppName(this.getClass.getSimpleName)
-
-    implicit val spark = SparkSession
-      .builder()
-      .config(conf)
-      .getOrCreate()
-    implicit val sqlContext = spark.sqlContext
-
     val props = new Properties()
     props.setProperty("useSSL", "false")
 
     props.setProperty("dumpQueriesOnException", "true")
     props.setProperty("enablePacketDebug", "true")
 
-    val ok: OMFError.Throwables \/ Unit
-    = for {
+    for {
       outCatalog <- internal.makeOutputCatalog(deleteOutputIfExists, outputFolder)
 
       out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
@@ -174,19 +165,7 @@ object ConversionCommandFromOMLMerge {
       else
         \/-(())
 
-    } yield ()
-
-    ok match {
-      case \/-(_) =>
-        ()
-      case -\/(ts) =>
-        System.err.println(s"### ${ts.size} Merge Errors! ###")
-        ts.foreach { t =>
-          System.err.println(t.getMessage)
-          t.printStackTrace(System.err)
-        }
-        System.exit(-1)
-    }
+    } yield outCat -> ts
   }
 
 }

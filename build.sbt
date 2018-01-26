@@ -81,6 +81,7 @@ lazy val omlConverters = Project("omlConverters", file("."))
     libraryDependencies ++= Seq(
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.dsl" % Versions_oml_core.version,
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.model" % Versions_oml_core.version,
+      "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.zip" % Versions_oml_core.version,
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.product" % Versions_oml_core.version
         artifacts
         Artifact("gov.nasa.jpl.imce.oml.product", "linux.gtk.x86_64.tar.gz", "linux.gtk.x86_64.tar.gz")

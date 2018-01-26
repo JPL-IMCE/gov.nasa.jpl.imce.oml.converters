@@ -43,6 +43,10 @@ object OMLResourceSet {
   def initializeResourceSet(): XtextResourceSet = {
     XcoreStandaloneSetup.doSetup()
     OMLStandaloneSetup.doSetup()
+
+    Resource.Factory.Registry.INSTANCE.getContentTypeToFactoryMap.put("omlzip", new gov.nasa.jpl.imce.oml.zip.OMLZipResourceFactory())
+    Resource.Factory.Registry.INSTANCE.getExtensionToFactoryMap.put("omlzip", new gov.nasa.jpl.imce.oml.zip.OMLZipResourceFactory())
+
     new XtextResourceSet()
   }
 

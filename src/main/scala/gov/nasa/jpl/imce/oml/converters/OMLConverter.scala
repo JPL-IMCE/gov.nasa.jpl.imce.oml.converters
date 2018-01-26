@@ -22,10 +22,9 @@ import java.io.{File, PrintStream}
 import java.lang.System
 import java.util.Properties
 
-import ammonite.ops.{Path, pwd}
+import ammonite.ops.{Path, pwd, up}
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
 import scala.collection.immutable._
@@ -242,7 +241,7 @@ object OMLConverter {
 
     opt[Unit]("owl")
       .text(
-        s"""Output conversion includes OML as OWL2-DL + SWRL rule '*.owl' ontology files
+        s"""Output conversion includes OWL2-DL + SWRL rule '*.owl' ontology files, one for each OML module.
            |$helpIndent(Not applicable for 'merge' command).
            |""".stripMargin)
       .abbr("o")
@@ -253,7 +252,7 @@ object OMLConverter {
 
     opt[Unit]("json")
       .text(
-        s"""Output conversion includes OML as archive files, '*.omlzip' of OML json tables
+        s"""Output conversion includes archive files, '*.omlzip' of OML json tables, one for each OML module.
            |$helpIndent(Not applicable for 'merge' command).
            |""".stripMargin)
       .abbr("j")
@@ -262,19 +261,30 @@ object OMLConverter {
         c.copy(output = c.output.copy(toOMLZip = true))
       }
 
+    opt[Unit]("parquet:each")
+      .text(
+        s"""Output conversion includes 'oml.parquet' output folders, one for each OML module.
+           |$helpIndent(Caution: this is slow!)
+           |""".stripMargin)
+      .abbr("p:each")
+      .optional()
+      .action { (_, c) =>
+        c.copy(output = c.output.copy(toParquetEach = true))
+      }
+
     opt[Unit]("parquet")
       .text(
-        """Output conversion includes OML as a single folder of OML tables in parquet format.
-          |""".stripMargin)
+        s"""Output conversion aggregates all OML modules into a single 'oml.parquet' output folder.
+           |""".stripMargin)
       .abbr("p")
       .optional()
       .action { (_, c) =>
-        c.copy(output = c.output.copy(toParquet = true))
+        c.copy(output = c.output.copy(toParquetAggregate = true))
       }
 
     opt[String]("sql")
       .text(
-        """Output conversion includes OML stored on an SQL server.
+        """Output conversion aggregates all OML modules into OML data stored on an SQL server.
           |""".stripMargin)
       .abbr("s")
       .optional()
@@ -302,9 +312,39 @@ object OMLConverter {
               p, options.output, options.deleteOutputIfExists, options.outputFolder)
 
           case c: ConversionCommand.CatalogInputConversionWithCatalog =>
-            catalogInputConversion(
-              c, options.output, options.deleteOutputIfExists, options.outputFolder,
-              if (options.verboseFiles) Some(System.out) else None)
+            c.conversionCommand() match {
+              case \/-(conversion) =>
+                OMLCatalogScope.toOMLCatalogScope(
+                  c.catalog,
+                  conversion.filePredicate,
+                  if (options.verboseFiles) Some(System.out) else None) match {
+                  case \/-(omlCatalogScope) =>
+                    internal.makeOutputDirectoryAndCopyCatalog(
+                      options.deleteOutputIfExists,
+                      options.outputFolder,
+                      c.catalog) match {
+                      case \/-(outCatalog) =>
+                        catalogInputConversion(
+                          c,
+                          conversion,
+                          omlCatalogScope,
+                          outCatalog,
+                          options.output,
+                          options.deleteOutputIfExists,
+                          options.outputFolder,
+                          if (options.verboseFiles) Some(System.out) else None)
+                      case -\/(errors) =>
+                        internal.showErrors(errors)
+                    }
+
+                  case -\/(errors) =>
+                    internal.showErrors(errors)
+                }
+
+
+              case -\/(errors) =>
+                internal.showErrors(errors)
+            }
 
           case s: ConversionCommand.SQLInputConversionWithServer =>
             ConversionCommandFromOMLSQL
@@ -312,10 +352,33 @@ object OMLConverter {
                 s, options.output, options.deleteOutputIfExists, options.outputFolder)
 
           case m: ConversionCommand.MergeCatalogs =>
-            ConversionCommandFromOMLMerge
-              .merge(
-                m, options.output, options.deleteOutputIfExists, options.outputFolder,
-                if (options.verboseFiles) Some(System.out) else None)
+            internal.makeOutputCatalog(options.deleteOutputIfExists, options.outputFolder) match {
+              case \/-(outCatalogPath) =>
+                val conf = internal.sparkConf(this.getClass.getSimpleName)
+
+                implicit val spark = SparkSession
+                  .builder()
+                  .config(conf)
+                  .getOrCreate()
+                implicit val sqlContext = spark.sqlContext
+
+                ConversionCommandFromOMLMerge
+                  .merge(
+                    m, options.output, options.deleteOutputIfExists, options.outputFolder,
+                    if (options.verboseFiles) Some(System.out) else None) match {
+                  case \/-((outCatalog, ts)) =>
+                    if (options.output.toParquet)
+                      internal.toParquet(options.output, outCatalog, outCatalogPath / up, ts)
+
+                  case -\/(errors) =>
+
+                    internal.showErrors(errors)
+                }
+
+              case -\/(errors) =>
+
+                internal.showErrors(errors)
+            }
 
           case _ =>
             System.err.println("Abnormal exit; no operation performed.")
@@ -333,9 +396,7 @@ object OMLConverter {
    outputFolder: Path)
   : Unit
   = {
-    val conf = new SparkConf()
-      .setMaster("local")
-      .setAppName(this.getClass.getSimpleName)
+    val conf = internal.sparkConf(this.getClass.getSimpleName)
 
     implicit val spark = SparkSession
       .builder()
@@ -386,47 +447,41 @@ object OMLConverter {
     ok match {
       case \/-(_) =>
         ()
-      case -\/(ts) =>
-        System.err.println(s"### ${ts.size} Conversion Errors! ###")
-        ts.foreach { t =>
-          System.err.println(t.getMessage)
-          t.printStackTrace(System.err)
-        }
-        System.exit(-1)
+      case -\/(errors) =>
+        internal.showErrors(errors)
     }
   }
 
   def catalogInputConversion
   (c: ConversionCommand.CatalogInputConversionWithCatalog,
+   conversion: ConversionCommand,
+   omlCatalogScope: OMLCatalogScope,
+   outCatalogPath: Path,
    output: ConversionCommand.OutputConversions,
    deleteOutputIfExists: Boolean,
    outputFolder: Path,
    verboseFiles: Option[PrintStream])
   : Unit
   = {
-    val ok = for {
-      conversion <- c.conversionCommand()
-      _ = System.out.println(s"conversion=$conversion")
 
-      omlCatalogScope <- OMLCatalogScope.toOMLCatalogScope(c.catalog, conversion.filePredicate, verboseFiles)
+    val conf = internal.sparkConf(this.getClass.getSimpleName)
 
-      _ = System.out.println(s"# => ${omlCatalogScope.omlFiles.size} OML files to convert...")
+    implicit val spark = SparkSession
+      .builder()
+      .config(conf)
+      .getOrCreate()
 
-      outCatalog <- internal.makeOutputDirectoryAndCopyCatalog(deleteOutputIfExists, outputFolder, c.catalog)
-      _ <- conversion.convert(omlCatalogScope, outputFolder, outCatalog, output)
+    implicit val sqlContext = spark.sqlContext
 
-    } yield ()
+    System.out.println(s"conversion=$conversion")
+    System.out.println(s"# => ${omlCatalogScope.omlFiles.size} OML files to convert...")
 
-    ok match {
-      case \/-(_) =>
-        ()
-      case -\/(ts) =>
-        System.err.println(s"### ${ts.size} Conversion Errors! ###")
-        ts.foreach { t =>
-          System.err.println(t.getMessage)
-          t.printStackTrace(System.err)
-        }
-        System.exit(-1)
+    conversion.convert(omlCatalogScope, outputFolder, outCatalogPath, output) match {
+      case \/-((outCatalog, ts)) =>
+        if (output.toParquet)
+          internal.toParquet(output, outCatalog, outCatalogPath / up, ts)
+      case -\/(errors) =>
+        internal.showErrors(errors)
     }
   }
 

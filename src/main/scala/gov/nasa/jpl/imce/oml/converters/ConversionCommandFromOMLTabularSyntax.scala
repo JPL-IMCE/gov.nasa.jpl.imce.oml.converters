@@ -21,21 +21,22 @@ package gov.nasa.jpl.imce.oml.converters
 import java.lang.System
 import java.util.Properties
 
-import ammonite.ops.{Path, up}
+import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.covariantTag.@@
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
 import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
 import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.resolver.TableUtilities
+import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.{OMLSpecificationTables, taggedTypes}
 import gov.nasa.jpl.omf.scala.binding.owlapi.OWLAPIOMFGraphStore
 import gov.nasa.jpl.omf.scala.core.OMFError
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SQLContext, SparkSession}
 import org.apache.xml.resolver.Catalog
 
-import scala.{Int, None, Ordering, Some, StringContext, Unit}
+import scala.{Int, None, Ordering, Some, StringContext}
 import scala.collection.immutable.{Map, Seq, Set}
 import scala.util.{Failure, Success, Try}
 import scala.Predef.{ArrowAssoc, String}
@@ -68,7 +69,8 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
    outputDir: Path,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
-  : OMFError.Throwables \/ Unit
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = for {
     in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
     (inStore, inCat) = in_store_cat
@@ -83,21 +85,12 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
    omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outStore: OWLAPIOMFGraphStore,
-   outCat: Catalog,
+   outCat: OMLCatalog,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
-  : OMFError.Throwables \/ Unit
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
-    val conf = new SparkConf()
-      .setMaster("local")
-      .setAppName(this.getClass.getSimpleName)
-
-    implicit val spark = SparkSession
-      .builder()
-      .config(conf)
-      .getOrCreate()
-    implicit val sqlContext = spark.sqlContext
-
     val props = new Properties()
     props.setProperty("useSSL", "false")
 
@@ -160,14 +153,6 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
       else
         \/-(())
 
-      // 5) Convert from OML Tables => Parquet
-
-      _ <- if (conversions.toParquet)
-        internal
-          .toParquet(outCatalog / up, ts.map(_._2))
-      else
-        \/-(())
-
       // 6) Convert from OML Tables => SQL
 
       _ <- conversions.toSQL match {
@@ -184,7 +169,7 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
           \/-(())
       }
 
-    } yield ()
+    } yield outCat -> ts
   }
 
 }

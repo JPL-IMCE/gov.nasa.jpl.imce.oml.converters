@@ -25,17 +25,18 @@ import ammonite.ops.{Path, up}
 import org.eclipse.emf.ecore.util.EcoreUtil
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, FileSystemUtilities, OMLResourceSet}
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
 import gov.nasa.jpl.imce.oml.resolver.{Extent2Tables, api, impl}
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
-import gov.nasa.jpl.imce.oml.uuid
+import gov.nasa.jpl.imce.oml.{tables, uuid}
 import gov.nasa.jpl.omf.scala.core.OMFError
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SQLContext, SparkSession}
 
-import scala.collection.immutable.{List, Set}
+import scala.collection.immutable.{List, Seq, Set}
 import scala.util.{Failure, Success}
 import scala.util.control.Exception.nonFatalCatch
 import scala.{None, Some, StringContext, Unit}
+import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
 
@@ -48,22 +49,14 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
    outputDir: Path,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
-  : OMFError.Throwables \/ Unit
-  = nonFatalCatch[OMFError.Throwables \/ Unit]
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  = nonFatalCatch[OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])]
     .withApply {
       (t: java.lang.Throwable) =>
         -\/(Set(t))
     }
     .apply {
-      val conf = new SparkConf()
-        .setMaster("local")
-        .setAppName(this.getClass.getSimpleName)
-
-      implicit val spark = SparkSession
-        .builder()
-        .config(conf)
-        .getOrCreate()
-      implicit val sqlContext = spark.sqlContext
 
       val props = new Properties()
       props.setProperty("useSSL", "false")
@@ -141,15 +134,6 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         else
           ().right[EMFProblems]
 
-        // Convert to Parquet
-
-        _ <- if (conversions.toParquet)
-          internal
-            .toParquet(outCatalog / up, sortedAPIModuleExtents.map { case (_, extent) => Extent2Tables.convert(extent) })
-            .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
-        else
-          ().right[EMFProblems]
-
         // Convert to SQL
 
         _ <- conversions.toSQL match {
@@ -169,7 +153,7 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
             ().right[EMFProblems]
         }
 
-      } yield ()
+      } yield outCat -> sortedAPIModuleExtents.map { case (m, extent) => m.iri -> Extent2Tables.convert(extent) }
 
       result.leftMap(_.toThrowables)
     }

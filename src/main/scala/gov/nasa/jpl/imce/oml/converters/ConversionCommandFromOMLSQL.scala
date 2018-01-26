@@ -3,14 +3,13 @@ package gov.nasa.jpl.imce.oml.converters
 import java.lang.System
 import java.util.Properties
 
-import ammonite.ops.{Path, up}
+import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.covariantTag.@@
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
 import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.resolver.TableUtilities
 import gov.nasa.jpl.imce.oml.tables.{OMLSpecificationTables, taggedTypes}
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
 import scala.{Boolean, Int, None, Ordering, Some, StringContext, Unit}
@@ -39,9 +38,7 @@ object ConversionCommandFromOMLSQL {
    outputFolder: Path)
   : Unit
   = {
-    val conf = new SparkConf()
-      .setMaster("local")
-      .setAppName(this.getClass.getSimpleName)
+    val conf = internal.sparkConf(this.getClass.getSimpleName)
 
     implicit val spark = SparkSession
       .builder()
@@ -104,15 +101,7 @@ object ConversionCommandFromOMLSQL {
       else
         \/-(())
 
-      // 5) Convert from OML Tables => Parquet
-
-      _ <- if (conversions.toParquet)
-        internal
-          .toParquet(outCatalog / up, ts.map(_._2))
-      else
-        \/-(())
-
-      // 6) Convert from OML Tables => SQL
+      // 5) Convert from OML Tables => SQL
 
       _ <- conversions.toSQL match {
         case Some(server) =>

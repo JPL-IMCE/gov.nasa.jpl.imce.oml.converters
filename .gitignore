@@ -14,3 +14,4 @@ target
 local.*
 *links.json
 gh-pages/
+spark-warehouse

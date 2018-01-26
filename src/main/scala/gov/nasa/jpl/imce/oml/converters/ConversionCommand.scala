@@ -24,8 +24,11 @@ import java.lang.IllegalArgumentException
 
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager}
+import gov.nasa.jpl.imce.oml.tables
+import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.core.OMFError
+import org.apache.spark.sql.{SQLContext, SparkSession}
 import org.apache.xml.resolver.tools.CatalogResolver
 import org.semanticweb.owlapi.apibinding.OWLManager
 
@@ -44,7 +47,8 @@ trait ConversionCommand {
     outputDir: Path,
     outCatalog: Path,
     conversions: ConversionCommand.OutputConversions)
-  : OMFError.Throwables \/ Unit
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
 }
 
 object ConversionCommand {
@@ -323,10 +327,13 @@ object ConversionCommand {
   (toOWL: Boolean=false,
    toText: Boolean=false,
    toOMLZip: Boolean=false,
-   toParquet: Boolean=false,
+   toParquetEach: Boolean=false,
+   toParquetAggregate: Boolean=false,
    toSQL: Option[String]=None) {
 
-    def isEmpty: Boolean = !toOWL && !toText && !toOMLZip && !toParquet && toSQL.isEmpty
+    val toParquet: Boolean = toParquetEach || toParquetAggregate
+
+    val isEmpty: Boolean = !toOWL && !toText && !toOMLZip && !toParquet && toSQL.isEmpty
 
     def check(outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
     = nonFatalCatch[Either[String, Unit]]
