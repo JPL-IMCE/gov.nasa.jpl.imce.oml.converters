@@ -18,8 +18,6 @@
 
 package gov.nasa.jpl.imce.oml.converters.internal
 
-import ammonite.ops.RelPath
-
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.converters.emf2tables
 import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
@@ -35,13 +33,13 @@ import gov.nasa.jpl.imce.oml.tables.{Final, Partial, DescriptionKind => TDescrip
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable._
-import scala.Predef.{ArrowAssoc, augmentString, require}
+import scala.Predef.{ArrowAssoc, require}
 import scala.{Boolean, None, Option, Some, StringContext}
 import scalaz._
 import Scalaz._
 
 case class OMLText2Resolver
-(omlFile: RelPath,
+(iri: tables.taggedTypes.IRI,
  rextent: api.Extent,
 
  tboxes: Map[TerminologyBox, api.TerminologyBox] = Map.empty,
@@ -116,12 +114,6 @@ case class OMLText2Resolver
  structuredDataPropertyTuples
  : Map[StructuredDataPropertyTuple, api.StructuredDataPropertyTuple]
  = Map.empty) {
-
-  def toOMLTablesFile
-  : RelPath
-  = omlFile.copy(segments =
-    omlFile.segments.dropRight(1) :+
-      omlFile.segments.last.stripSuffix(".oml")+".omlzip")
 
   def includesAPIModule(m: api.Module): Boolean = tboxes.values.find(_ == m).orElse(dboxes.values.find(_ == m)).isDefined
 
@@ -2435,12 +2427,12 @@ object OMLText2Resolver {
   }
 
   def convert
-  (fileExtents: Map[Extent, RelPath])
+  (fileExtents: Map[Extent, tables.taggedTypes.IRI])
   (implicit factory: api.OMLResolvedFactory)
   : EMFProblems \/ (Map[Extent, OMLText2Resolver], Seq[(api.Module, api.Extent)])
   = for {
-    c00 <- fileExtents.map { case (e, f) =>
-      e -> OMLText2Resolver(omlFile = f, rextent = api.Extent())
+    c00 <- fileExtents.map { case (e, iri) =>
+      e -> OMLText2Resolver(iri = iri, rextent = api.Extent())
     }.right[EMFProblems]
 
     // Modules
@@ -2485,8 +2477,8 @@ object OMLText2Resolver {
         t2r.rextent.bundles.values ++
         t2r.rextent.descriptionBoxes.values
 
-      scala.Predef.require(modules.size == 1)
-      acc + (modules(0) -> t2r.rextent)
+      scala.Predef.require(1 == modules.length)
+      acc + (modules.head -> t2r.rextent)
     }
 
     moduleEdges = c2N.values.foldLeft(Map.empty[api.ModuleEdge, api.Extent]) { case (acc, t2r) =>

@@ -25,46 +25,38 @@ import ammonite.ops.{Path, up}
 import org.eclipse.emf.ecore.util.EcoreUtil
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, FileSystemUtilities, OMLResourceSet}
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
 import gov.nasa.jpl.imce.oml.resolver.{Extent2Tables, api, impl}
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
-import gov.nasa.jpl.imce.oml.uuid
+import gov.nasa.jpl.imce.oml.{tables, uuid}
 import gov.nasa.jpl.omf.scala.core.OMFError
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SQLContext, SparkSession}
 
 import scala.collection.immutable.{List, Seq, Set}
 import scala.util.{Failure, Success}
 import scala.util.control.Exception.nonFatalCatch
 import scala.{None, Some, StringContext, Unit}
+import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
 
 case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
-  override val filePredicate = FileSystemUtilities.omlTextFilePredicate _
+  override val filePredicate = FileSystemUtilities.OMLTextOrZipFilePredicate
 
   override def convert
-  (inCatalog: Path,
-   inputFiles: Seq[Path],
+  (omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
-  : OMFError.Throwables \/ Unit
-  = nonFatalCatch[OMFError.Throwables \/ Unit]
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  = nonFatalCatch[OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])]
     .withApply {
       (t: java.lang.Throwable) =>
         -\/(Set(t))
     }
     .apply {
-      val conf = new SparkConf()
-        .setMaster("local")
-        .setAppName(this.getClass.getSimpleName)
-
-      implicit val spark = SparkSession
-        .builder()
-        .config(conf)
-        .getOrCreate()
-      implicit val sqlContext = spark.sqlContext
 
       val props = new Properties()
       props.setProperty("useSSL", "false")
@@ -72,10 +64,10 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
       props.setProperty("dumpQueriesOnException", "true")
       props.setProperty("enablePacketDebug", "true")
 
-      val inDir: Path = inCatalog / up
+      val inDir: Path = omlCatalogScope.omlCatalogFile / up
 
       val result = for {
-        in_rs_cm_cat <- OMLResourceSet.initializeResourceSetWithCatalog(inCatalog)
+        in_rs_cm_cat <- OMLResourceSet.initializeResourceSetWithCatalog(omlCatalogScope.omlCatalogFile)
         (in_rs, in_cm, in_cat) = in_rs_cm_cat
 
         out_store_cat <- ConversionCommand
@@ -83,7 +75,7 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
           .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
         (outStore, outCat) = out_store_cat
 
-        fileExtents <- OMLResourceSet.loadOMLResources(in_rs, inDir, inputFiles)
+        fileExtents <- OMLResourceSet.loadOMLResources(in_rs, inDir, omlCatalogScope.omlFiles)
         _ = EcoreUtil.resolveAll(in_rs)
 
         omlUUIDg = uuid.JVMUUIDGenerator()
@@ -91,22 +83,30 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
         o2rMap_sorted <- internal.OMLText2Resolver.convert(fileExtents)(factory)
 
-        (o2rMap, sortedModuleExtents) = o2rMap_sorted
-        extents = sortedModuleExtents.map(_._2)
+        (_, sortedAPIModuleExtents) = o2rMap_sorted
 
         // Convert to tables
         _ <- if (conversions.toOMLZip)
-          o2rMap.foldLeft[EMFProblems \/ Unit](\/-(())) {
-            case (acc, (_, o2r)) =>
+          sortedAPIModuleExtents.foldLeft[EMFProblems \/ Unit](\/-(())) {
+            case (acc, (m, extent)) =>
               for {
                 _ <- acc
-                apiExtent = o2r.rextent
-                tables = Extent2Tables.convert(apiExtent)
-                outputFile = Path.apply(o2r.toOMLTablesFile, base = outputDir)
+                m <- extent.singleModule match {
+                  case Success(m) =>
+                    \/-(m)
+                  case Failure(t) =>
+                    -\/(new EMFProblems(t))
+                }
+
+                outputFile <- internal
+                  .resolveOutputCatalogFileWithExtension(outCat, m.iri, ".omlzip")
+                  .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
+
+                tables = Extent2Tables.convert(extent)
                 _ <- OMLSpecificationTables
                   .saveOMLSpecificationTables(tables, outputFile.toIO) match {
                   case Success(_) =>
-                    System.out.println(s"... saved tables: ${o2r.toOMLTablesFile} => $outputFile")
+                    System.out.println(s"... saved tables: ${m.iri} => $outputFile")
                     \/-(())
                   case Failure(t) =>
                     -\/(new EMFProblems(t))
@@ -121,7 +121,7 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         _ <- if (conversions.toOWL)
           internal
             .OMLResolver2Ontology
-            .convert(extents, outStore)
+            .convert(sortedAPIModuleExtents.map(_._2), outStore)
             .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
         else
           ().right[EMFProblems]
@@ -130,16 +130,7 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
         _ <- if (conversions.toText)
           internal
-            .toText(outCatalog, sortedModuleExtents.map(_._2))
-        else
-          ().right[EMFProblems]
-
-        // Convert to Parquet
-
-        _ <- if (conversions.toParquet)
-          internal
-            .toParquet(outCatalog / up, o2rMap.map { case (_, o2r) => Extent2Tables.convert(o2r.rextent) }.to[Seq])
-            .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
+            .toText(outCatalog, sortedAPIModuleExtents.map(_._2))
         else
           ().right[EMFProblems]
 
@@ -148,9 +139,8 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         _ <- conversions.toSQL match {
           case Some(server) =>
             val tables =
-              o2rMap
-                .map { case (_, o2r) => Extent2Tables.convert(o2r.rextent) }
-                .to[Seq]
+              sortedAPIModuleExtents
+                .map { case (_, extent) => Extent2Tables.convert(extent) }
                 .reduceLeft(OMLSpecificationTables.mergeTables)
             OMLSpecificationTypedDatasets
               .sqlWriteOMLSpecificationTables(tables, server, props) match {
@@ -163,7 +153,7 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
             ().right[EMFProblems]
         }
 
-      } yield ()
+      } yield outCat -> sortedAPIModuleExtents.map { case (m, extent) => m.iri -> Extent2Tables.convert(extent) }
 
       result.leftMap(_.toThrowables)
     }

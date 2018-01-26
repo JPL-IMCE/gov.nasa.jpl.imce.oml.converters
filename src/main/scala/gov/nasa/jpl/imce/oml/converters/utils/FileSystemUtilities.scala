@@ -15,6 +15,50 @@ import scala.Predef.{ArrowAssoc, String, augmentString, require}
   */
 object FileSystemUtilities {
 
+  sealed trait OMLFilePredicate {
+
+    def apply(p: Path): Boolean
+
+  }
+
+  /**
+    * Predicate for an OML concrete syntax representation file in OML's Xtext DSL (*.oml and/or *.omlzip)
+    */
+  case object OMLTextOrZipFilePredicate extends OMLFilePredicate {
+
+    override def toString: String = "OML '*.text' or '*.omlzip'"
+
+    override def apply(p: Path)
+    : Boolean
+    = p.isFile && ( p.segments.last.endsWith(".oml") || p.segments.last.endsWith(".omlzip") )
+
+  }
+
+  /**
+    * Predicate for an OML concrete syntax representation file in 4th normal database tabular form (*.omlzip)
+    */
+  case object OMLJsonZipFilePredicate extends OMLFilePredicate {
+
+    override def toString: String = "OML '*.omlzip'"
+
+    override def apply(p: Path)
+    : Boolean
+    = p.isFile && p.segments.last.endsWith(".omlzip")
+  }
+
+  /**
+    * Predicate for an OML concrete syntax representation file in W3C OWL2-DL + SWRL (*.owl)
+    */
+  case object OMLOntologyFilePredicate extends OMLFilePredicate {
+
+    override def toString: String = "OML '*.owl'"
+
+    override def apply(p: Path)
+    : Boolean
+    = p.isFile && p.segments.last.endsWith(".owl")
+
+  }
+
   /**
     * Predicate for an OML OASIS Catalog XML file
     */
@@ -26,22 +70,22 @@ object FileSystemUtilities {
     * @param cat The OMLCatalog to explore the rewrite rules recursively if `p` is the path to the catalog
     * @param p Either the path to the OMLCatalog (to explore the rewrite rules recursively)
     *          or to a directory, which is explored recursively.
-    * @param kindFilter A Path predicate for the kind of OML file to include in the result
+    * @param omlFilePredicate A Path predicate for the kind of OML file to include in the result
     * @param verboseFiles If true, prints the files found.
     * @return A sequence of Path files satisfying the kindFilter found by recursively exploring `p`
     *         if it is a directory or `p`'s parent folder if it is a file named 'oml.catalog.xml'.
     *         In other cases, the result sequence is empty.
     */
   def lsRecOML
-  (cat: OMLCatalog, p: Path, kindFilter: Path => Boolean, verboseFiles: Option[PrintStream])
+  (cat: OMLCatalog, p: Path, omlFilePredicate: OMLFilePredicate, verboseFiles: Option[PrintStream])
   : Seq[Path]
   = {
     def lsRecNoCatalog(dir: Path): Seq[Path]
     = {
       val files: Seq[Path]
       = ls
-        .rec((p: Path) => p.isFile && !kindFilter(p))(dir)
-        .filter(kindFilter)
+        .rec((p: Path) => p.isFile && !omlFilePredicate(p))(dir)
+        .filter(omlFilePredicate.apply)
         .to[Seq]
         .sortBy(_.toString())
 
@@ -102,8 +146,8 @@ object FileSystemUtilities {
         : Set[Path]
         = if (rewritePath.isDir)
           ls
-            .rec((p: Path) => p.isFile && !kindFilter(p))(rewritePath)
-            .filter(kindFilter)
+            .rec((p: Path) => p.isFile && !omlFilePredicate(p))(rewritePath)
+            .filter(omlFilePredicate.apply)
             .to[Set]
         else
           Set(rewritePath)
@@ -137,52 +181,5 @@ object FileSystemUtilities {
       Seq.empty[Path]
   }
 
-  /**
-    * Predicate for an OML concrete syntax representation file in 4th normal database tabular form (*.omlzip)
-    */
-  def omlJsonZipFilePredicate(p: Path): Boolean
-  = p.isFile && p.segments.last.endsWith(".omlzip")
-
-  /**
-    * Find *.omlzip files recursively from a directory path or the parent directory of an `oml.catalog.xml` file
-    * @param p The directory or `oml.catalog.xml` file
-    * @return The set of `*.omlzip` files found
-    */
-  def lsRecOMLJsonZipFiles
-  (cat: OMLCatalog, p: Path, verboseFiles: Option[PrintStream])
-  : Seq[Path]
-  = lsRecOML(cat, p, kindFilter = omlJsonZipFilePredicate, verboseFiles)
-
-  /**
-    * Predicate for an OML concrete syntax representation file in OML's Xtext DSL (*.oml and/or *.omlzip)
-    */
-  def omlTextFilePredicate(p: Path): Boolean
-  = p.isFile && ( p.segments.last.endsWith(".oml") || p.segments.last.endsWith(".omlzip") )
-
-  /**
-    * Find *.oml files recursively from a directory path or the parent directory of an `oml.catalog.xml` file
-    * @param p The directory or `oml.catalog.xml` file
-    * @return The set of `*.oml` files found
-    */
-  def lsRecOMLTextFiles
-  (cat: OMLCatalog, p: Path, verboseFiles: Option[PrintStream])
-  : Seq[Path]
-  = lsRecOML(cat, p, kindFilter = omlTextFilePredicate, verboseFiles)
-
-  /**
-    * Predicate for an OML concrete syntax representation file in W3C OWL2-DL + SWRL (*.owl)
-    */
-  def omlOWLFilePredicate(p: Path): Boolean
-  = p.isFile && p.segments.last.endsWith(".owl")
-
-  /**
-    * Find *.owl files recursively from a directory path or the parent directory of an `oml.catalog.xml` file
-    * @param p The directory or `oml.catalog.xml` file
-    * @return The set of `*.owl` files found
-    */
-  def lsRecOMLOwlFiles
-  (cat: OMLCatalog, p: Path, verboseFiles: Option[PrintStream])
-  : Seq[Path]
-  = lsRecOML(cat, p, kindFilter = omlOWLFilePredicate, verboseFiles)
 
 }

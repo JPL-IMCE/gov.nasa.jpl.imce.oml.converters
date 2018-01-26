@@ -22,9 +22,10 @@ import java.lang.System
 import java.nio.file.Paths
 import java.util.Properties
 
-import ammonite.ops.{Path, up}
+import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
 import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
 import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.tables
@@ -33,9 +34,7 @@ import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.binding.owlapi.common.ImmutableModule
 import gov.nasa.jpl.omf.scala.core.OMFError
 import gov.nasa.jpl.omf.scala.core.tables.OMFTabularExport
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
-import org.apache.xml.resolver.Catalog
+import org.apache.spark.sql.{SQLContext, SparkSession}
 
 import scala.collection.immutable.{Seq, Set}
 import scala.{Int, None, Option, Ordering, Some, StringContext, Unit}
@@ -49,48 +48,37 @@ import scalax.collection.GraphPredef.EdgeAssoc
 
 case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
-  override val filePredicate = FileSystemUtilities.omlOWLFilePredicate _
+  override val filePredicate = FileSystemUtilities.OMLOntologyFilePredicate
 
   override def convert
-  (inCatalog: Path,
-   inputFiles: Seq[Path],
+  (omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
-  : OMFError.Throwables \/ Unit
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = for {
-    in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(inCatalog)
+    in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
     (inStore, inCat) = in_store_cat
     out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
     (outStore, outCat) = out_store_cat
-    result <- convert(inStore, inCat, inputFiles, outputDir, outStore, outCat, outCatalog, conversions)
+    result <- convert(inStore, omlCatalogScope, outputDir, outStore, outCat, outCatalog, conversions)
   } yield result
 
   def convert
   (inStore: OWLAPIOMFGraphStore,
-   inCat: Catalog,
-   inputFiles: Seq[Path],
+   omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outStore: OWLAPIOMFGraphStore,
-   outCat: Catalog,
+   outCat: OMLCatalog,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
-  : OMFError.Throwables \/ Unit
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
     implicit val mOrder = new Ordering[OWLAPIOMF#ImmutableModule] {
       override def compare(x: ImmutableModule, y: ImmutableModule): Int = x.iri.toString.compareTo(y.iri.toString)
     }
-
-    val conf = new SparkConf()
-      .setMaster("local")
-      .setAppName(this.getClass.getSimpleName)
-
-    implicit val spark = SparkSession
-      .builder()
-      .config(conf)
-      .getOrCreate()
-
-    implicit val sqlContext = spark.sqlContext
 
     val props = new Properties()
     props.setProperty("useSSL", "false")
@@ -99,9 +87,9 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
     props.setProperty("enablePacketDebug", "true")
 
     val result
-    : OMFError.Throwables \/ Unit
+    : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
     = for {
-      m2i <- inputFiles.foldLeft {
+      m2i <- omlCatalogScope.omlFiles.foldLeft {
         emptyMutable2ImmutableModuleMap.right[OMFError.Throwables]
       } { case (acc, inputFile) =>
         for {
@@ -235,15 +223,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
       else
         \/-(())
 
-      // 5) Convert from OML Tables => Parquet
-
-      _ <- if (conversions.toParquet)
-        internal
-          .toParquet(outCatalog / up, ts.map(_._2))
-      else
-        \/-(())
-
-      // 6) Convert from OML Tables => SQL
+      // 5) Convert from OML Tables => SQL
 
       _ <- conversions.toSQL match {
         case Some(server) =>
@@ -259,7 +239,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
           \/-(())
       }
 
-    } yield ()
+    } yield outCat -> ts.map { case (m, t) => tables.taggedTypes.iri(m.iri.toString) -> t }
 
     result
   }

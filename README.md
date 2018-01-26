@@ -163,141 +163,80 @@ OML supports three canonical representations:
 - Print OML Converter usage information
 
   ```
-  omlDirectoryConverter -- [text|owl|json] [-cat <oml.catalog.xml>]+ -out <out.dir> [--clear] [flags]
-  
-  where [flags] = ([flag] )*
-  and [flag] is one of: [-o|--owl], [-t|--text], [-j|--json], [-p|--parquet]
+  omlConverter --help
   ```
   
-  ```
-  omlDirectoryConverter -- parquet [-dir <dir>]+ -out <out.dir> [--clear] [flags]
+  Produces:
   
-  where [flags] = ([flag] )*
-  and [flag] is one of: [-o|--owl], [-t|--text], [-j|--json], [-p|--parquet]
   ```
+  Usage: omlConverter [text|owl|json|parquet|sql|diff|merge] [options] <args>...
   
-  ```bash
-  $ OMLConverter/bin/omlDirectoryConverter
-  #
-  # Usage:
-  # 
-  # 0) Get information about command-line options
-  # omlDirectoryConverter
-  # 
-  # 1) Compare recursively OML files (text, owl, json) between two directories
-  # omlDirectoryConverter -- -diff <dir1> <dir2>
-  #   
-  # where <dir1> and <dir2> are absolute paths to directories, each containing an oml.catalog.xml file.
-  #
-  # For `*.owl` and `*.owl`, this comparison only reports which files are different between the two directories.
-  # The comparison does not report the differences in these files.
-  # 
-  # For `*.omlzip`, this comparison reports line-level differences (added/deleted) for each OML table.
-  #
-  # 2) Convert all OML textual concrete syntax files *.oml
-  # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -text
-  # 
-  # 3) Convert all OWL2-DL ontology syntax files *.owl
-  # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir>] -owl
-  # 
-  # 4) Convert all normalized tabular syntax files *.omlzip
-  # omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d] <out.dir> -json
-  # 
-  # where:
-  # <oml.catalog.xml> is an OASIS XML catalog file named 'oml.catalog.xml' for resolving OML IRIs to OML files
-  # <out.dir> is a new directory that will be created as long as it does not exist (-out) or
-  #           will be deleted if it exists and created again (-d)
+  Command: text
+  Relative to an `oml.catalog.xml`, converts all OML textual syntax files, '*.oml' and/or '*.omlzip'
+  
+  Command: owl
+  Relative to an `oml.catalog.xml`, converts all OML files in OWL2-DL + SWRL rules, '*.owl'
+  
+  Command: json
+  Relative to an `oml.catalog.xml`, converts all OML tabular json archive files, '*.omlzip'
+  
+  Command: parquet
+  Convert from folders of OML parquet table files, '<dir>/<oml table>.parquet'.
+  
+  Command: sql <server>
+  Convert from an SQL server.
+    <server>                 SQL server
+  
+  Command: diff <dir1> <dir2>
+  Convert from OML files in OWL2-DL + SWRL rules, '*.owl'
+    <dir1>                   Left side comparison, <dir1>.
+    <dir2>                   Right side comparison, <dir2>.
+  
+  Command: merge <oml.parquet folder>
+  Merge OML content from multiple 'oml.parquet' folders.
+    To merge OML content from different representations (e.g., text, owl, json, ...),
+    first convert each representation to parquet, then merge the resulting 'oml.parquet' folders.
+  
+    <oml.parquet folder>     Path to an 'oml.parquet' folder to include in the merge.
+  
+  Options:
+  
+    --help                   "Prints usage information about the OML Directory Converter
+                             Note: current directory:
+                             /opt/local/imce/users/nfr/github.imce/gov.nasa.jpl.imce.ontologies.public
+  
+  
+    -c, --cat <value>        An OASIS XML Catalog file named 'oml.catalog.xml'.
+                             (Applicable only for 'text', 'owl' or 'json' commands.)
+  
+    -d, --dir <value>        A folder of OML parquet table files: '<dir>/<oml table>.parquet'.
+                             (Applicable only for 'parquet' command.)
+  
+    -out, --output <value>   Output folder where to write conversion results.
+  
+    -v:files, --verbose.files
+                             Verbose: show the input files found for each 'rewriteURI' entry of an OML Catalog.
+  
+    --clear                  Make sure the output folder is deleted (if it exists) and is created empty before writing conversion results.
+  
+    -t, --text               Output conversion includes OML as textual syntax '*.oml' files
+                             (Not applicable for 'merge' command).
+  
+    -o, --owl                Output conversion includes OWL2-DL + SWRL rule '*.owl' ontology files, one for each OML module.
+                             (Not applicable for 'merge' command).
+  
+    -j, --json               Output conversion includes archive files, '*.omlzip' of OML json tables, one for each OML module.
+                             (Not applicable for 'merge' command).
+  
+    -p:each, --parquet:each  Output conversion includes 'oml.parquet' output folders, one for each OML module.
+                             (Caution: this is slow!)
+                             Note: Ignore warnings from Apache Spark like this for some <N> and <S>:
+                             WARN TaskSetManager: Stage <N> contains a task of very large size (<S> KB). The maximum recommended task size is 100 KB.
+  
+    -p, --parquet            Output conversion aggregates all OML modules into a single 'oml.parquet' output folder.
+                             Note: Ignore warnings from Apache Spark like this for some <N> and <S>:
+                             WARN TaskSetManager: Stage <N> contains a task of very large size (<S> KB). The maximum recommended task size is 100 KB.
+  
+    -s, --sql <value>        Output conversion aggregates all OML modules into OML data stored on an SQL server.
+
   ```
- 
-### Compare recursively OML files (text, owl, json) between two directories
-
-- `omlDirectoryConverter -- -diff <dir1> <dir2>
-
-   For `*.owl` and `*.owl`, this comparison only reports which files are different between the two directories.
-   The comparison does not report the differences in these files.
-   
-   For `*.omlzip`, this comparison reports line-level differences (added/deleted) for each OML table.
-   
-### Convert from OML textual concrete Syntax
-
-- `omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d <dir>] -text`
-    
-   Use the `oml.catalog.xml` file to convert all `*.oml` files from the OML textual concrete syntax representation 
-   to corresponding OML representations in all 3 formats.
-    
-   If specified, save the OML Metadata Directed Graph to `<oml.metadata.json>`
-    
-### Convert from OML normalilzed tabular relational schema
-
-- `omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d <dir>] -json`
-       
-   Use the `oml.catalog.xml` file to convert all `*.omlzip` files from the OML tabular representation 
-   to corresponding OML representations in all 3 formats.
-    
-### Convert from OML ontologies
-
-- `omlDirectoryConverter -- -cat <oml.catalog.xml> [-out|-d <dir>] -owl`
-                       
-   Use the `oml.catalog.xml` file to convert all OML ontological representations resolved from the `<IRI>` provided
-   to corresponding OML representations in all 3 formats.
-  
-### OML Metadata Directed Graph
-
-Each graph node represents an OML Module that has been converted.
-Each directed graph edge corresponds to an OML ModuleEdge from an importing OML Module to an imported OML Module.
-
-Synopsis of an [OML Metadata Directed Graph](src/main/scala/gov/nasa/jpl/imce/oml/converters/metadata/OMLMetadataGraph.scala):
-
-```json
-{
-  "nodes": [<OML Converted Module>*],
-  "edges": [<OML Converted Module Edge>*]
-}
-```
-
-Synopsis of an [OML Converted Module](src/main/scala/gov/nasa/jpl/imce/oml/converters/metadata/OMLConvertedModule.scala):
-
-```json
-{
-  "iri" : "<OML Module IRI>",
-  "filename" : "<relative pathname from the directory location of the `oml.catalog.xml` file>",
-  "provenance" : "<OMLMetadataProvenance>"
-}
-```
-
-where [OMLMetadataProvenance](src/main/scala/gov/nasa/jpl/imce/oml/converters/metadata/OMLMetadataProvenance.scala) is be one of the following:
-
-- OMLBuiltinModuleProvenance
-
-    An OMLConvertedModule with OMLBuiltinModuleProvenance
-    corresponds to an OML TerminologyGraph ontology that defines either datatypes
-    that are part of the OWL2-DL datatype map or annotation properties
-    that are used in defining the OWL2-DL datatype map or the OWL2 vocabulary.
-    
-- OMLBundleModuleProvenance
-
-    An OMLConvertedModule with OMLBundleModuleProvenance
-    corresponds to an OML TerminologyBox
-    that is either an OML Bundle or an OML TerminologyBox that
-    is directly or indirectly imported by an OML Bundle.
-    
-- OMLExtensionModuleProvenance
-    
-    An OMLConvertedModule with OMLExtensionModuleProvenance
-    corresponds to an OML Module that directly or indirectly
-    imports an OML Bundle and is not directly or indirectly imported by an OML Bundle.
-    
-- OMLOtherModuleProvenance
-
-    An OMLConvertedModule with OMLOtherModuleProvenance
-    corresponds to an OML Module that is not OMLBuiltinModuleProvenance,
-    OMLBundleModuleProvenance or OMLExtensionModuleProvenance.
-
-Synopsis of an [OML Converted ModuleEdge](src/main/scala/gov/nasa/jpl/imce/oml/converters/metadata/OMLConvertedModuleEdge.scala):
-
-```json
-{
-  "importing" : "<IRI of the importing OML Converted Module>",
-  "imported" : "<IRI of the imported OML Converted Module>"
-}
-```
