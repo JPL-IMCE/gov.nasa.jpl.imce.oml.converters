@@ -265,6 +265,8 @@ object OMLConverter {
       .text(
         s"""Output conversion includes 'oml.parquet' output folders, one for each OML module.
            |$helpIndent(Caution: this is slow!)
+           |${helpIndent}Note: Ignore warnings from Apache Spark like this for some <N> and <S>:
+           |${helpIndent}WARN TaskSetManager: Stage <N> contains a task of very large size (<S> KB). The maximum recommended task size is 100 KB.
            |""".stripMargin)
       .abbr("p:each")
       .optional()
@@ -275,6 +277,8 @@ object OMLConverter {
     opt[Unit]("parquet")
       .text(
         s"""Output conversion aggregates all OML modules into a single 'oml.parquet' output folder.
+           |${helpIndent}Note: Ignore warnings from Apache Spark like this for some <N> and <S>:
+           |${helpIndent}WARN TaskSetManager: Stage <N> contains a task of very large size (<S> KB). The maximum recommended task size is 100 KB.
            |""".stripMargin)
       .abbr("p")
       .optional()
