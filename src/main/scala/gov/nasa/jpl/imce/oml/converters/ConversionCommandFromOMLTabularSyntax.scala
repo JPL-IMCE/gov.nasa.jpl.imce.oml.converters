@@ -25,12 +25,12 @@ import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.covariantTag.@@
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
-import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
 import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
 import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.resolver.TableUtilities
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.{OMLSpecificationTables, taggedTypes}
+import gov.nasa.jpl.imce.xml.catalog.scope.CatalogScope
 import gov.nasa.jpl.omf.scala.binding.owlapi.OWLAPIOMFGraphStore
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
@@ -70,7 +70,7 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = for {
     in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
     (inStore, inCat) = in_store_cat
@@ -85,11 +85,11 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
    omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outStore: OWLAPIOMFGraphStore,
-   outCat: OMLCatalog,
+   outCat: CatalogScope,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
     val props = new Properties()
     props.setProperty("useSSL", "false")

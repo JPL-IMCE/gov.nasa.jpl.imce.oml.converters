@@ -75,9 +75,17 @@ lazy val omlConverters = Project("omlConverters", file("."))
     resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases",
     scalacOptions in (Compile, compile) += s"-P:artima-supersafe:config-file:${baseDirectory.value}/project/supersafe.cfg",
     scalacOptions in (Test, compile) += s"-P:artima-supersafe:config-file:${baseDirectory.value}/project/supersafe.cfg",
-    scalacOptions in (Compile, doc) += "-Xplugin-disable:artima-supersafe",
-    scalacOptions in (Test, doc) += "-Xplugin-disable:artima-supersafe",
+    scalacOptions in (Compile,doc) ++= Seq("-groups", "-implicits", "-Xplugin-disable:artima-supersafe"),
+    scalacOptions in (Test, doc) ++= Seq("-groups", "-implicits", "-Xplugin-disable:artima-supersafe"),
     scalacOptions += "-g:vars",
+
+    scalacOptions in (Compile,doc) ++= Seq(
+      "-diagrams",
+      "-doc-title", name.value,
+      "-doc-root-content", baseDirectory.value + "/rootdoc.txt"),
+
+    libraryDependencies += "gov.nasa.jpl.imce" %% "gov.nasa.jpl.imce.xml.catalog.scope" % Versions_xml_catalog_scope.version,
+
     libraryDependencies ++= Seq(
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.dsl" % Versions_oml_core.version,
       "gov.nasa.jpl.imce.oml" % "gov.nasa.jpl.imce.oml.model" % Versions_oml_core.version,

@@ -23,9 +23,9 @@ import java.io.File
 import java.lang.IllegalArgumentException
 
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
-import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager}
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
+import gov.nasa.jpl.imce.xml.catalog.scope.{CatalogScope, CatalogScopeManager}
 import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
@@ -48,7 +48,7 @@ trait ConversionCommand {
     outCatalog: Path,
     conversions: ConversionCommand.OutputConversions)
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
 }
 
 object ConversionCommand {
@@ -347,24 +347,16 @@ object ConversionCommand {
   }
 
   def createOMFStoreAndLoadCatalog(catalogFile: Path)
-  : OMFError.Throwables \/ (OWLAPIOMFGraphStore, OMLCatalog)
-  = nonFatalCatch[OMFError.Throwables \/ (OWLAPIOMFGraphStore, OMLCatalog)]
+  : OMFError.Throwables \/ (OWLAPIOMFGraphStore, CatalogScope)
+  = nonFatalCatch[OMFError.Throwables \/ (OWLAPIOMFGraphStore, CatalogScope)]
     .withApply {
       t: java.lang.Throwable =>
         -\/(Set[java.lang.Throwable](t))
     }
     .apply {
-      val cm = new OMLCatalogManager()
-      cm.setUseStaticCatalog(false)
+      val cm = new CatalogScopeManager()
       val cr = new CatalogResolver(cm)
-      val cat = cm.getPrivateCatalog match {
-        case c: OMLCatalog =>
-          c
-        case _ =>
-          throw new java.lang.IllegalArgumentException(
-            s"An OMLCatalogManager should return an OMLCatalog as its private catalog."
-          )
-      }
+      val cat = cm.getCatalog()
 
       val omfStore: OWLAPIOMFGraphStore
       = OWLAPIOMFGraphStore.initGraphStore(
