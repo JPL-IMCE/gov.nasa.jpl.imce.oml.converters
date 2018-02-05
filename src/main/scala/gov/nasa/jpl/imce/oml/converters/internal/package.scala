@@ -25,17 +25,18 @@ import ammonite.ops.{Path, cp, mkdir, rm, write}
 import gov.nasa.jpl.imce.oml.model
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
-import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLExtensions}
+import gov.nasa.jpl.imce.oml.model.extensions.OMLExtensions
 import gov.nasa.jpl.imce.oml.resolver
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
+import gov.nasa.jpl.imce.xml.catalog.scope.CatalogScope
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{SQLContext, SparkSession}
 import org.eclipse.emf.common.util.{URI => EURI}
 
 import scala.collection.immutable.{Seq, Set}
-import scala.{Boolean, StringContext, Unit}
+import scala.{Boolean, None, Some, StringContext, Unit}
 import scala.Predef.{String, augmentString, require}
 import scalaz._
 import Scalaz._
@@ -185,7 +186,7 @@ package object internal {
 
   protected[converters] def toParquet
   (conversions: ConversionCommand.OutputConversions,
-   outCat: OMLCatalog,
+   outCat: CatalogScope,
    folder: Path,
    ts: Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   (implicit spark: SparkSession, sqlContext: SQLContext)
@@ -214,7 +215,7 @@ package object internal {
   }
 
   protected[converters] def resolveOutputCatalogFileWithExtension
-  (outCat: OMLCatalog,
+  (outCat: CatalogScope,
    iri: tables.taggedTypes.IRI,
    extension: String)
   : OMFError.Throwables \/ Path
@@ -223,8 +224,13 @@ package object internal {
       -\/(Set[java.lang.Throwable](t))
     }
     .apply {
-      val resolved = outCat.resolveURI(iri + extension)
-      require(resolved.startsWith("file:"))
-      \/-(Path(resolved.stripPrefix("file:")))
+      outCat.resolveURIWithExtension(iri.toString, extension) match {
+        case Some(resolved) =>
+          resolved.right
+        case None =>
+          Set[java.lang.Throwable](new IllegalArgumentException(
+            s"No catalog rewrite for: $iri"
+          )).left
+      }
     }
 }

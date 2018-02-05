@@ -7,10 +7,10 @@ import java.util.Properties
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.covariantTag.@@
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
-import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
 import gov.nasa.jpl.imce.oml.resolver.{GraphUtilities, ResolverUtilities, TableUtilities}
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
+import gov.nasa.jpl.imce.xml.catalog.scope.CatalogScope
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
 
@@ -54,7 +54,7 @@ object ConversionCommandFromOMLMerge {
    outputFolder: Path,
    verboseFiles: Option[PrintStream])
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
     val props = new Properties()
     props.setProperty("useSSL", "false")

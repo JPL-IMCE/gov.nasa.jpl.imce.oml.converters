@@ -25,11 +25,11 @@ import java.util.Properties
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
-import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
 import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
 import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
+import gov.nasa.jpl.imce.xml.catalog.scope.CatalogScope
 import gov.nasa.jpl.omf.scala.binding.owlapi._
 import gov.nasa.jpl.omf.scala.binding.owlapi.common.ImmutableModule
 import gov.nasa.jpl.omf.scala.core.OMFError
@@ -56,7 +56,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = for {
     in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
     (inStore, inCat) = in_store_cat
@@ -70,11 +70,11 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
    omlCatalogScope: OMLCatalogScope,
    outputDir: Path,
    outStore: OWLAPIOMFGraphStore,
-   outCat: OMLCatalog,
+   outCat: CatalogScope,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
     implicit val mOrder = new Ordering[OWLAPIOMF#ImmutableModule] {
       override def compare(x: ImmutableModule, y: ImmutableModule): Int = x.iri.toString.compareTo(y.iri.toString)
@@ -87,7 +87,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
     props.setProperty("enablePacketDebug", "true")
 
     val result
-    : OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+    : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
     = for {
       m2i <- omlCatalogScope.omlFiles.foldLeft {
         emptyMutable2ImmutableModuleMap.right[OMFError.Throwables]

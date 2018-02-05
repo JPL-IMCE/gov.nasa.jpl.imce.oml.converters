@@ -23,62 +23,75 @@ import java.lang.IllegalArgumentException
 
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
-import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager}
+import gov.nasa.jpl.imce.xml.catalog.scope.{CatalogScope, CatalogScopeManager}
 import gov.nasa.jpl.omf.scala.core.OMFError
-import org.apache.xml.resolver.tools.CatalogResolver
 
 import scala.collection.immutable.{Seq, Set}
-import scala.{None,Option,Some,StringContext}
-import scalaz._, Scalaz._
+import scala.util.control.Exception.nonFatalCatch
+import scala.{Option, StringContext, Unit}
+import scalaz._
+import Scalaz._
 
-case class OMLCatalogScope
-(omlCatalogFile: Path,
- filePredicate: FileSystemUtilities.OMLFilePredicate,
- omlCM: OMLCatalogManager,
- omlCR: CatalogResolver,
- omlCat: OMLCatalog,
- omlFiles: Seq[Path])
+case class OMLCatalogScope(omlCatalogFile: Path,
+                           filePredicate: FileSystemUtilities.OMLFilePredicate,
+                           omlCM: CatalogScopeManager,
+                           omlCat: CatalogScope,
+                           omlFiles: Seq[Path])
 
 object OMLCatalogScope {
 
-  def toOMLCatalogScope(inCatalog: Path, filePredicate: FileSystemUtilities.OMLFilePredicate, verboseFiles: Option[PrintStream])
-  : OMFError.Throwables \/ OMLCatalogScope
-  = for {
-    omlCM <- new OMLCatalogManager().right[OMFError.Throwables]
-    _ = omlCM.setUseStaticCatalog(false)
-    _ = omlCM.setCatalogClassName("gov.nasa.jpl.imce.oml.extensions.OMLCatalog")
+  def toOMLCatalogScope(inCatalog: Path,
+                        filePredicate: FileSystemUtilities.OMLFilePredicate,
+                        verboseFiles: Option[PrintStream])
+    : OMFError.Throwables \/ OMLCatalogScope =
+    for {
+      omlCM <- new CatalogScopeManager().right[OMFError.Throwables]
 
-    omlCR = new CatalogResolver(omlCM)
+      omlCat = omlCM.getCatalog
 
-    omlCat <- Option.apply(omlCR.getCatalog) match {
-      case Some(oc: OMLCatalog) =>
-        oc.parseCatalog(inCatalog.toIO.toURI.toURL)
-        \/-(oc)
-      case Some(c) =>
-        -\/(Set[java.lang.Throwable](new IllegalArgumentException(
-          s"OMLCatalogManager & CatalogResolver should have produced an OMLCatalog, not: ${c.getClass.getName}"
-        )))
-      case None =>
-        -\/(Set[java.lang.Throwable](new IllegalArgumentException(
-          s"OMLCatalogManager & CatalogResolver should have produced an OMLCatalog, got none!"
-        )))
-    }
+      _ <- nonFatalCatch[OMFError.Throwables \/ Unit]
+        .withApply { t =>
+          Set[java.lang.Throwable](
+            new IllegalArgumentException(
+              s"Failed to parse catalog: $inCatalog",
+              t
+            )).left
+        }
+        .apply {
+          omlCat.parseCatalog(inCatalog.toIO.toURI.toURL).right
+        }
 
-    omlFiles = FileSystemUtilities.lsRecOML(omlCat, inCatalog, filePredicate, verboseFiles)
+      omlScope = omlCat.localFileScope(filePredicate)
 
-    scope <- if (omlFiles.nonEmpty)
-      \/-(OMLCatalogScope(
-        omlCatalogFile = inCatalog,
-        filePredicate = filePredicate,
-        omlCM = omlCM,
-        omlCR = omlCR,
-        omlCat = omlCat,
-        omlFiles = omlFiles))
-    else
-      -\/(Set[java.lang.Throwable](new IllegalArgumentException(
-        s"No OML files found for OML Catalog: $inCatalog"
-      )))
+      omlFiles = omlScope.values.foldLeft(Set.empty[Path])(_ ++ _).to[Seq].sortBy(_.toString)
 
-  } yield scope
+      _ = verboseFiles.foreach { ps =>
+        ps.println(
+          s"Resolved ${omlFiles.size} files across ${omlScope.size} catalog rewrite rules.")
+        omlScope.keys.to[Seq].sorted.foreach { uriStartPrefix =>
+          val files = omlScope(uriStartPrefix)
+          ps.println(
+            s"=> ${files.size} resolved based on the rewrite rule for: $uriStartPrefix")
+          files.foreach { f =>
+            ps.println(s"  $f")
+          }
+        }
+      }
+
+      scope <- if (omlFiles.nonEmpty)
+        \/-(
+          OMLCatalogScope(omlCatalogFile = inCatalog,
+                          filePredicate = filePredicate,
+                          omlCM = omlCM,
+                          omlCat = omlCat,
+                          omlFiles = omlFiles))
+      else
+        -\/(
+          Set[java.lang.Throwable](
+            new IllegalArgumentException(
+              s"No OML files found for OML Catalog: $inCatalog"
+            )))
+
+    } yield scope
 
 }
