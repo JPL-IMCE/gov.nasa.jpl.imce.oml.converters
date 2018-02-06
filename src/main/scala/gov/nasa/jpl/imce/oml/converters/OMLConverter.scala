@@ -53,12 +53,14 @@ object OMLConverter {
     p
   }
 
+  val smallIndent: String = "  "
   val helpIndent: String = "                           "
 
   val optionsParser = new scopt.OptionParser[Options]("omlConverter") {
 
+
     cmd("text")
-      .text("Relative to an `oml.catalog.xml`, converts all OML textual syntax files, '*.oml' and/or '*.omlzip'")
+      .text(s"${smallIndent}Relative to an `oml.catalog.xml`, converts all OML textual syntax files, '*.oml' and/or '*.omlzip'")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromText))
@@ -67,7 +69,7 @@ object OMLConverter {
     note("")
 
     cmd("owl")
-      .text("Relative to an `oml.catalog.xml`, converts all OML files in OWL2-DL + SWRL rules, '*.owl'")
+      .text(s"${smallIndent}Relative to an `oml.catalog.xml`, converts all OML files in OWL2-DL + SWRL rules, '*.owl'")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWL))
@@ -76,7 +78,7 @@ object OMLConverter {
     note("")
 
     cmd("json")
-      .text("Relative to an `oml.catalog.xml`, converts all OML tabular json archive files, '*.omlzip'")
+      .text(s"${smallIndent}Relative to an `oml.catalog.xml`, converts all OML tabular json archive files, '*.omlzip'")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWLZip))
@@ -85,7 +87,7 @@ object OMLConverter {
     note("")
 
     cmd("parquet")
-      .text("Convert from folders of OML parquet table files, '<dir>/<oml table>.parquet'.")
+      .text(s"${smallIndent}Convert from folders of OML parquet table files, '<dir>/<oml table>.parquet'.")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.ParquetInputConversion())
@@ -94,7 +96,7 @@ object OMLConverter {
     note("")
 
     cmd("sql")
-      .text("Convert from an SQL server.")
+      .text(s"${smallIndent}Convert from an SQL server.")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.SQLInputConversion())
@@ -111,7 +113,7 @@ object OMLConverter {
     note("")
 
     cmd("diff")
-      .text("Convert from OML files in OWL2-DL + SWRL rules, '*.owl'")
+      .text(s"${smallIndent}Convert from OML files in OWL2-DL + SWRL rules, '*.owl'")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CompareDirectories())
@@ -138,9 +140,9 @@ object OMLConverter {
 
     cmd("merge")
       .text(
-       s"""Merge OML content from multiple 'oml.parquet' folders.
-          |  To merge OML content from different representations (e.g., text, owl, json, ...),
-          |  first convert each representation to parquet, then merge the resulting 'oml.parquet' folders.
+       s"""${smallIndent}Merge OML content from multiple 'oml.parquet' folders.
+          |${smallIndent}To merge OML content from different representations (e.g., text, owl, json, ...),
+          |${smallIndent}first convert each representation to parquet, then merge the resulting 'oml.parquet' folders.
           |""".stripMargin)
       .optional()
       .action { (_, c) =>
@@ -165,7 +167,7 @@ object OMLConverter {
 
     help("help")
       .text(
-        s""""Prints usage information about the OML Directory Converter
+        s"""Prints usage information about the OML Directory Converter
            |${helpIndent}Note: current directory:
            |$helpIndent$pwd
            |""".stripMargin)
@@ -295,6 +297,11 @@ object OMLConverter {
       .action { (server, c) =>
         c.copy(output = c.output.copy(toSQL = Some(server)))
       }
+
+    note("")
+    note("Build information")
+    note(BuildInfo.toString)
+    note("")
 
     checkConfig(o => o.input.check(o.output, o.outputFolder, o.deleteOutputIfExists))
 

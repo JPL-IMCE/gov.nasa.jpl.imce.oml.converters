@@ -13,3 +13,5 @@ gov.nasa.jpl.imce.oml.converters 0.9.1 is a build based on OML 0.9.0
 - [#40 Add an OML merge capability](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/40)
 
 - [#42 Switch to https://github.com/JPL-IMCE/gov.nasa.jpl.imce.xml.catalog.scope](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/42)
+
+- [#44 Show build information when running "--help"](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/44)

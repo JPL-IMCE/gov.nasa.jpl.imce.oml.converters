@@ -38,6 +38,10 @@ lazy val omlConverters = Project("omlConverters", file("."))
 
     omlProductRepo := Option.apply(System.getProperty("OML_PRODUCT_REPO")).getOrElse("https://dl.bintray.com/jpl-imce/gov.nasa.jpl.imce.oml"),
 
+    buildInfoPackage := "gov.nasa.jpl.imce.oml.converters",
+
+    compile.in(Compile) := (compile.in(Compile) dependsOn buildInfo.in(Compile)).value,
+
     scalaVersion := Versions.scala,
 
     topLevelDirectory := Some("OMLConverters"),
