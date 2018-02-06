@@ -58,6 +58,7 @@ object OMLConverter {
 
   val optionsParser = new scopt.OptionParser[Options]("omlConverter") {
 
+    head("BuildInfo", BuildInfo.toString)
 
     cmd("text")
       .text(s"${smallIndent}Relative to an `oml.catalog.xml`, converts all OML textual syntax files, '*.oml' and/or '*.omlzip'")
@@ -163,6 +164,11 @@ object OMLConverter {
 
     note("")
     note("Options:")
+    note("")
+
+    version("version")
+        .text("Shows build information.")
+
     note("")
 
     help("help")
