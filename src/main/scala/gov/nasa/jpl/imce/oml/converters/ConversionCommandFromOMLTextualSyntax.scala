@@ -47,7 +47,6 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
   override def convert
   (omlCatalogScope: OMLCatalogScope,
-   outputDir: Path,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
   (implicit spark: SparkSession, sqlContext: SQLContext)

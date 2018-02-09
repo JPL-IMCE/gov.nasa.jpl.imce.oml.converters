@@ -19,7 +19,7 @@
 package gov.nasa.jpl.imce.oml.converters
 
 import java.io.{File, PrintStream}
-import java.lang.System
+import java.lang.{IllegalArgumentException, System}
 import java.util.Properties
 
 import ammonite.ops.{Path, pwd, up}
@@ -39,7 +39,7 @@ object OMLConverter {
   (input: ConversionCommand.Request = ConversionCommand.NoRequest(),
    output: ConversionCommand.OutputConversions = ConversionCommand.OutputConversions(),
    deleteOutputIfExists: Boolean = false,
-   outputFolder: Path = Path("/dev/null"),
+   outputFolder: Option[Path] = None,
    verboseFiles: Boolean = false
   )
 
@@ -206,18 +206,31 @@ object OMLConverter {
         c.copy(input = c.input.addParquetFolder(getAbsolutePath(folder)))
       }
 
+    opt[File]("output:catalog")
+      .text(
+        s"""Output catalog where to write conversion results.
+           |$helpIndent(Cannot be used with --output or -out).
+           |""".stripMargin)
+      .abbr("out:cat")
+      .optional()
+      .maxOccurs(1)
+      .action { (catalog, c) =>
+        c.copy(output = c.output.addCatalog(getAbsolutePath(catalog)))
+      }
+
     opt[File]("output")
       .text(
-        """Output folder where to write conversion results.
-          |""".stripMargin)
+        s"""Output folder where to write conversion results.
+           |$helpIndent(Cannot be used with --output:catalog or -out:cat).
+           |""".stripMargin)
       .abbr("out")
       .optional()
       .maxOccurs(1)
       .action { (folder, c) =>
-        c.copy(outputFolder = getAbsolutePath(folder))
+        c.copy(outputFolder = Some(getAbsolutePath(folder)))
       }
 
-    opt[Unit]("verbose.files")
+    opt[Unit]("verbose:files")
       .abbr("v:files")
       .text(
         """Verbose: show the input files found for each 'rewriteURI' entry of an OML Catalog.
@@ -336,10 +349,11 @@ object OMLConverter {
                   conversion.filePredicate,
                   if (options.verboseFiles) Some(System.out) else None) match {
                   case \/-(omlCatalogScope) =>
-                    internal.makeOutputDirectoryAndCopyCatalog(
+                    internal.makeOutputDirectoryAndCopyCatalogIfNoOutputCatalog(
                       options.deleteOutputIfExists,
                       options.outputFolder,
-                      c.catalog) match {
+                      c.catalog,
+                      options.output.catalog) match {
                       case \/-(outCatalog) =>
                         catalogInputConversion(
                           c,
@@ -347,8 +361,6 @@ object OMLConverter {
                           omlCatalogScope,
                           outCatalog,
                           options.output,
-                          options.deleteOutputIfExists,
-                          options.outputFolder,
                           if (options.verboseFiles) Some(System.out) else None)
                       case -\/(errors) =>
                         internal.showErrors(errors)
@@ -358,18 +370,22 @@ object OMLConverter {
                     internal.showErrors(errors)
                 }
 
-
               case -\/(errors) =>
                 internal.showErrors(errors)
             }
 
           case s: ConversionCommand.SQLInputConversionWithServer =>
-            ConversionCommandFromOMLSQL
-              .sqlInputConversion(
-                s, options.output, options.deleteOutputIfExists, options.outputFolder)
+            internal.makeOutputCatalogIfNeeded(options.deleteOutputIfExists, options.outputFolder, options.output.catalog) match {
+              case \/-(outCatalogPath) =>
+                ConversionCommandFromOMLSQL
+                  .sqlInputConversion(s, options.output, outCatalogPath)
+
+              case -\/(errors) =>
+                internal.showErrors(errors)
+            }
 
           case m: ConversionCommand.MergeCatalogs =>
-            internal.makeOutputCatalog(options.deleteOutputIfExists, options.outputFolder) match {
+            internal.makeOutputCatalogIfNeeded(options.deleteOutputIfExists, options.outputFolder, options.output.catalog) match {
               case \/-(outCatalogPath) =>
                 val conf = internal.sparkConf(this.getClass.getSimpleName)
 
@@ -381,19 +397,16 @@ object OMLConverter {
 
                 ConversionCommandFromOMLMerge
                   .merge(
-                    m, options.output, options.deleteOutputIfExists, options.outputFolder,
-                    if (options.verboseFiles) Some(System.out) else None) match {
+                    m, options.output, outCatalogPath) match {
                   case \/-((outCatalog, ts)) =>
                     if (options.output.toParquet)
                       internal.toParquet(options.output, outCatalog, outCatalogPath / up, ts)
 
                   case -\/(errors) =>
-
                     internal.showErrors(errors)
                 }
 
               case -\/(errors) =>
-
                 internal.showErrors(errors)
             }
 
@@ -410,7 +423,7 @@ object OMLConverter {
   (p: ConversionCommand.ParquetInputConversionWithFolder,
    output: ConversionCommand.OutputConversions,
    deleteOutputIfExists: Boolean,
-   outputFolder: Path)
+   outputFolder: Option[Path])
   : Unit
   = {
     val conf = internal.sparkConf(this.getClass.getSimpleName)
@@ -436,13 +449,21 @@ object OMLConverter {
           case Failure(t) =>
             -\/(Set(t))
         }
+
       _ <- if (output.toOMLZip)
-        OMLSpecificationTables
-          .saveOMLSpecificationTables(omlTables, (outputFolder / "aggregate.omlzip").toIO) match {
-          case Success(_) =>
-            \/-(())
-          case Failure(t) =>
-            -\/(Set(t))
+        outputFolder match {
+          case Some(outDir) =>
+            OMLSpecificationTables
+              .saveOMLSpecificationTables(omlTables, (outDir / "aggregate.omlzip").toIO) match {
+              case Success(_) =>
+                \/-(())
+              case Failure(t) =>
+                -\/(Set(t))
+            }
+          case None =>
+            -\/(Set[java.lang.Throwable](new IllegalArgumentException(
+              "parquet conversion with omlZip output requires an output folder (--output <dir> or -out <dir>)"
+            )))
         }
       else
         \/-(())
@@ -475,8 +496,6 @@ object OMLConverter {
    omlCatalogScope: OMLCatalogScope,
    outCatalogPath: Path,
    output: ConversionCommand.OutputConversions,
-   deleteOutputIfExists: Boolean,
-   outputFolder: Path,
    verboseFiles: Option[PrintStream])
   : Unit
   = {
@@ -493,7 +512,7 @@ object OMLConverter {
     System.out.println(s"conversion=$conversion")
     System.out.println(s"# => ${omlCatalogScope.omlFiles.size} OML files to convert...")
 
-    conversion.convert(omlCatalogScope, outputFolder, outCatalogPath, output) match {
+    conversion.convert(omlCatalogScope, outCatalogPath, output) match {
       case \/-((outCatalog, ts)) =>
         if (output.toParquet)
           internal.toParquet(output, outCatalog, outCatalogPath / up, ts)

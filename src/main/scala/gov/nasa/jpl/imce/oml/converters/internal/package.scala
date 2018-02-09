@@ -21,7 +21,7 @@ package gov.nasa.jpl.imce.oml.converters
 import java.io.File
 import java.lang.{IllegalArgumentException, System}
 
-import ammonite.ops.{Path, cp, mkdir, rm, write}
+import ammonite.ops.{Path, cp, mkdir, rm, up, write}
 import gov.nasa.jpl.imce.oml.model
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, OMLResourceSet}
@@ -36,7 +36,7 @@ import org.apache.spark.sql.{SQLContext, SparkSession}
 import org.eclipse.emf.common.util.{URI => EURI}
 
 import scala.collection.immutable.{Seq, Set}
-import scala.{Boolean, None, Some, StringContext, Unit}
+import scala.{Boolean, None, Option, Some, StringContext, Unit}
 import scala.Predef.{String, augmentString, require}
 import scalaz._
 import Scalaz._
@@ -75,7 +75,8 @@ package object internal {
       .set("spark.eventLog.enabled", "true")
   }
 
-  protected[converters] def makeOutputDirectoryAndCopyCatalog(deleteIfExists: Boolean, outDir: Path, inCatalog: Path)
+  protected[converters] def makeOutputDirectoryAndCopyCatalogIfNoOutputCatalog
+  (deleteIfExists: Boolean, outDir: Option[Path], inCatalog: Path, outCatalog: Option[Path])
   : OMFError.Throwables \/ Path
   = nonFatalCatch[OMFError.Throwables \/ Path]
     .withApply {
@@ -83,22 +84,44 @@ package object internal {
         -\/(Set(t))
     }
     .apply {
-      for {
-        _ <- if (outDir.toIO.exists()) {
-          if (deleteIfExists) {
-            rm(outDir)
-            \/-(())
-          } else
-            -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Output directory already exists: $outDir")))
-        } else
-          \/-(())
-        _ = mkdir(outDir)
-        outCatalog = outDir / inCatalog.segments.last
-        _ = cp(inCatalog, outCatalog)
-      } yield outCatalog
+      (outDir, outCatalog) match {
+        case (Some(dir), None) =>
+          if (dir.toIO.exists) {
+            if (deleteIfExists) {
+              rm(dir)
+              mkdir(dir)
+              val outCat = dir / inCatalog.segments.last
+              cp(inCatalog, outCat)
+              \/-(outCat)
+            } else
+              -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Output directory already exists: $dir")))
+          } else {
+            mkdir(dir)
+            val outCat = dir / inCatalog.segments.last
+            cp(inCatalog, outCat)
+            \/-(outCat)
+          }
+
+        case (None, Some(outCat)) =>
+          val tmp = Path(File.createTempFile("omlConverter","xml"))
+          cp(outCat, tmp)
+          val dir = outCat / up
+          rm(dir)
+          mkdir(dir)
+          cp(tmp, outCat)
+          \/-(outCat)
+
+        case (Some(dir), Some(outCat)) =>
+          -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Output is ambiguous: --output $dir and --output:catalog $outCat")))
+
+        case (None, None) =>
+          -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Must specify either --output <dir> or --output:catalog <catalog>")))
+
+      }
     }
 
-  protected[converters] def makeOutputCatalog(deleteIfExists: Boolean, outDir: Path)
+  protected[converters] def makeOutputCatalogIfNeeded
+  (deleteIfExists: Boolean, outDir: Option[Path], outCatalog: Option[Path])
   : OMFError.Throwables \/ Path
   = nonFatalCatch[OMFError.Throwables \/ Path]
     .withApply {
@@ -106,19 +129,40 @@ package object internal {
         -\/(Set(t))
     }
     .apply {
-      for {
-        _ <- if (outDir.toIO.exists()) {
-          if (deleteIfExists) {
-            rm(outDir)
-            \/-(())
-          } else
-            -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Output directory already exists: $outDir")))
-        } else
-          \/-(())
-        _ = mkdir(outDir)
-        outCatalog = outDir / "oml.catalog.xml"
-        _ = write(outCatalog, defaultOMLCatalog)
-      } yield outCatalog
+      (outDir, outCatalog) match {
+        case (Some(dir), None) =>
+          if (dir.toIO.exists) {
+            if (deleteIfExists) {
+              rm(dir)
+              mkdir(dir)
+              val outCat = dir / "oml.catalog.xml"
+              write(outCat, defaultOMLCatalog)
+              \/-(outCat)
+            } else
+              -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Output directory already exists: $dir")))
+          } else {
+            mkdir(dir)
+            val outCat = dir / "oml.catalog.xml"
+            write(outCat, defaultOMLCatalog)
+            \/-(outCat)
+          }
+
+        case (None, Some(outCat)) =>
+          val tmp = Path(File.createTempFile("omlConverter","xml"))
+          cp(outCat, tmp)
+          val dir = outCat / up
+          rm(dir)
+          mkdir(dir)
+          cp(tmp, outCat)
+          \/-(outCat)
+
+        case (Some(dir), Some(outCat)) =>
+          -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Output is ambiguous: --output $dir and --output:catalog $outCat")))
+
+        case (None, None) =>
+          -\/(Set[java.lang.Throwable](new IllegalArgumentException(s"Must specify either --output <dir> or --output:catalog <catalog>")))
+
+      }
     }
 
   protected[converters] val defaultOMLCatalog

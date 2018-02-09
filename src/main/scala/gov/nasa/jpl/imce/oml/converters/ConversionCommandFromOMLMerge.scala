@@ -1,10 +1,9 @@
 package gov.nasa.jpl.imce.oml.converters
 
-import java.io.PrintStream
 import java.lang.System
 import java.util.Properties
 
-import ammonite.ops.Path
+import ammonite.ops.{Path, up}
 import gov.nasa.jpl.imce.oml.covariantTag.@@
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.resolver.{GraphUtilities, ResolverUtilities, TableUtilities}
@@ -15,7 +14,7 @@ import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
 
 import scala.collection.immutable.{Seq, Set}
-import scala.{Boolean, Int, None, Option, Ordering, Some, StringContext, Unit}
+import scala.{Int, None, Ordering, Some, StringContext, Unit}
 import scala.Predef.{ArrowAssoc, String}
 import scalaz._
 import Scalaz._
@@ -50,9 +49,7 @@ object ConversionCommandFromOMLMerge {
   def merge
   (m: ConversionCommand.MergeCatalogs,
    conversions: ConversionCommand.OutputConversions,
-   deleteOutputIfExists: Boolean,
-   outputFolder: Path,
-   verboseFiles: Option[PrintStream])
+   outCatalog: Path)
   (implicit spark: SparkSession, sqlContext: SQLContext)
   : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
@@ -63,8 +60,6 @@ object ConversionCommandFromOMLMerge {
     props.setProperty("enablePacketDebug", "true")
 
     for {
-      outCatalog <- internal.makeOutputCatalog(deleteOutputIfExists, outputFolder)
-
       out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
       (outStore, outCat) = out_store_cat
 
@@ -95,6 +90,8 @@ object ConversionCommandFromOMLMerge {
       _ = summarize(omlTables)
 
       allModules = TableUtilities.partitionModules(omlTables)
+
+      outputFolder = outCatalog / up
 
       _ <- if (conversions.toOMLZip)
         tables

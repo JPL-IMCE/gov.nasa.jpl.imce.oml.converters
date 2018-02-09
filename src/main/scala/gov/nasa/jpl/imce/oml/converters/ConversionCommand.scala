@@ -44,7 +44,6 @@ trait ConversionCommand {
 
   def convert
   (omlCatalogScope: OMLCatalogScope,
-    outputDir: Path,
     outCatalog: Path,
     conversions: ConversionCommand.OutputConversions)
   (implicit spark: SparkSession, sqlContext: SQLContext)
@@ -70,7 +69,7 @@ object ConversionCommand {
     def addDir1Folder(folder: Path): Request
     def addDir2Folder(folder: Path): Request
 
-    def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
   }
 
   object Request {
@@ -121,7 +120,7 @@ object ConversionCommand {
     override def addDir1Folder(folder: Path): Request = this
     override def addDir2Folder(folder: Path): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = Left("No request specified.")
   }
 
@@ -139,7 +138,7 @@ object ConversionCommand {
 
     override def addDir2Folder(folder: Path): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = if (folders.isEmpty)
         Left("No OML Catalogs specified.")
     else {
@@ -180,7 +179,7 @@ object ConversionCommand {
     override def addDir2Folder(folder: Path): Request
     = copy(dir2 = folder)
 
-    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = (Request.checkDirectory(dir1), Request.checkDirectory(dir2)) match {
       case (Nil, Nil) =>
         Right(())
@@ -208,7 +207,7 @@ object ConversionCommand {
 
     override def addDir2Folder(folder: Path): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = Left("No input catalog specified!")
 
   }
@@ -229,7 +228,7 @@ object ConversionCommand {
 
     override def addDir2Folder(folder: Path): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = output.check(outputFolder, deleteIfExists)
 
     def conversionCommand()
@@ -260,7 +259,7 @@ object ConversionCommand {
     override def addDir1Folder(folder: Path): Request = this
     override def addDir2Folder(folder: Path): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = Left("No input parquet folder specified!")
   }
 
@@ -278,7 +277,7 @@ object ConversionCommand {
     override def addDir1Folder(folder: Path): Request = this
     override def addDir2Folder(folder: Path): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = Request.checkDirectory(folder) match {
       case Nil =>
         if ("oml.parquet" == folder.segments.last)
@@ -302,7 +301,7 @@ object ConversionCommand {
     override def addDir1Folder(folder: Path): Request = this
     override def addDir2Folder(folder: Path): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = Left("No SQL server specified!")
 
   }
@@ -319,7 +318,7 @@ object ConversionCommand {
     override def addDir1Folder(folder: Path): Request = this
     override def addDir2Folder(folder: Path): Request = this
 
-    override def check(output: OutputConversions, outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = output.check(outputFolder, deleteIfExists)
   }
 
@@ -329,13 +328,16 @@ object ConversionCommand {
    toOMLZip: Boolean=false,
    toParquetEach: Boolean=false,
    toParquetAggregate: Boolean=false,
-   toSQL: Option[String]=None) {
+   toSQL: Option[String]=None,
+   catalog: Option[Path]=None) {
 
     val toParquet: Boolean = toParquetEach || toParquetAggregate
 
     val isEmpty: Boolean = !toOWL && !toText && !toOMLZip && !toParquet && toSQL.isEmpty
 
-    def check(outputFolder: Path, deleteIfExists: Boolean): Either[String, Unit]
+    def addCatalog(c: Path): OutputConversions = copy(catalog = Some(c))
+
+    def check(outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = nonFatalCatch[Either[String, Unit]]
       .withApply { t =>
         Left(t.getMessage)

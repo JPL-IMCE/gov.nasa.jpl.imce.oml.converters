@@ -12,7 +12,7 @@ import gov.nasa.jpl.imce.oml.resolver.TableUtilities
 import gov.nasa.jpl.imce.oml.tables.{OMLSpecificationTables, taggedTypes}
 import org.apache.spark.sql.SparkSession
 
-import scala.{Boolean, Int, None, Ordering, Some, StringContext, Unit}
+import scala.{Int, None, Ordering, Some, StringContext, Unit}
 import scala.collection.immutable.{Seq, Set}
 import scala.util.{Failure, Success}
 import scala.Predef.{ArrowAssoc, String}
@@ -34,8 +34,7 @@ object ConversionCommandFromOMLSQL {
   def sqlInputConversion
   (s: ConversionCommand.SQLInputConversionWithServer,
    conversions: ConversionCommand.OutputConversions,
-   deleteOutputIfExists: Boolean,
-   outputFolder: Path)
+   outCatalog: Path)
   : Unit
   = {
     val conf = internal.sparkConf(this.getClass.getSimpleName)
@@ -54,7 +53,6 @@ object ConversionCommandFromOMLSQL {
 
     val ok = for {
 
-      outCatalog <- internal.makeOutputCatalog(deleteOutputIfExists, outputFolder)
       out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
       (outStore, outCat) = out_store_cat
 

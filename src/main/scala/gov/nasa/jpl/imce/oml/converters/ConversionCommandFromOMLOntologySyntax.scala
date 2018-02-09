@@ -52,7 +52,6 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
   override def convert
   (omlCatalogScope: OMLCatalogScope,
-   outputDir: Path,
    outCatalog: Path,
    conversions: ConversionCommand.OutputConversions)
   (implicit spark: SparkSession, sqlContext: SQLContext)
@@ -62,13 +61,12 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
     (inStore, inCat) = in_store_cat
     out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
     (outStore, outCat) = out_store_cat
-    result <- convert(inStore, omlCatalogScope, outputDir, outStore, outCat, outCatalog, conversions)
+    result <- convert(inStore, omlCatalogScope, outStore, outCat, outCatalog, conversions)
   } yield result
 
   def convert
   (inStore: OWLAPIOMFGraphStore,
    omlCatalogScope: OMLCatalogScope,
-   outputDir: Path,
    outStore: OWLAPIOMFGraphStore,
    outCat: CatalogScope,
    outCatalog: Path,
