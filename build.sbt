@@ -30,6 +30,7 @@ val resources: Configuration = Configurations.config("resources")
 lazy val omlConverters = Project("omlConverters", file("."))
   .enablePlugins(JavaAppPackaging)
   .enablePlugins(UniversalDeployPlugin)
+  .enablePlugins(LauncherJarPlugin)
   .enablePlugins(IMCEGitPlugin)
   .settings(IMCEPlugin.strictScalacFatalWarningsSettings)
   .settings(
