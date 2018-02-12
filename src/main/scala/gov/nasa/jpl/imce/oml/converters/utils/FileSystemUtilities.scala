@@ -34,6 +34,8 @@ object FileSystemUtilities {
         (if (oml.toIO.exists()) Some(oml) else None) ++
         (if (omlzip.toIO.exists()) Some(omlzip) else None)
     }
+
+    override val fileExtensions: Set[String] = Set(".oml", ".omlzip")
   }
 
   /**
@@ -53,6 +55,8 @@ object FileSystemUtilities {
       val omlzip: Path = pathPrefix / up / (pathPrefix.last + ".omlzip")
       Set(omlzip)
     }
+
+    override val fileExtensions: Set[String] = Set(".omlzip")
   }
 
   /**
@@ -72,6 +76,8 @@ object FileSystemUtilities {
       val owl: Path = pathPrefix / up / (pathPrefix.last + ".owl")
       Set(owl)
     }
+
+    override val fileExtensions: Set[String] = Set(".owl")
   }
 
 }

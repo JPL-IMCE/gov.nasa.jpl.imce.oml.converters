@@ -99,7 +99,7 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
     val allTables
     : Seq[OMLSpecificationTables]
-    = omlCatalogScope.omlFiles.par.map(TableUtilities.readOMLZipFile).to[Seq]
+    = omlCatalogScope.omlFiles.map(_._2).par.map(TableUtilities.readOMLZipFile).to[Seq]
 
     val allModules
     : Map[taggedTypes.IRI, OMLSpecificationTables]
@@ -127,6 +127,17 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
       ts = gorder.map(iri => iri -> allModules(iri))
 
+      // List of module IRIs
+
+      _ <- conversions.modules match {
+        case Some(file) =>
+          internal
+            .writeModuleIRIs(ts.map { case (iri, _) => iri }, file)
+
+        case None =>
+          \/-(())
+      }
+
       // 2) Convert from OML Tables => OML Resolver
 
       extents <- ResolverUtilities.resolveTables(
@@ -144,11 +155,19 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
       // 4) Convert from OML Resolver => OMF/OWLAPI again
 
-      _ <- if (conversions.toOWL)
-        internal
-          .OMLResolver2Ontology
-          .convert(extents, outStore)
-      else
+      _ <- if (conversions.toOWL) {
+        for {
+          _ <- internal
+            .OMLResolver2Ontology
+            .convert(extents, outStore)
+          _ <- conversions.fuseki match {
+            case None =>
+              \/-(())
+            case Some(fuseki) =>
+              internal.tdbUpload(outCatalog, fuseki)
+          }
+        } yield ()
+      } else
         \/-(())
 
       // 6) Convert from OML Tables => SQL

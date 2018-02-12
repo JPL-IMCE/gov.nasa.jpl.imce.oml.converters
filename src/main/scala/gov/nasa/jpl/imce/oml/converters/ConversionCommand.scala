@@ -21,6 +21,7 @@ package gov.nasa.jpl.imce.oml.converters
 import ammonite.ops.Path
 import java.io.File
 import java.lang.IllegalArgumentException
+import java.net.URL
 
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.tables
@@ -169,6 +170,7 @@ object ConversionCommand {
   ) extends Request {
 
     override def addCatalog(catalog: Path): Request = this
+
     override def addMergeFolder(catalog: Path): Request = this
 
     override def addParquetFolder(folder: Path): Request = this
@@ -257,6 +259,7 @@ object ConversionCommand {
     = ParquetInputConversionWithFolder(folder = dir)
 
     override def addDir1Folder(folder: Path): Request = this
+
     override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
@@ -275,6 +278,7 @@ object ConversionCommand {
     = copy(folder = dir)
 
     override def addDir1Folder(folder: Path): Request = this
+
     override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
@@ -299,6 +303,7 @@ object ConversionCommand {
     override def addParquetFolder(dir: Path): Request = this
 
     override def addDir1Folder(folder: Path): Request = this
+
     override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
@@ -316,6 +321,7 @@ object ConversionCommand {
     override def addParquetFolder(dir: Path): Request = this
 
     override def addDir1Folder(folder: Path): Request = this
+
     override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
@@ -329,7 +335,9 @@ object ConversionCommand {
    toParquetEach: Boolean=false,
    toParquetAggregate: Boolean=false,
    toSQL: Option[String]=None,
-   catalog: Option[Path]=None) {
+   catalog: Option[Path]=None,
+   fuseki: Option[URL]=None,
+   modules: Option[Path]=None) {
 
     val toParquet: Boolean = toParquetEach || toParquetAggregate
 

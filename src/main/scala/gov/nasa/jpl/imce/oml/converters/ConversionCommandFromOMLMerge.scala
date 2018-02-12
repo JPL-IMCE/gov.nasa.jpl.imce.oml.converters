@@ -148,6 +148,17 @@ object ConversionCommandFromOMLMerge {
 
       extents <- ResolverUtilities.resolveTables(ResolverUtilities.initializeResolver(), ts)
 
+      // List of module IRIs
+
+      _ <- conversions.modules match {
+        case Some(file) =>
+          internal
+            .writeModuleIRIs(ts.map { case (iri, _) => iri }, file)
+
+        case None =>
+          \/-(())
+      }
+
       _ <- if (conversions.toText)
         internal
           .toText(outCatalog, extents)
@@ -155,11 +166,19 @@ object ConversionCommandFromOMLMerge {
       else
         \/-(())
 
-      _ <- if (conversions.toOWL)
-        internal
-          .OMLResolver2Ontology
-          .convert(extents, outStore)
-      else
+      _ <- if (conversions.toOWL) {
+        for {
+          _ <- internal
+            .OMLResolver2Ontology
+            .convert(extents, outStore)
+          _ <- conversions.fuseki match {
+            case None =>
+              \/-(())
+            case Some(fuseki) =>
+              internal.tdbUpload(outCatalog, fuseki)
+          }
+        } yield ()
+      } else
         \/-(())
 
     } yield outCat -> ts

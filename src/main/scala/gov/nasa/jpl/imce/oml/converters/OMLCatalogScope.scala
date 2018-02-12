@@ -23,12 +23,14 @@ import java.lang.IllegalArgumentException
 
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
+import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.xml.catalog.scope.{CatalogScope, CatalogScopeManager}
 import gov.nasa.jpl.omf.scala.core.OMFError
 
 import scala.collection.immutable.{Seq, Set}
 import scala.util.control.Exception.nonFatalCatch
 import scala.{Option, StringContext, Unit}
+import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
 
@@ -36,7 +38,7 @@ case class OMLCatalogScope(omlCatalogFile: Path,
                            filePredicate: FileSystemUtilities.OMLFilePredicate,
                            omlCM: CatalogScopeManager,
                            omlCat: CatalogScope,
-                           omlFiles: Seq[Path])
+                           omlFiles: Seq[(tables.taggedTypes.IRI, Path)])
 
 object OMLCatalogScope {
 
@@ -63,7 +65,9 @@ object OMLCatalogScope {
 
       omlScope = omlCat.localFileScope(filePredicate)
 
-      omlFiles = omlScope.values.foldLeft(Set.empty[Path])(_ ++ _).to[Seq].sortBy(_.toString)
+      omlFiles = omlCat.iri2file(omlScope, filePredicate).map { case (iri, path) =>
+        tables.taggedTypes.iri(iri) -> path
+      }
 
       _ = verboseFiles.foreach { ps =>
         ps.println(

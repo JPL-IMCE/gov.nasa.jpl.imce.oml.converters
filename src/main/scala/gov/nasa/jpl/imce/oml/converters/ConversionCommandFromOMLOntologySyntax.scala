@@ -74,7 +74,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
   (implicit spark: SparkSession, sqlContext: SQLContext)
   : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
-    implicit val mOrder = new Ordering[OWLAPIOMF#ImmutableModule] {
+    implicit val mOrder: Ordering[OWLAPIOMF#ImmutableModule] = new Ordering[OWLAPIOMF#ImmutableModule] {
       override def compare(x: ImmutableModule, y: ImmutableModule): Int = x.iri.toString.compareTo(y.iri.toString)
     }
 
@@ -89,7 +89,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
     = for {
       m2i <- omlCatalogScope.omlFiles.foldLeft {
         emptyMutable2ImmutableModuleMap.right[OMFError.Throwables]
-      } { case (acc, inputFile) =>
+      } { case (acc, (_, inputFile)) =>
         for {
           prev <- acc
           loadResult <- inStore.loadModule(prev, inputFile.toIO)
@@ -190,6 +190,17 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         }
       }
 
+      // List of module IRIs
+
+      _ <- conversions.modules match {
+        case Some(file) =>
+          internal
+            .writeModuleIRIs(ts.map { case (m, _) => tables.taggedTypes.iri(m.iri.toString) }, file)
+
+        case None =>
+          \/-(())
+      }
+
       // 1) Convert from OMF/OWLAPI => OML Tables
 
       _ <- if (conversions.toOMLZip || conversions.isEmpty)
@@ -205,20 +216,28 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
       // 3) Convert from OML Resolver => OML Textual Concrete Syntax
 
-      _ <- if (conversions.toText)
+      _ <- if (conversions.toText) {
         internal
           .toText(outCatalog, extents)
           .leftMap(_.toThrowables)
-      else
+      } else
         \/-(())
 
       // 4) Convert from OML Resolver => OMF/OWLAPI again
 
-      _ <- if (conversions.toOWL)
-        internal
-          .OMLResolver2Ontology
-          .convert(extents, outStore)
-      else
+      _ <- if (conversions.toOWL) {
+        for {
+          _ <- internal
+            .OMLResolver2Ontology
+            .convert(extents, outStore)
+          _ <- conversions.fuseki match {
+            case None =>
+              \/-(())
+            case Some(fuseki) =>
+              internal.tdbUpload(outCatalog, fuseki)
+          }
+        } yield ()
+      } else
         \/-(())
 
       // 5) Convert from OML Tables => SQL

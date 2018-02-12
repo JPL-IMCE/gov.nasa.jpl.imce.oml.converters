@@ -75,7 +75,7 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
           .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
         (outStore, outCat) = out_store_cat
 
-        fileExtents <- OMLResourceSet.loadOMLResources(in_rs, inDir, omlCatalogScope.omlFiles)
+        fileExtents <- OMLResourceSet.loadOMLResources(in_rs, inDir, omlCatalogScope.omlFiles.map(_._2))
         _ = EcoreUtil.resolveAll(in_rs)
 
         omlUUIDg = uuid.JVMUUIDGenerator()
@@ -85,15 +85,28 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
         (_, sortedAPIModuleExtents) = o2rMap_sorted
 
+        // List of module IRIs
+
+        _ <- conversions.modules match {
+          case Some(file) =>
+            internal
+              .writeModuleIRIs(sortedAPIModuleExtents.map { case (m, _) => m.iri }, file)
+              .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
+
+          case None =>
+            ().right[EMFProblems]
+        }
+
         // Convert to tables
+
         _ <- if (conversions.toOMLZip)
           sortedAPIModuleExtents.foldLeft[EMFProblems \/ Unit](\/-(())) {
-            case (acc, (m, extent)) =>
+            case (acc, (_, extent)) =>
               for {
                 _ <- acc
                 m <- extent.singleModule match {
-                  case Success(m) =>
-                    \/-(m)
+                  case Success(module) =>
+                    \/-(module)
                   case Failure(t) =>
                     -\/(new EMFProblems(t))
                 }
@@ -118,12 +131,22 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
         // Convert to OWL
 
-        _ <- if (conversions.toOWL)
-          internal
+        _ <- if (conversions.toOWL) {
+          for {
+           _ <- internal
             .OMLResolver2Ontology
             .convert(sortedAPIModuleExtents.map(_._2), outStore)
             .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
-        else
+            _ <- conversions.fuseki match {
+              case None =>
+                ().right[EMFProblems]
+              case Some(fuseki) =>
+                internal
+                  .tdbUpload(outCatalog, fuseki)
+                  .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
+            }
+          } yield ()
+        } else
           ().right[EMFProblems]
 
         // Convert to OML

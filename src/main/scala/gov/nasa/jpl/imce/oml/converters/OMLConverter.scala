@@ -20,12 +20,14 @@ package gov.nasa.jpl.imce.oml.converters
 
 import java.io.{File, PrintStream}
 import java.lang.{IllegalArgumentException, System}
+import java.net.URL
 import java.util.Properties
 
 import ammonite.ops.{Path, pwd, up}
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SQLContext, SparkSession}
+import scopt.Read
 
 import scala.collection.immutable._
 import scala.{Array, Boolean, None, Option, Some, StringContext, Unit}
@@ -51,6 +53,10 @@ object OMLConverter {
     else
       Path.apply(f, pwd)
     p
+  }
+
+  implicit val urlReads: Read[URL] = Read.reads { s =>
+    new URL(s)
   }
 
   val smallIndent: String = "  "
@@ -216,6 +222,34 @@ object OMLConverter {
       .maxOccurs(1)
       .action { (catalog, c) =>
         c.copy(output = c.output.addCatalog(getAbsolutePath(catalog)))
+      }
+
+    opt[File]("output:modules")
+      .text(
+        s"""Output the IRIs of all OML modules.
+           |$helpIndent(Not applicable for 'diff' command).
+           |""".stripMargin)
+      .abbr("out:modules")
+      .optional()
+      .maxOccurs(1)
+      .action { (file, c) =>
+        c.copy(output = c.output.copy(modules = Some(getAbsolutePath(file))))
+      }
+
+    opt[URL]("output:fuseki")
+      .text(
+        s"""Output to a fuseki server where <value> is a fuseki server url of the form:
+           |${helpIndent}http://<hostname>:<port>/<datasetname> (i.e. without the '/data' suffix)
+           |${helpIndent}Requires output conversion with --owl or -o.
+           |${helpIndent}Requires the Jena Fuseki command 's-put' to be available on the path.
+           |${helpIndent}Requires the Jena Fuseki dataset to exist.
+           |$helpIndent(Not applicable for 'diff' command).
+           |""".stripMargin)
+      .abbr("out:fuseki")
+      .optional()
+      .maxOccurs(1)
+      .action { (url, c) =>
+        c.copy(output = c.output.copy(fuseki = Some(url)))
       }
 
     opt[File]("output")
@@ -389,11 +423,11 @@ object OMLConverter {
               case \/-(outCatalogPath) =>
                 val conf = internal.sparkConf(this.getClass.getSimpleName)
 
-                implicit val spark = SparkSession
+                implicit val spark: SparkSession = SparkSession
                   .builder()
                   .config(conf)
                   .getOrCreate()
-                implicit val sqlContext = spark.sqlContext
+                implicit val sqlContext: SQLContext = spark.sqlContext
 
                 ConversionCommandFromOMLMerge
                   .merge(
@@ -428,11 +462,11 @@ object OMLConverter {
   = {
     val conf = internal.sparkConf(this.getClass.getSimpleName)
 
-    implicit val spark = SparkSession
+    implicit val spark: SparkSession = SparkSession
       .builder()
       .config(conf)
       .getOrCreate()
-    implicit val sqlContext = spark.sqlContext
+    implicit val sqlContext: SQLContext = spark.sqlContext
 
     val props = new Properties()
     props.setProperty("useSSL", "false")
@@ -449,6 +483,19 @@ object OMLConverter {
           case Failure(t) =>
             -\/(Set(t))
         }
+
+      _ <- output.modules match {
+        case Some(file) =>
+          internal
+            .writeModuleIRIs(
+              omlTables.terminologyGraphs.map(_.iri) ++
+                omlTables.bundles.map(_.iri) ++
+                omlTables.descriptionBoxes.map(_.iri),
+              file)
+
+        case None =>
+          \/-(())
+      }
 
       _ <- if (output.toOMLZip)
         outputFolder match {
@@ -502,12 +549,12 @@ object OMLConverter {
 
     val conf = internal.sparkConf(this.getClass.getSimpleName)
 
-    implicit val spark = SparkSession
+    implicit val spark: SparkSession = SparkSession
       .builder()
       .config(conf)
       .getOrCreate()
 
-    implicit val sqlContext = spark.sqlContext
+    implicit val sqlContext: SQLContext = spark.sqlContext
 
     System.out.println(s"conversion=$conversion")
     System.out.println(s"# => ${omlCatalogScope.omlFiles.size} OML files to convert...")
