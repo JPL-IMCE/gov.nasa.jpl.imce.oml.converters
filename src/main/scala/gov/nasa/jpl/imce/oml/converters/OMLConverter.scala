@@ -67,7 +67,7 @@ object OMLConverter {
     head("BuildInfo", BuildInfo.toString)
 
     cmd("text")
-      .text(s"${smallIndent}Relative to an `oml.catalog.xml`, converts all OML textual syntax files, '*.oml' and/or '*.omlzip'")
+      .text(s"${smallIndent}Converts all input OML textual syntax files ('*.oml' and/or '*.omlzip') found in scope of an `oml.catalog.xml`")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromText))
@@ -76,7 +76,7 @@ object OMLConverter {
     note("")
 
     cmd("owl")
-      .text(s"${smallIndent}Relative to an `oml.catalog.xml`, converts all OML files in OWL2-DL + SWRL rules, '*.owl'")
+      .text(s"${smallIndent}Converts all input OML files in OWL2-DL + SWRL rules ('*.owl') found in scope of an `oml.catalog.xml`")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWL))
@@ -85,7 +85,7 @@ object OMLConverter {
     note("")
 
     cmd("json")
-      .text(s"${smallIndent}Relative to an `oml.catalog.xml`, converts all OML tabular json archive files, '*.omlzip'")
+      .text(s"${smallIndent}Converts all input OML tabular json archive files ('*.omlzip') found in scope of an `oml.catalog.xml`")
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWLZip))
@@ -179,7 +179,14 @@ object OMLConverter {
 
     help("help")
       .text(
-        s"""Prints usage information about the OML Directory Converter
+        s"""Prints usage information about the OML Converter.
+           |${helpIndent}For help about launcher arguments, try: -h.
+           |${helpIndent}To specify system properties, use:
+           |${helpIndent}  -Dkey1=val1 ... -DkeyN=valN -- <OML Converter command & option arguments>
+           |${helpIndent}Example for Apache SPARK properties:
+           |${helpIndent}  -Dspark.app.name=MyConversion -Dspark.master=local[8] ... -- ...
+           |${helpIndent}Example for Apache SPARK monitoring:
+           |${helpIndent}  -Dspark.eventLog.enabled=true -Dspark.eventLog.dir=file:///tmp/spark-events ... -- ...
            |${helpIndent}Note: current directory:
            |$helpIndent$pwd
            |""".stripMargin)

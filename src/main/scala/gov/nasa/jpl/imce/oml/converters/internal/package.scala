@@ -41,6 +41,7 @@ import org.apache.spark.sql.{SQLContext, SparkSession}
 import org.eclipse.emf.common.util.{URI => EURI}
 
 import scala.collection.immutable.{Seq, Set}
+import scala.util.Properties
 import scala.{Boolean, Left, None, Option, Right, Some, StringContext, Unit}
 import scala.Predef.{String, augmentString, require}
 import scalaz._
@@ -59,22 +60,25 @@ package object internal {
   }
 
   /**
-    * See https://spark.apache.org/docs/latest/monitoring.html
+    * Create a Spark Configuration
+    *
+    * For monitoring, see: https://spark.apache.org/docs/latest/monitoring.html
+    * Run with:
+    * `-Dspark.eventLog.enabled=true`
+    * `-Dspark.eventLog.dir=file:///tmp/spark-events`
+    *
+    * @param appName application name
+    * @return A SparkConf where:
+    *         - the application name is the value of the property `spark.app.name` if set, otherwise `appName`;
+    *         - the spark master is the value of the property `spark.master` if set, otherwise `local`.
     */
   protected[converters] def sparkConf(appName: String): SparkConf = {
-    val dir = new File("/tmp/spark-events")
-    if (!dir.exists()) {
-      dir.mkdir()
-    }
-
-    if (!dir.canWrite)
-      throw new IllegalArgumentException(
-        "The folder /tmp/spark-events must be writable!")
+    val spark_app_name = Properties.propOrElse("spark.app.name", appName)
+    val spark_master = Properties.propOrElse("spark.master", "local")
 
     new SparkConf()
-      .setMaster("local")
-      .setAppName(appName)
-      .set("spark.eventLog.enabled", "true")
+      .setAppName(spark_app_name)
+      .setMaster(spark_master)
   }
 
   protected[converters] def makeOutputDirectoryAndCopyCatalogIfNoOutputCatalog(
