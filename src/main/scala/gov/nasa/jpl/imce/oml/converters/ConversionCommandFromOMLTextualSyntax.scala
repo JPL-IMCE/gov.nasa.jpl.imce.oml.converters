@@ -22,7 +22,6 @@ import java.lang.System
 import java.util.Properties
 
 import ammonite.ops.{Path, up}
-import org.eclipse.emf.ecore.util.EcoreUtil
 import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, FileSystemUtilities, OMLResourceSet}
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
@@ -33,7 +32,7 @@ import gov.nasa.jpl.imce.xml.catalog.scope.CatalogScope
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
 
-import scala.collection.immutable.{List, Seq, Set}
+import scala.collection.immutable.{Iterable, List, Seq, Set}
 import scala.util.{Failure, Success}
 import scala.util.control.Exception.nonFatalCatch
 import scala.{None, Some, StringContext, Unit}
@@ -75,13 +74,15 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
           .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
         (outStore, outCat) = out_store_cat
 
-        fileExtents <- OMLResourceSet.loadOMLResources(in_rs, inDir, omlCatalogScope.omlFiles.map(_._2))
-        _ = EcoreUtil.resolveAll(in_rs)
+        omlFileScope = omlCatalogScope.omlFiles.values.to[Iterable]
+
+        fileModules <- OMLResourceSet.loadOMLResources(in_rs, inDir, omlFileScope)
+        _ = System.out.println(s"# Loaded all OML resources (no EcoreUtil.resolveAll!).")
 
         omlUUIDg = uuid.JVMUUIDGenerator()
         factory: api.OMLResolvedFactory = impl.OMLResolvedFactoryImpl(omlUUIDg)
 
-        o2rMap_sorted <- internal.OMLText2Resolver.convert(fileExtents)(factory)
+        o2rMap_sorted <- internal.OMLText2Resolver.convert(fileModules)(factory)
 
         (_, sortedAPIModuleExtents) = o2rMap_sorted
 

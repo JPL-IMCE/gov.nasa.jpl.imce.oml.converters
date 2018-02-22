@@ -19,21 +19,18 @@
 package gov.nasa.jpl.imce.oml.converters.utils
 
 import ammonite.ops.Path
-
 import gov.nasa.jpl.imce.oml.tables
-import gov.nasa.jpl.imce.oml.model.common.Extent
-import gov.nasa.jpl.imce.oml.dsl.OMLStandaloneSetup
+import gov.nasa.jpl.imce.oml.model.common.{Extent, Module}
 import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager, OMLExtensions}
+import gov.nasa.jpl.imce.oml.zip.{OMLSpecificationTables, OMLZipResource, OMLZipResourceSet}
 import org.eclipse.emf.common.util.URI
 import org.eclipse.emf.ecore.resource.Resource
-import org.eclipse.emf.ecore.util.EcoreUtil
-import org.eclipse.emf.ecore.xcore.XcoreStandaloneSetup
 import org.eclipse.xtext.resource.XtextResourceSet
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable._
 import scala.util.control.Exception._
-import scala.{Option, Some, StringContext, Unit}
+import scala.{Option, Some, StringContext}
 import scala.Predef.{ArrowAssoc, String}
 import scalaz._
 import Scalaz._
@@ -41,12 +38,7 @@ import Scalaz._
 object OMLResourceSet {
 
   def initializeResourceSet(): XtextResourceSet = {
-    XcoreStandaloneSetup.doSetup()
-    OMLStandaloneSetup.doSetup()
-
-    Resource.Factory.Registry.INSTANCE.getContentTypeToFactoryMap.put("omlzip", new gov.nasa.jpl.imce.oml.zip.OMLZipResourceFactory())
-    Resource.Factory.Registry.INSTANCE.getExtensionToFactoryMap.put("omlzip", new gov.nasa.jpl.imce.oml.zip.OMLZipResourceFactory())
-
+    OMLZipResourceSet.doSetup()
     new XtextResourceSet()
   }
 
@@ -69,22 +61,29 @@ object OMLResourceSet {
   }
 
   def getOMLExtents(rs: XtextResourceSet)
-  : EMFProblems \/ Set[Extent]
+  : EMFProblems \/ Set[Module]
   = {
     rs.getResources.asScala
-      .foldLeft[EMFProblems \/ Set[Extent]](Set.empty.right) { case (acc, r) =>
+      .foldLeft[EMFProblems \/ Set[Module]](Set.empty[Module].right) { case (acc, r) =>
       for {
-        extents <- acc
-        extent <- getOMLResourceExtent(r)
-      } yield extents + extent
+        prev <- acc
+        more <- getOMLResourceExtent(r)
+      } yield prev ++ more
     }
   }
 
   def getOMLResourceExtent(r: Resource)
-  : EMFProblems \/ Extent
+  : EMFProblems \/ Set[Module]
   = {
     import EMFFilterable._
-    val es: Seq[Extent] = r.getContents.selectByKindOf { case ext: Extent => ext }
+    val es: Set[Module] =
+      r
+        .getContents
+        .selectByKindOf { case ext: Extent => ext }
+        .to[Set]
+        .flatMap { ext =>
+          ext.getModules.asScala.to[Set]
+        }
     val nbErrors = r.getErrors.size
     val nbWarnings = r.getWarnings.size
     val message1: String = r.getErrors.asScala.foldLeft[String]("") { case (acc, d) =>
@@ -97,9 +96,6 @@ object OMLResourceSet {
     if (es.isEmpty)
       new EMFProblems(new java.lang.IllegalArgumentException(
         s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) does not have a toplevel OML Extent")).left
-    else if (es.size > 1)
-      new EMFProblems(new java.lang.IllegalArgumentException(
-        s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) should have 1 toplevel OML Extent, not ${es.size}")).left
     else if (0 < nbErrors)
       new EMFProblems(new java.lang.IllegalArgumentException(
         s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) => $nbErrors errors, $nbWarnings warnings\n$message2")).left
@@ -107,7 +103,7 @@ object OMLResourceSet {
       new EMFProblems(new java.lang.IllegalArgumentException(
         s"OMLResourceSet.getOMFResourceExtent(r=${r.getURI}) => $nbWarnings warnings\n$message2")).left
     else
-      es.head.right
+      es.right
   }
 
   def verifyAbsoluteCanonicalURI(uri: URI)
@@ -128,46 +124,41 @@ object OMLResourceSet {
       }
 
   def loadOMLResource(rs: XtextResourceSet, uri: URI)
-  : EMFProblems \/ Extent
+  : EMFProblems \/ Set[Module]
   = for {
     u <- verifyAbsoluteCanonicalURI(uri)
     r <- EMFProblems.nonFatalCatch(rs.getResource(u, true))
-    _ <- EMFProblems.nonFatalCatch[Unit](EcoreUtil.resolveAll(rs))
-    e <- getOMLResourceExtent(r)
-  } yield e
+    es <- getOMLResourceExtent(r)
+  } yield es
 
-  def loadOMLResources(rs: XtextResourceSet, dir: Path, omlFiles: Seq[Path])
-  : EMFProblems \/ Map[Extent, tables.taggedTypes.IRI]
-  = omlFiles.foldLeft(Map.empty[Extent, tables.taggedTypes.IRI].right[EMFProblems]) {
-    case (acc, f) =>
-      for {
-        extents <- acc
-        omlFile <- {
-          if (f.toIO.exists() && f.toIO.canRead)
-            \/-(f)
-          else
-            new EMFProblems(new java.lang.IllegalArgumentException(
-              s"loadOMLResources: Cannot read OML textual concrete syntax file: " +
-                f
-            )).left
-        }
-        extent <- OMLResourceSet.loadOMLResource(
-          rs,
-          URI.createFileURI(omlFile.toString))
-        iri <- {
-          val nbModules = extent.getModules.size
-          if (1 == nbModules)
-            tables.taggedTypes.iri(extent.getModules.get(0).iri()).right
-          else if (nbModules > 1)
-            new EMFProblems(new java.lang.IllegalArgumentException(
-              s"loadOMLResources: read $nbModules instead of 1 modules for $omlFile"
-            )).left
-          else
-            new EMFProblems(new java.lang.IllegalArgumentException(
-              s"loadOMLResources: no module read for $omlFile"
-            )).left
-        }
-      } yield extents + (extent -> iri)
+  def loadOMLResources(rs: XtextResourceSet, dir: Path, omlFiles: Iterable[Path])
+  : EMFProblems \/ Map[tables.taggedTypes.IRI, Module]
+  = {
+    val omlTables: OMLSpecificationTables = OMLZipResource.getOrInitializeOMLSpecificationTables(rs)
+    val result = omlFiles.foldLeft(Map.empty[tables.taggedTypes.IRI, Module].right[EMFProblems]) {
+      case (acc, f) =>
+        for {
+          prev <- acc
+          omlFile <- {
+            if (f.toIO.exists() && f.toIO.canRead)
+              \/-(f)
+            else
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"loadOMLResources: Cannot read OML textual concrete syntax file: " +
+                  f
+              )).left
+          }
+          modules <- OMLResourceSet.loadOMLResource(
+            rs,
+            URI.createFileURI(omlFile.toString))
+          _ = modules.foreach(omlTables.includeModule)
+          updated = modules.foldLeft(prev) { case (acc, module) =>
+            acc + (tables.taggedTypes.iri(module.iri()) -> module)
+          }
+        } yield updated
+    }
+    OMLZipResource.clearOMLSpecificationTables(rs)
+    result
   }
 
 }

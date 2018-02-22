@@ -34,8 +34,6 @@ package object converters {
     val normalizedTablesPath =
       (if (normalizedPath.endsWith(".owl"))
         normalizedPath.stripSuffix(".owl")
-      else if (normalizedPath.endsWith("/"))
-        normalizedPath.stripSuffix("/")
       else normalizedPath) + ".omlzip"
 
     val f1 = new URL(normalizedTablesPath)

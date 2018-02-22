@@ -23,13 +23,9 @@ import java.lang.{IllegalArgumentException, System}
 import java.net.URL
 
 import ammonite.ops.{%%, Path, cp, mkdir, pwd, rm, up, write}
-import gov.nasa.jpl.imce.oml.model
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
-import gov.nasa.jpl.imce.oml.converters.utils.{
-  EMFProblems,
-  FileSystemUtilities,
-  OMLResourceSet
-}
+import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, FileSystemUtilities, OMLResourceSet}
+import gov.nasa.jpl.imce.oml.model.common
 import gov.nasa.jpl.imce.oml.model.extensions.OMLExtensions
 import gov.nasa.jpl.imce.oml.resolver
 import gov.nasa.jpl.imce.oml.tables
@@ -194,33 +190,18 @@ package object internal {
       rs_cm_cat <- OMLResourceSet.initializeResourceSetWithCatalog(outCatalog)
       (rs, _, outCat) = rs_cm_cat
 
-      r2t <- extents.foldLeft {
-        internal.OMLResolver2Text().right[EMFProblems]
-      } {
-        case (acc, apiExtent) =>
-          for {
-            prev <- acc
-            next <- internal.OMLResolver2Text.convert(apiExtent, rs, prev)
-          } yield next
-      }
+      r2t <- internal.OMLResolver2Text.convert(extents, rs, internal.OMLResolver2Text())
 
       extentResources = {
         r2t.mappings.map {
-          case (iri, (_, omlExtent)) =>
-            import scala.compat.java8.FunctionConverters.asJavaConsumer
-
-            val moduleNormalizer =
-              (m: model.common.Module) => OMLExtensions.normalize(m)
-
-            val omlIRI =
-              if (iri.endsWith("/"))
-                iri.replaceFirst("^(.*)/([a-zA-Z0-9.]+)/$", "$1/$2.oml")
-              else
-                iri + ".oml"
+          case (iri, (_, omlModule)) =>
+            val omlIRI = iri + ".oml"
             val resolvedIRI = outCat.resolveURI(omlIRI)
             val uri: EURI = EURI.createURI(resolvedIRI)
             val r = rs.createResource(uri)
-            omlExtent.getModules.forEach(asJavaConsumer(moduleNormalizer))
+            val omlExtent = common.CommonFactory.eINSTANCE.createExtent()
+            OMLExtensions.normalize(omlModule)
+            omlExtent.getModules.add(omlModule)
             r.getContents.add(omlExtent)
             r
         }

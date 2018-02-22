@@ -52,7 +52,6 @@ case class EMFProblems
 
   def this(e: java.lang.Throwable) = {
     this(exceptions = e :: Nil)
-    e.fillInStackTrace()
   }
 
   require(errors.nonEmpty || warnings.nonEmpty || exceptions.nonEmpty)

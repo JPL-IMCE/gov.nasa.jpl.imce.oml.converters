@@ -20,6 +20,7 @@ package gov.nasa.jpl.imce.oml.converters
 
 import java.io.PrintStream
 import java.lang.IllegalArgumentException
+import java.net.URL
 
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
@@ -27,7 +28,7 @@ import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.xml.catalog.scope.{CatalogScope, CatalogScopeManager}
 import gov.nasa.jpl.omf.scala.core.OMFError
 
-import scala.collection.immutable.{Seq, Set}
+import scala.collection.immutable.{Map, Seq, Set}
 import scala.util.control.Exception.nonFatalCatch
 import scala.{Option, StringContext, Unit}
 import scala.Predef.ArrowAssoc
@@ -38,7 +39,7 @@ case class OMLCatalogScope(omlCatalogFile: Path,
                            filePredicate: FileSystemUtilities.OMLFilePredicate,
                            omlCM: CatalogScopeManager,
                            omlCat: CatalogScope,
-                           omlFiles: Seq[(tables.taggedTypes.IRI, Path)])
+                           omlFiles: Map[tables.taggedTypes.IRI, Path])
 
 object OMLCatalogScope {
 
@@ -60,7 +61,8 @@ object OMLCatalogScope {
             )).left
         }
         .apply {
-          omlCat.parseCatalog(inCatalog.toIO.toURI.toURL).right
+          val url: URL = inCatalog.toIO.toURI.toURL
+          omlCat.parseCatalog(url).right[OMFError.Throwables]
         }
 
       omlScope = omlCat.localFileScope(filePredicate)
@@ -69,11 +71,14 @@ object OMLCatalogScope {
         tables.taggedTypes.iri(iri) -> path
       }
 
+      omlScopeGrouped = omlScope.groupBy(_._2).map { case (key, paths) => key -> paths.keys.to[Seq].sorted }
+
       _ = verboseFiles.foreach { ps =>
         ps.println(
-          s"Resolved ${omlFiles.size} files across ${omlScope.size} catalog rewrite rules.")
-        omlScope.keys.to[Seq].sorted.foreach { uriStartPrefix =>
-          val files = omlScope(uriStartPrefix)
+          s"Resolved ${omlFiles.size} files across ${omlScopeGrouped.size} catalog rewrite rules.")
+        omlScopeGrouped.keys.to[Seq].sorted.foreach { key =>
+          val (_, uriStartPrefix) = key
+          val files = omlScopeGrouped(key)
           ps.println(
             s"=> ${files.size} resolved based on the rewrite rule for: $uriStartPrefix")
           files.foreach { f =>
