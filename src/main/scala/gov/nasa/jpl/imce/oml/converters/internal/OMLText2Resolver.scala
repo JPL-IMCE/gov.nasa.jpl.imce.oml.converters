@@ -2676,7 +2676,7 @@ object OMLText2Resolver {
     c33 <- c32.foldLeft(c32.right[EMFProblems])(convertUnreifiedRelationships)
 
     // ChainRules
-    c40 = c32
+    c40 = c33
 
     t2rs = c40.values.to[Set]
     allAs = t2rs.flatMap(_.aspects).toMap

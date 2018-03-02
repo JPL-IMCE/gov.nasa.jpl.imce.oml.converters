@@ -9,4 +9,4 @@ gov.nasa.jpl.imce.oml.converters 0.9.4 is a build based on OML 0.9.5
   - All sorting is now performed using [Java 8 Parallel Stream sort](https://docs.oracle.com/javase/8/docs/api/java/util/stream/Stream.html#sorted-java.util.Comparator-)
   - The sequential java sorting is no longer used; therefore, TimSort or the default MergeSort are no longer relevant.
  
-    
+## [#53 oml text resolution problem.](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/53)
