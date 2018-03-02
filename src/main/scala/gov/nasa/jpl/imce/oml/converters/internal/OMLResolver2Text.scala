@@ -50,6 +50,7 @@ case class OMLResolver2Text
 
  aspects: Map[api.Aspect, terminologies.Aspect] = Map.empty,
  concepts: Map[api.Concept, terminologies.Concept] = Map.empty,
+ reifiedRelationshipRestrictions: Map[api.ReifiedRelationshipRestriction, terminologies.ReifiedRelationshipRestriction] = Map.empty,
  reifiedRelationships: Map[api.ReifiedRelationship, terminologies.ReifiedRelationship] = Map.empty,
  forwardProperrties: Map[api.ForwardProperty, terminologies.ForwardProperty] = Map.empty,
  inverseProperties: Map[api.InverseProperty, terminologies.InverseProperty] = Map.empty,
@@ -112,6 +113,7 @@ case class OMLResolver2Text
   : Option[terminologies.Entity] = e match {
     case a: api.Aspect => aspects.get(a)
     case c: api.Concept => concepts.get(c)
+    case rr: api.ReifiedRelationshipRestriction => reifiedRelationshipRestrictions.get(rr)
     case rr: api.ReifiedRelationship => reifiedRelationships.get(rr)
     case _ => None
   }
@@ -127,8 +129,15 @@ case class OMLResolver2Text
       inverseProperties.get(r0)
   }
 
+  def conceptualRelationshipLookup(rl: api.ConceptualRelationship)
+  : Option[terminologies.ConceptualRelationship] = rl match {
+    case rr: api.ReifiedRelationshipRestriction => reifiedRelationshipRestrictions.get(rr)
+    case rr: api.ReifiedRelationship => reifiedRelationships.get(rr)
+  }
+
   def entityRelationshipLookup(rl: api.EntityRelationship)
   : Option[terminologies.EntityRelationship] = rl match {
+    case rr: api.ReifiedRelationshipRestriction => reifiedRelationshipRestrictions.get(rr)
     case rr: api.ReifiedRelationship => reifiedRelationships.get(rr)
     case ur: api.UnreifiedRelationship => unreifiedRelationships.get(ur)
     case _ => None
@@ -157,7 +166,7 @@ case class OMLResolver2Text
       singletonInstanceStructuredDataPropertyValues.get(ac)
     case ac: api.StructuredDataPropertyTuple =>
       structuredDataPropertyTuples.get(ac)
-    }
+  }
 
   def annotationPropertyLookup(ap0: api.AnnotationProperty)
   : Option[common.AnnotationProperty]
@@ -213,23 +222,23 @@ case class OMLResolver2Text
     case ax: api.ReifiedRelationshipInstanceDomain =>
       reifiedRelationshipInstanceDomains.get(ax)
     case ax: api.ReifiedRelationshipInstanceRange =>
-			reifiedRelationshipInstanceRanges.get(ax)
+      reifiedRelationshipInstanceRanges.get(ax)
     case ax: api.UnreifiedRelationshipInstanceTuple =>
-			unreifiedRelationshipInstanceTuples.get(ax)
+      unreifiedRelationshipInstanceTuples.get(ax)
     case ax: api.SingletonInstanceStructuredDataPropertyValue =>
-			singletonInstanceStructuredDataPropertyValues.get(ax)
+      singletonInstanceStructuredDataPropertyValues.get(ax)
     case ax: api.SingletonInstanceScalarDataPropertyValue =>
-			singletonInstanceScalarDataPropertyValues.get(ax)
+      singletonInstanceScalarDataPropertyValues.get(ax)
     case ax: api.StructuredDataPropertyTuple =>
-			structuredDataPropertyTuples.get(ax)
+      structuredDataPropertyTuples.get(ax)
     case ax: api.ScalarDataPropertyValue =>
-			scalarDataPropertyValues.get(ax)
+      scalarDataPropertyValues.get(ax)
     case ax: api.ChainRule =>
-			chainRules.get(ax)
+      chainRules.get(ax)
     case ax: api.RuleBodySegment =>
-			ruleBodySegments.get(ax)
+      ruleBodySegments.get(ax)
     case ax: api.SegmentPredicate =>
-			segmentPredicates.get(ax)
+      segmentPredicates.get(ax)
   }
 
 }
@@ -274,21 +283,25 @@ object OMLResolver2Text {
       c30.right[EMFProblems],
       extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement.selectByKindOf { case (rr: api.ReifiedRelationship, t: api.TerminologyBox) => rr -> t }),
       List.empty)
-    c32 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c31.right[EMFProblems])(convertUnreifiedRelationship)
+    c32 <- convertReifiedRelationshipRestrictions(
+      c31.right[EMFProblems],
+      extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement.selectByKindOf { case (rr: api.ReifiedRelationshipRestriction, t: api.TerminologyBox) => rr -> t }),
+      List.empty)
+    c33 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c32.right[EMFProblems])(convertUnreifiedRelationship)
 
     // DataTypes
 
-    c33 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c32.right[EMFProblems])(convertStructure)
-    c34 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c33.right[EMFProblems])(convertScalar)
-    c35 <- convertRestrictedDataRanges(
-      c34.right[EMFProblems],
+    c34 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c33.right[EMFProblems])(convertStructure)
+    c35 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c34.right[EMFProblems])(convertScalar)
+    c36 <- convertRestrictedDataRanges(
+      c35.right[EMFProblems],
       extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement.selectByKindOf { case (dr: api.RestrictedDataRange, t: api.TerminologyBox) => dr -> t }),
       List.empty)
-    c36 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c35.right[EMFProblems])(convertScalarOneOfLiteralAxiom)
+    c37 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c36.right[EMFProblems])(convertScalarOneOfLiteralAxiom)
 
     // DataRelationships
 
-    c40 = c36
+    c40 = c37
     c41 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c40.right[EMFProblems])(convertEntityScalarDataProperty)
     c42 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c41.right[EMFProblems])(convertEntityStructuredDataProperty)
     c43 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c42.right[EMFProblems])(convertScalarDataProperty)
@@ -618,6 +631,60 @@ object OMLResolver2Text {
   }
 
   // Relationships
+
+  private def convertReifiedRelationshipRestrictions
+  (acc: ConversionResult,
+   rrs: Iterable[(api.ReifiedRelationshipRestriction, api.TerminologyBox)],
+   queue: List[(api.ReifiedRelationshipRestriction, api.TerminologyBox)],
+   progress: Boolean = false)
+  : ConversionResult
+  = if (rrs.isEmpty) {
+    if (queue.isEmpty)
+      acc
+    else if (progress)
+      convertReifiedRelationshipRestrictions(acc, queue, List.empty)
+    else
+      new EMFProblems(new IllegalArgumentException(
+        s"convertReifiedRelationshipRestrictions: no progress with ${queue.size} reified relationships in the queue: " +
+          queue.map(_._2.name).mkString(", "))).left
+  } else acc match {
+    case \/-(r2t) =>
+      val (rr0, t0) = rrs.head
+      val ext0 = r2t.moduleExtents(t0)
+      val ns0 = rr0.allNestedElements()(ext0)
+      ( r2t.tboxLookup(t0),
+        r2t.entityLookup(rr0.source),
+        r2t.entityLookup(rr0.target) ) match {
+        case (Some(t1), Some(rs1), Some(rt1)) =>
+          val rr1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipRestriction()
+
+          rr1.setTbox(t1)
+          rr1.setName(normalizeName(rr0.name))
+          rr1.setSource(rs1)
+          rr1.setTarget(rt1)
+
+          val next = r2t.copy(
+            reifiedRelationshipRestrictions = r2t.reifiedRelationshipRestrictions + (rr0 -> rr1)
+          ).right
+
+          convertReifiedRelationshipRestrictions(next, rrs.tail, queue, progress = true)
+
+        case (Some(_), _, _) =>
+          val rest = rrs.tail
+          if (rest.isEmpty)
+            convertReifiedRelationshipRestrictions(acc, rrs.head :: queue, List.empty, progress)
+          else
+            convertReifiedRelationshipRestrictions(acc, rest, rrs.head :: queue)
+
+        case (None, _, _) =>
+          new EMFProblems(new java.lang.IllegalArgumentException(
+            s"convertReifiedRelationshipRestrictions: Failed to resolve tbox: $t0 for defining ReifiedRelationship: $rr0"
+          )).left
+      }
+
+    case _ =>
+      acc
+  }
 
   private def convertReifiedRelationships
   (acc: ConversionResult,
@@ -1633,17 +1700,17 @@ object OMLResolver2Text {
         rri1 = descriptions.DescriptionsFactory.eINSTANCE.createReifiedRelationshipInstance()
         upd <- (
           r2t.ds.get(d0),
-          r2t.reifiedRelationships.get(rri0.singletonReifiedRelationshipClassifier)) match {
+          r2t.conceptualRelationshipLookup(rri0.singletonConceptualRelationshipClassifier)) match {
           case (Some(d1), Some(rr1)) =>
             rri1.setDescriptionBox(d1)
             rri1.setName(normalizeName(rri0.name))
-            rri1.setSingletonReifiedRelationshipClassifier(rr1)
+            rri1.setSingletonConceptualRelationshipClassifier(rr1)
             r2t.copy(conceptualEntitySingletonInstances = r2t.conceptualEntitySingletonInstances + (rri0 -> rri1)).right
           case (d1, rr1) =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertReifiedRelationshipInstance: Failed to resolve " +
                 d1.fold(s" dbox: ${d0.iri}")(_ => "") +
-                rr1.fold(s" reified relationship: ${rri0.singletonReifiedRelationshipClassifier}")(_ => ""))
+                rr1.fold(s" reified relationship: ${rri0.singletonConceptualRelationshipClassifier}")(_ => ""))
             ).left
         }
       } yield upd

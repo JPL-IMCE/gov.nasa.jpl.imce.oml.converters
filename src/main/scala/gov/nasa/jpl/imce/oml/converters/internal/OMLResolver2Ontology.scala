@@ -197,8 +197,9 @@ object OMLResolver2Ontology {
 
     c50 = c4N
     c51 <- convertReifiedRelationships(c50)
-    c52 <- convertUnreifiedRelationships(c51)
-    c5N = c52
+    c52 <- convertReifiedRelationshipRestrictions(c51)
+    c53 <- convertUnreifiedRelationships(c52)
+    c5N = c53
 
     // DataTypes
 
@@ -560,6 +561,64 @@ object OMLResolver2Ontology {
   }
 
   // Relationships
+
+  private def convertReifiedRelationshipRestrictions(r2o: OMLResolver2Ontology)
+  : ResolverResult
+  = {
+    val tuples = r2o.extents.to[Seq].flatMap { ext =>
+      ext
+        .terminologyBoxOfTerminologyBoxStatement
+        .selectByKindOf { case (rr: api.ReifiedRelationshipRestriction, t: api.TerminologyBox) => (ext, rr, t) }
+    }
+
+    convertReifiedRelationshipRestrictions(r2o.right, tuples, List.empty)(r2o.omfStore)
+  }
+
+  private def convertReifiedRelationshipRestrictions
+  (acc: ResolverResult,
+   rrs: Iterable[(api.Extent, api.ReifiedRelationshipRestriction, api.TerminologyBox)],
+   queue: List[(api.Extent, api.ReifiedRelationshipRestriction, api.TerminologyBox)],
+   progress: Boolean = false)
+  (implicit omfStore: owlapi.OWLAPIOMF#Store)
+  : ResolverResult
+  = if (rrs.isEmpty) {
+    if (queue.isEmpty)
+      acc
+    else if (progress)
+      convertReifiedRelationshipRestrictions(acc, queue, List.empty)
+    else
+      Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
+        s"convertReifiedRelationshipRestrictions: no progress with ${queue.size} reified relationships in the queue: " +
+          queue.map(_._2.name).mkString(", "))).left
+  } else acc match {
+    case \/-(r2o) =>
+      val (ext, rr0, t0) = rrs.head
+      ( r2o.lookupEntity(rr0.source),
+        r2o.lookupEntity(rr0.target)) match {
+        case (Some(rs1), Some(rt1)) =>
+         val updated = for {
+            t1 <- r2o.getTbox(t0)
+            rr1 <- r2o.ops.addReifiedRelationshipRestriction(
+              t1,
+              tables.taggedTypes.localName(rr0.name),
+              rs1, rt1)
+
+          } yield r2o.copy(
+            reifiedRelationshipRestrictions = r2o.reifiedRelationshipRestrictions + (rr0 -> rr1))
+
+          convertReifiedRelationshipRestrictions(updated, rrs.tail, queue, progress = true)
+
+        case (_, _) =>
+          val rest = rrs.tail
+          if (rest.isEmpty)
+            convertReifiedRelationshipRestrictions(acc, rrs.head :: queue, List.empty, progress)
+          else
+            convertReifiedRelationshipRestrictions(acc, rest, rrs.head :: queue)
+      }
+
+    case _ =>
+      acc
+  }
 
   private def convertReifiedRelationships(r2o: OMLResolver2Ontology)
   : ResolverResult
@@ -1330,6 +1389,13 @@ object OMLResolver2Ontology {
                 }
               }
 
+            case (Some(rr0: api.ReifiedRelationshipRestriction), _, _, _, _, _) =>
+              r2o.lookupReifiedRelationshipRestriction(rr0)(ext).flatMap { rr1 =>
+                r2o.ops.addSegmentPredicate(t1, s1, predicate=Some(rr1))(r2o.omfStore).map { p1 =>
+                  (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
+                }
+              }
+
             case (Some(rr0: api.ReifiedRelationship), _, _, _, _, _) =>
               r2o.lookupReifiedRelationship(rr0)(ext).flatMap { rr1 =>
                 r2o.ops.addSegmentPredicate(t1, s1, predicate=Some(rr1))(r2o.omfStore).map { p1 =>
@@ -1477,7 +1543,7 @@ object OMLResolver2Ontology {
       for {
         r2o <- acc
         d1 <- r2o.getDbox(d0)
-        rr1 <- r2o.lookupReifiedRelationship(ax0.singletonReifiedRelationshipClassifier)
+        rr1 <- r2o.lookupConceptualRelationship(ax0.singletonConceptualRelationshipClassifier)
         ax1 <- r2o.ops.addReifiedRelationshipInstance(d1, rr1, tables.taggedTypes.localName(ax0.name))(r2o.omfStore)
       } yield r2o.copy(conceptualEntitySingletonInstances = r2o.conceptualEntitySingletonInstances + (ax0 -> ax1))
   }
@@ -1688,6 +1754,10 @@ case class OMLResolver2Ontology
 
  concepts
  : Map[api.Concept, owlapi.types.terms.Concept]
+ = Map.empty,
+
+ reifiedRelationshipRestrictions
+ : Map[api.ReifiedRelationshipRestriction, owlapi.types.terms.ReifiedRelationshipRestriction]
  = Map.empty,
 
  reifiedRelationships
@@ -1965,6 +2035,35 @@ case class OMLResolver2Ontology
     case None =>
       Set[java.lang.Throwable](new IllegalArgumentException(
         s"OMLResolver2Ontology.lookupConcept(c=${c0.iri()}) failed")).left
+  }
+
+  def lookupConceptualRelationship(cr0: api.ConceptualRelationship)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.ConceptualRelationship
+  = cr0 match {
+    case rr0: api.ReifiedRelationship =>
+    reifiedRelationships.get(rr0) match {
+      case Some(rr1) =>
+        rr1.right
+      case None =>
+        Set[java.lang.Throwable](new IllegalArgumentException(
+          s"OMLResolver2Ontology.lookupConceptualRelationship(rr=${rr0.iri()}) failed")).left
+    }
+    case rs0: api.ReifiedRelationshipRestriction =>
+      reifiedRelationshipRestrictions.get(rs0) match {
+        case Some(rs1) =>
+          rs1.right
+        case None =>
+          Set[java.lang.Throwable](new IllegalArgumentException(
+            s"OMLResolver2Ontology.lookupConceptualRelationship(rr=${rs0.iri()}) failed")).left
+      }
+  }
+
+  def lookupReifiedRelationshipRestriction(rr0: api.ReifiedRelationshipRestriction)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.ReifiedRelationshipRestriction
+  = reifiedRelationshipRestrictions.get(rr0) match {
+    case Some(rr1) =>
+      rr1.right
+    case None =>
+      Set[java.lang.Throwable](new IllegalArgumentException(
+        s"OMLResolver2Ontology.lookupReifiedRelationshipRestriction(rr=${rr0.iri()}) failed")).left
   }
 
   def lookupReifiedRelationship(rr0: api.ReifiedRelationship)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.ReifiedRelationship

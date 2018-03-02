@@ -1,0 +1,7 @@
+gov.nasa.jpl.imce.oml.converters 0.9.3 is a build based on OML 0.9.2
+
+# Issues Resolved:
+
+- [#49 Converter is unable to read oml.catalog.xml if it is in a directory that contains spaces](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/49)
+
+- [#50 Update for OML with possibly circular OML ModuleEdges](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/50)

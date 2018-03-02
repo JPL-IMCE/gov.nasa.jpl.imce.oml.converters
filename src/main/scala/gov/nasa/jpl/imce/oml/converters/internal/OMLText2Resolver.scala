@@ -53,6 +53,7 @@ case class OMLText2Resolver
 
  aspects: Map[Aspect, api.Aspect] = Map.empty,
  concepts: Map[Concept, api.Concept] = Map.empty,
+ reifiedRelationshipRestrictions: Map[ReifiedRelationshipRestriction, api.ReifiedRelationshipRestriction] = Map.empty,
  reifiedRelationships: Map[ReifiedRelationship, api.ReifiedRelationship] = Map.empty,
  forwardProperties: Map[ForwardProperty, api.ForwardProperty] = Map.empty,
  inverseProperties: Map[InverseProperty, api.InverseProperty] = Map.empty,
@@ -138,6 +139,8 @@ case class OMLText2Resolver
       aspects.get(x)
     case x: Concept =>
       concepts.get(x)
+    case x: ReifiedRelationshipRestriction =>
+      reifiedRelationshipRestrictions.get(x)
     case x: ReifiedRelationship =>
       reifiedRelationships.get(x)
     case x: ForwardProperty =>
@@ -193,8 +196,14 @@ case class OMLText2Resolver
   def entityLookup(e: Entity): Option[api.Entity] = e match {
     case a: Aspect => aspects.get(a)
     case c: Concept => concepts.get(c)
+    case rs: ReifiedRelationshipRestriction => reifiedRelationshipRestrictions.get(rs)
     case rr: ReifiedRelationship => reifiedRelationships.get(rr)
     case _ => None
+  }
+
+  def conceptualRelationshipLookup(e: ConceptualRelationship): Option[api.ConceptualRelationship] = e match {
+    case rs: ReifiedRelationshipRestriction => reifiedRelationshipRestrictions.get(rs)
+    case rr: ReifiedRelationship => reifiedRelationships.get(rr)
   }
 
   def restrictableRelationshipLookup
@@ -595,6 +604,78 @@ object OMLText2Resolver {
         state
     }
   }
+  protected def convertReifiedRelationshipRestrictions
+  (state: Map[Module, OMLText2Resolver])
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Module, OMLText2Resolver]
+  = {
+    import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+
+    val rrs: Iterable[ReifiedRelationshipRestriction]
+    = state.foldLeft(Seq.empty[ReifiedRelationshipRestriction]) {
+      case (prev, (tbox: TerminologyBox, _)) =>
+        val ss = tbox.getBoxStatements.selectByKindOf { case s: ReifiedRelationshipRestriction => s }
+        prev ++ ss
+      case (prev, _) =>
+        prev
+    }
+
+    val result = convertReifiedRelationshipRestrictions(state.right, rrs, List.empty)
+    result
+  }
+
+  @scala.annotation.tailrec
+  protected def convertReifiedRelationshipRestrictions
+  (state: EMFProblems \/ Map[Module, OMLText2Resolver],
+   rrs: Iterable[ReifiedRelationshipRestriction],
+   queue: List[ReifiedRelationshipRestriction],
+   progress: Boolean = false)
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Module, OMLText2Resolver]
+  = if (rrs.isEmpty) {
+    if (queue.isEmpty)
+      state
+    else if (progress)
+      convertReifiedRelationshipRestrictions(state, queue, List.empty)
+    else
+      new EMFProblems(new java.lang.IllegalArgumentException(
+        s"convertReifiedRelationshipRestrictions(...): Failed to resolve " +
+          queue.map(_.getName).mkString(", ")
+      )).left
+  } else
+    state match {
+      case \/-(prev) =>
+        val rri = rrs.head
+        val tboxi = rri.getTbox
+        val o2ri = prev(tboxi)
+        val sourcei = rri.getSource
+        val targeti = rri.getTarget
+        ( prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
+          prev.get(sourcei.getTbox).flatMap(_.entityLookup(sourcei)),
+          prev.get(targeti.getTbox).flatMap(_.entityLookup(targeti))) match {
+          case (Some(tboxj), Some(sourcej), Some(targetj)) =>
+            val (rj1, rrj) = f.createReifiedRelationshipRestriction(
+              extent = o2ri.rextent,
+              tbox = tboxj,
+              source = sourcej,
+              target = targetj,
+              name = tables.taggedTypes.localName(rri.name()))
+
+            val o2rj = o2ri.copy(rextent = rj1,
+              reifiedRelationshipRestrictions = o2ri.reifiedRelationshipRestrictions + (rri -> rrj)
+            )
+            val next = prev.updated(tboxi, o2rj)
+            convertReifiedRelationshipRestrictions(next.right, rrs.tail, queue, progress = true)
+          case (tboxj, sourcej, targetj) =>
+            val rest = rrs.tail
+            if (rest.isEmpty)
+              convertReifiedRelationshipRestrictions(state, rrs.head :: queue, List.empty, progress)
+            else
+              convertReifiedRelationshipRestrictions(state, rest, rrs.head :: queue)
+        }
+      case _ =>
+        state
+    }
 
   protected def convertReifiedRelationships
   (state: Map[Module, OMLText2Resolver])
@@ -753,6 +834,7 @@ object OMLText2Resolver {
   ( t2r: OMLText2Resolver,
     allAs: Map[Aspect, api.Aspect],
     allCs: Map[Concept, api.Concept],
+    allRSs: Map[ReifiedRelationshipRestriction, api.ReifiedRelationshipRestriction],
     allRRs: Map[ReifiedRelationship, api.ReifiedRelationship],
     allFwds: Map[ForwardProperty, api.ForwardProperty],
     allInvs: Map[InverseProperty, api.InverseProperty],
@@ -821,6 +903,28 @@ object OMLText2Resolver {
                 new EMFProblems(new java.lang.IllegalArgumentException(
                   s"convertSegmentPredicates: Failed to resolve SegmentPredicate with:\n" +
                     s" - predicate (Concept): ${c0.abbrevIRI()}\n"
+                )).left
+            }
+          case rr0: ReifiedRelationshipRestriction =>
+            allRSs.get(rr0) match {
+              case Some(rr1) =>
+                val (e2, spj) = f.createSegmentPredicate(e1, segj,
+                  predicate = Some(rr1),
+                  reifiedRelationshipSource = None,
+                  reifiedRelationshipInverseSource = None,
+                  reifiedRelationshipTarget = None,
+                  reifiedRelationshipInverseTarget = None,
+                  unreifiedRelationshipInverse = None)
+                t2r
+                  .copy(
+                    rextent = e2,
+                    ruleBodySegments = t2r.ruleBodySegments + (segi -> segj),
+                    segmentPredicates = t2r.segmentPredicates + (spi -> spj))
+                  .right
+              case None =>
+                new EMFProblems(new java.lang.IllegalArgumentException(
+                  s"convertSegmentPredicates: Failed to resolve SegmentPredicate with:\n" +
+                    s" - predicate (ReifiedRelationshipRestriction): ${rr0.abbrevIRI()}\n"
                 )).left
             }
           case rr0: ReifiedRelationship =>
@@ -1056,7 +1160,7 @@ object OMLText2Resolver {
       case \/-(t2s) =>
         nexti match {
           case Some(iseg) =>
-            convertSegmentPredicates(t2s, allAs, allCs, allRRs, allFwds, allInvs, allURs, None, Some(segj), iseg)
+            convertSegmentPredicates(t2s, allAs, allCs, allRSs, allRRs, allFwds, allInvs, allURs, None, Some(segj), iseg)
           case None =>
             t2s.right
         }
@@ -1069,6 +1173,7 @@ object OMLText2Resolver {
   protected def convertChainRules
   (allAs: Map[Aspect, api.Aspect],
    allCs: Map[Concept, api.Concept],
+   allRSs: Map[ReifiedRelationshipRestriction, api.ReifiedRelationshipRestriction],
    allRRs: Map[ReifiedRelationship, api.ReifiedRelationship],
    allFwds: Map[ForwardProperty, api.ForwardProperty],
    allInvs: Map[InverseProperty, api.InverseProperty],
@@ -1099,7 +1204,7 @@ object OMLText2Resolver {
                     name = tables.taggedTypes.localName(cri.getName),
                     head = urj)
                   val o2rj1 = o2ri.copy(rextent = rj, chainRules = o2ri.chainRules + (cri -> crj))
-                  convertSegmentPredicates(o2rj1, allAs, allCs, allRRs, allFwds, allInvs, allURs, Some(crj), None, segi)
+                  convertSegmentPredicates(o2rj1, allAs, allCs, allRSs, allRRs, allFwds, allInvs, allURs, Some(crj), None, segi)
 
                 case (tboxj, urj, segi) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -2127,10 +2232,10 @@ object OMLText2Resolver {
             prev <- acc
             o2ri = prev(dbox)
             dboxi = di.descriptionBox()
-            cli = di.getSingletonReifiedRelationshipClassifier
+            cli = di.getSingletonConceptualRelationshipClassifier
             o2rj <-
               (prev.get(dboxi).flatMap(_.dboxes.get(dboxi)),
-                prev.get(cli.getTbox).flatMap(_.reifiedRelationships.get(cli))) match {
+                prev.get(cli.getTbox).flatMap(_.conceptualRelationshipLookup(cli))) match {
                 case (Some(dboxj), Some(clj)) =>
                   val (rj, dj) = f.createReifiedRelationshipInstance(
                     o2ri.rextent,
@@ -2143,7 +2248,7 @@ object OMLText2Resolver {
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
                     s"convertReifiedRelationshipInstances: Cannot find: " +
-                      s"reified relationship: ${di.getSingletonReifiedRelationshipClassifier.abbrevIRI}"
+                      s"reified relationship: ${di.getSingletonConceptualRelationshipClassifier.abbrevIRI}"
                   )).left
               }
             next = prev.updated(dbox, o2rj)
@@ -2566,7 +2671,9 @@ object OMLText2Resolver {
 
     c31 <- convertReifiedRelationships(c30)
 
-    c32 <- c31.foldLeft(c31.right[EMFProblems])(convertUnreifiedRelationships)
+    c32 <- convertReifiedRelationshipRestrictions(c31)
+
+    c33 <- c32.foldLeft(c32.right[EMFProblems])(convertUnreifiedRelationships)
 
     // ChainRules
     c40 = c32
@@ -2574,12 +2681,13 @@ object OMLText2Resolver {
     t2rs = c40.values.to[Set]
     allAs = t2rs.flatMap(_.aspects).toMap
     allCs = t2rs.flatMap(_.concepts).toMap
+    allRSs = t2rs.flatMap(_.reifiedRelationshipRestrictions).toMap
     allRRs = t2rs.flatMap(_.reifiedRelationships).toMap
     allFwds = t2rs.flatMap(_.forwardProperties).toMap
     allInvs = t2rs.flatMap(_.inverseProperties).toMap
     allURs = t2rs.flatMap(_.unreifiedRelationships).toMap
 
-    c41 <- c40.foldLeft(c40.right[EMFProblems])(convertChainRules(allAs, allCs, allRRs, allFwds, allInvs, allURs))
+    c41 <- c40.foldLeft(c40.right[EMFProblems])(convertChainRules(allAs, allCs, allRSs, allRRs, allFwds, allInvs, allURs))
 
     // DataTypes
 
