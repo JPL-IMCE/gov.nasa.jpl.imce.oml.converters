@@ -1956,7 +1956,7 @@ object OMLText2Resolver {
                 f.createAspectSpecializationAxiom(o2ri.rextent, tboxj, supj, subj) match {
                   case (rk, ak) => rk -> ak.right
                 }
-              case (_: ReifiedRelationshipSpecializationAxiom, Some(tboxj), Some(supj: api.ReifiedRelationship), Some(subj: api.ReifiedRelationship)) =>
+              case (_: ReifiedRelationshipSpecializationAxiom, Some(tboxj), Some(supj: api.ConceptualRelationship), Some(subj: api.ConceptualRelationship)) =>
                 f.createReifiedRelationshipSpecializationAxiom(o2ri.rextent, tboxj, supj, subj) match {
                   case (rk, ak) => rk -> ak.right
                 }

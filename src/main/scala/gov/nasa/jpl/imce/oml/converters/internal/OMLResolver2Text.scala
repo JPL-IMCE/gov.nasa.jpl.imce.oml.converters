@@ -1292,8 +1292,8 @@ object OMLResolver2Text {
             s1.right[EMFProblems]
           case (_: api.ReifiedRelationshipSpecializationAxiom,
           Some(t1),
-          Some(sup: terminologies.ReifiedRelationship),
-          Some(sub: terminologies.ReifiedRelationship)) =>
+          Some(sup: terminologies.ConceptualRelationship),
+          Some(sub: terminologies.ConceptualRelationship)) =>
             val s1 = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipSpecializationAxiom()
             s1.setTbox(t1)
             s1.setSuperRelationship(sup)

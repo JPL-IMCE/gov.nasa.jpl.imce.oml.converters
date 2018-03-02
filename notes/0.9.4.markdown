@@ -10,3 +10,5 @@ gov.nasa.jpl.imce.oml.converters 0.9.4 is a build based on OML 0.9.5
   - The sequential java sorting is no longer used; therefore, TimSort or the default MergeSort are no longer relevant.
  
 ## [#53 oml text resolution problem.](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/53)
+
+## [#54 OML Text conversion error](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/54)

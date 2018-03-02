@@ -1214,7 +1214,7 @@ object OMLResolver2Ontology {
             r2o.ops.addConceptSpecializationAxiom(t1, sub, sup)(r2o.omfStore)
           case (_: api.AspectSpecializationAxiom, sup: owlapi.types.terms.Aspect, sub) =>
             r2o.ops.addAspectSpecializationAxiom(t1, sub, sup)(r2o.omfStore)
-          case (_: api.ReifiedRelationshipSpecializationAxiom, sup: owlapi.types.terms.ReifiedRelationship, sub: owlapi.types.terms.ReifiedRelationship) =>
+          case (_: api.ReifiedRelationshipSpecializationAxiom, sup: owlapi.types.terms.ConceptualRelationship, sub: owlapi.types.terms.ConceptualRelationship) =>
             r2o.ops.addReifiedRelationshipSpecializationAxiom(t1, sub, sup)(r2o.omfStore)
           case _ =>
             Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
@@ -2117,6 +2117,8 @@ case class OMLResolver2Ontology
       aspects.get(a0)
     case c0: api.Concept =>
       concepts.get(c0)
+    case rs0: api.ReifiedRelationshipRestriction =>
+      reifiedRelationshipRestrictions.get(rs0)
     case rr0: api.ReifiedRelationship =>
       reifiedRelationships.get(rr0)
   }
@@ -2299,6 +2301,8 @@ case class OMLResolver2Ontology
       lookupAspect(x)
     case x: api.Concept =>
       lookupConcept(x)
+    case x: api.ReifiedRelationshipRestriction =>
+      lookupReifiedRelationshipRestriction(x)
     case x: api.ReifiedRelationship =>
       lookupReifiedRelationship(x)
     case x: api.UnreifiedRelationship =>
