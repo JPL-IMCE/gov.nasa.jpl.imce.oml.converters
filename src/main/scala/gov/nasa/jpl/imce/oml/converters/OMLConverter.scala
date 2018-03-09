@@ -354,6 +354,15 @@ object OMLConverter {
         c.copy(deleteOutputIfExists = true)
       }
 
+    opt[Unit]("hsort")
+      .text(
+        """Hierarchically sort the hypergraph of OML Modules before output conversion (default = false)
+          |""".stripMargin)
+      .optional()
+      .action { (_, c) =>
+        c.copy(hierarchicalSort = true)
+      }
+
     opt[Unit]("text")
       .text(
         s"""Output conversion includes OML as textual syntax '*.oml' files

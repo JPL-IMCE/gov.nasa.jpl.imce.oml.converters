@@ -2601,7 +2601,8 @@ object OMLText2Resolver {
 
   // what if multiple iri => same extent?
   def convert
-  (fileModules: Map[tables.taggedTypes.IRI, Module])
+  (fileModules: Map[tables.taggedTypes.IRI, Module],
+   hierarchicalSort: Boolean)
   (implicit factory: api.OMLResolvedFactory)
   : EMFProblems \/ (Map[Module, OMLText2Resolver], Seq[(api.Module, api.Extent)])
   = for {

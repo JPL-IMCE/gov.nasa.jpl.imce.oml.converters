@@ -97,7 +97,7 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         omlUUIDg = uuid.JVMUUIDGenerator()
         factory: api.OMLResolvedFactory = impl.OMLResolvedFactoryImpl(omlUUIDg)
 
-        o2rMap_sorted <- internal.OMLText2Resolver.convert(fileModules)(factory)
+        o2rMap_sorted <- internal.OMLText2Resolver.convert(fileModules, options.hierarchicalSort)(factory)
 
         (_, sortedAPIModuleExtents) = o2rMap_sorted
 

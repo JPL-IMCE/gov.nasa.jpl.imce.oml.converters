@@ -263,7 +263,9 @@ OML supports three canonical representations:
                                 (Not applicable for 'diff' command).
      
        --clear                  Make sure the output folder is deleted (if it exists) and is created empty before writing conversion results.
-         
+     
+       --hsort                  Hierarchically sort the hypergraph of OML Modules before output conversion (default = false)
+     
        -t, --text               Output conversion includes OML as textual syntax '*.oml' files
                                 (Not applicable for 'merge' command).
      
