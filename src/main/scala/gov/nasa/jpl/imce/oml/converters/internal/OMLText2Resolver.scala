@@ -2656,16 +2656,20 @@ object OMLText2Resolver {
       acc + (modules.head -> t2r.rextent)
     }
 
-    moduleEdges = c2N.values.foldLeft(Map.empty[api.ModuleEdge, api.Extent]) { case (acc, t2r) =>
-      val ext = t2r.rextent
-      acc ++
-        ext.terminologyBoxAxiomByUUID.values.map(_ -> ext) ++
-        ext.terminologyBundleAxiomByUUID.values.map(_ -> ext) ++
-        ext.descriptionBoxExtendsClosedWorldDefinitionsByUUID.values.map(_ -> ext) ++
-        ext.descriptionBoxRefinementByUUID.values.map(_ -> ext)
-    }
+    sortedModuleExtents <- if (!hierarchicalSort)
+      modules.to[Seq].right[EMFProblems]
+    else {
+      val moduleEdges = c2N.values.foldLeft(Map.empty[api.ModuleEdge, api.Extent]) { case (acc, t2r) =>
+        val ext = t2r.rextent
+        acc ++
+          ext.terminologyBoxAxiomByUUID.values.map(_ -> ext) ++
+          ext.terminologyBundleAxiomByUUID.values.map(_ -> ext) ++
+          ext.descriptionBoxExtendsClosedWorldDefinitionsByUUID.values.map(_ -> ext) ++
+          ext.descriptionBoxRefinementByUUID.values.map(_ -> ext)
+      }
 
-    sortedModuleExtents <- ResolverUtilities.sortExtents(modules, moduleEdges).leftMap(ts => EMFProblems(exceptions = ts.to[List]))
+      ResolverUtilities.sortExtents(modules, moduleEdges).leftMap(ts => EMFProblems(exceptions = ts.to[List]))
+    }
 
     // Relationships
     c30 = c2N

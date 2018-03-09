@@ -89,78 +89,74 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
       is = m2i.values
 
-      in_drc = inStore.getBuildInDatatypeMap
+      iorder <- if (!options.hierarchicalSort)
+        is.right[OMFError.Throwables]
+      else {
+        val in_drc = inStore.getBuildInDatatypeMap
 
-      builtInEdges = in_drc.builtInDatatypeModules.flatMap { m =>
-        m.sig.importedTerminologies(inStore.ops).map { i =>
-          m.iri -> i
-        }
-      }
-
-      g0 = Graph[IRI, DiEdge](is.map(_.iri): _*)
-
-      g1 = (g0 /: builtInEdges) { case (gi, (fI, tI)) =>
-        System.out.println(s"convert from OWL(builtin) $fI ~> $tI")
-        gi + fI ~> tI
-      }
-
-      g2 = m2i.values.find {
-        _.iri == OWLAPIOMFLoader.omlIRI
-      } match {
-        case Some(iOML) =>
-          (g1 /: builtInEdges.map(_._1)) { case (gi, fI) =>
-            System.out.println(s"convert from OWL(oml) ${iOML.iri} ~> $fI")
-            gi + iOML.iri ~> fI
-          }
-        case None =>
-          g1
-      }
-
-      g3 = (g2 /: is) { case (gi, i) =>
-        val gk = (gi /: i.sig.importedTerminologies(inStore.ops)) {
-          case (gj, j) =>
-            System.out.println(s"convert from OWL(tbox) ${i.iri} ~> $j")
-            gj + i.iri ~> j
-        }
-        val gl = (gk /: i.sig.importedDescriptions(inStore.ops)) {
-          case (gh, j) =>
-            System.out.println(s"convert from OWL(dbox) ${i.iri} ~> $j")
-            gh + i.iri ~> j
-        }
-        gl
-      }
-
-      gorder <- GraphUtilities.hierarchicalTopologicalSort(Seq(g3)).map(_.reverse)
-
-      _ = gorder.foreach { iri =>
-        val omlIRI = iri.toString + ".oml"
-        System.out.println(s"convert from OWL(gorder): $iri => $omlIRI")
-      }
-
-      iorder <- gorder.foldLeft(Seq.empty[ImmutableModule].right[OMFError.Throwables]) { case (acc, iri) =>
-        acc.flatMap { prev =>
-          is.find { i => i.iri == iri } match {
-            case Some(i) =>
-              (prev :+ i).right[OMFError.Throwables]
-            case None =>
-              Set[java.lang.Throwable](
-                OMFError.omfError(s"There should be an immutable module for: $iri")
-              ).left
+        val builtInEdges = in_drc.builtInDatatypeModules.flatMap { m =>
+          m.sig.importedTerminologies(inStore.ops).map { i =>
+            m.iri -> i
           }
         }
+
+        val g0 = Graph[IRI, DiEdge](is.map(_.iri): _*)
+
+        val g1 = (g0 /: builtInEdges) { case (gi, (fI, tI)) =>
+          System.out.println(s"convert from OWL(builtin) $fI ~> $tI")
+          gi + fI ~> tI
+        }
+
+        val g2 = m2i.values.find {
+          _.iri == OWLAPIOMFLoader.omlIRI
+        } match {
+          case Some(iOML) =>
+            (g1 /: builtInEdges.map(_._1)) { case (gi, fI) =>
+              System.out.println(s"convert from OWL(oml) ${iOML.iri} ~> $fI")
+              gi + iOML.iri ~> fI
+            }
+          case None =>
+            g1
+        }
+
+        val g3 = (g2 /: is) { case (gi, i) =>
+          val gk = (gi /: i.sig.importedTerminologies(inStore.ops)) {
+            case (gj, j) =>
+              System.out.println(s"convert from OWL(tbox) ${i.iri} ~> $j")
+              gj + i.iri ~> j
+          }
+          val gl = (gk /: i.sig.importedDescriptions(inStore.ops)) {
+            case (gh, j) =>
+              System.out.println(s"convert from OWL(dbox) ${i.iri} ~> $j")
+              gh + i.iri ~> j
+          }
+          gl
+        }
+
+        for {
+          gorder <- GraphUtilities.hierarchicalTopologicalSort(Seq(g3)).map(_.reverse)
+
+          _ = gorder.foreach { iri =>
+            val omlIRI = iri.toString + ".oml"
+            System.out.println(s"convert from OWL(gorder): $iri => $omlIRI")
+          }
+
+          order <- gorder.foldLeft(Seq.empty[ImmutableModule].right[OMFError.Throwables]) { case (acc, iri) =>
+            acc.flatMap { prev =>
+              is.find { i => i.iri == iri } match {
+                case Some(i) =>
+                  (prev :+ i).right[OMFError.Throwables]
+                case None =>
+                  Set[java.lang.Throwable](
+                    OMFError.omfError(s"There should be an immutable module for: $iri")
+                  ).left
+              }
+            }
+          }
+        } yield order
       }
 
       ts <- OMFTabularExport.toTables[OWLAPIOMF](iorder)(inStore, inStore.ops)
-
-      _ = {
-        (gorder zip ts).foreach { case (gi, (im, ti)) =>
-          if (gi != im.iri) {
-            System.out.println(s"convert from OWL(tables)  gi=$gi")
-            System.out.println(s"convert from OWL(tables)  im=${im.iri}")
-            System.out.println(s"convert from OWL(tables): mismatch!")
-          }
-        }
-      }
 
       iri2tables = ts.map { case (m, t) => tables.taggedTypes.iri(m.iri.toString) -> t }
 

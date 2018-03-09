@@ -43,7 +43,8 @@ object OMLConverter {
    deleteOutputIfExists: Boolean = false,
    outputFolder: Option[Path] = None,
    verboseFiles: Boolean = false,
-   resolveAll: Boolean = false
+   resolveAll: Boolean = false,
+   hierarchicalSort: Boolean = false
   )
 
   def getAbsolutePath(f: File)

@@ -37,7 +37,7 @@ import scala.{Int, Option, Ordering, StringContext}
 import scala.collection.immutable.{Map, Seq, Set}
 import scala.util.{Failure, Success, Try}
 import scala.Predef.{ArrowAssoc, String}
-import scalaz._
+import scalaz._, Scalaz._
 import scalax.collection.Graph
 import scalax.collection.GraphEdge.DiEdge
 import scalax.collection.GraphPredef.EdgeAssoc
@@ -79,7 +79,7 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
     val allTables
     : Seq[OMLSpecificationTables]
-    = omlCatalogScope.omlFiles.map(_._2).par.map(TableUtilities.readOMLZipFile).to[Seq]
+    = omlCatalogScope.omlFiles.values.par.map(TableUtilities.readOMLZipFile).to[Seq]
 
     val allModules
     : Map[taggedTypes.IRI, OMLSpecificationTables]
@@ -87,27 +87,31 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
       _ ++ TableUtilities.tableModules(_)
     }
 
-    val g0
-    : Graph[taggedTypes.IRI, DiEdge]
-    = Graph[taggedTypes.IRI, DiEdge](allModules.keys.toSeq: _*)
-
-    System.out.println(s"Read ${g0.size} OML modules")
-
-    val g1
-    : Graph[taggedTypes.IRI, DiEdge]
-    = (g0 /: allTables) { case (gi, ti) =>
-      val gj = gi ++ TableUtilities.tableEdges(ti).map { case (src, dst) => src ~> dst }
-      gj
-    }
-
     val tuple = for {
-      gorder <- GraphUtilities.hierarchicalTopologicalSort(Seq(g1)).map(_.reverse)
+      iri2tables <- if (!options.hierarchicalSort)
+        allModules.to[Seq].right[OMFError.Throwables]
+      else {
+        val g0
+        : Graph[taggedTypes.IRI, DiEdge]
+        = Graph[taggedTypes.IRI, DiEdge](allModules.keys.toSeq: _*)
 
-      _ = gorder.foreach { m =>
-        System.out.println(s"convert from OWL(tables): $m")
+        System.out.println(s"Read ${g0.size} OML modules")
+
+        val g1
+        : Graph[taggedTypes.IRI, DiEdge]
+        = (g0 /: allTables) { case (gi, ti) =>
+          val gj = gi ++ TableUtilities.tableEdges(ti).map { case (src, dst) => src ~> dst }
+          gj
+        }
+
+        for {
+          gorder <- GraphUtilities.hierarchicalTopologicalSort(Seq(g1)).map(_.reverse)
+
+          _ = gorder.foreach { m =>
+            System.out.println(s"convert from OWL(tables): $m")
+          }
+        } yield gorder.map(iri => iri -> allModules(iri))
       }
-
-      iri2tables = gorder.map(iri => iri -> allModules(iri))
 
       extents <- ResolverUtilities.resolveTables(ResolverUtilities.initializeResolver(), iri2tables)
 
