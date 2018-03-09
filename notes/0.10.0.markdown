@@ -1,0 +1,9 @@
+gov.nasa.jpl.imce.oml.converters 0.10.0 is a significant update of 0.9.4
+
+# Issues Resolved:
+
+## [#55 By default, disable the expensive hypergraph topological sorting](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/55)
+      
+## [#56 Simplify the CLI options to avoid ambiguity about which commands require an input catalog](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/56)
+
+## [#57 Use the OMLLinkingService cache optimizations](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/57)

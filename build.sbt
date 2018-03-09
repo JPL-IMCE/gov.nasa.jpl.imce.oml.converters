@@ -27,6 +27,24 @@ val owlapiLibs = taskKey[Seq[Attributed[File]]]("OWLAPI libraries")
 
 val resources: Configuration = Configurations.config("resources")
 
+// For building using a local snapshot build of OML:
+//
+// 1) in project/Versions_oml_core.scala, set version accordingly, e.g., "0.9.0-SNAPSHOT"
+//
+// 2) sbt -DOML_PRODUCT_REPO=file://$HOME/.m2/repository
+//
+// 3) extractOMLProduct
+//
+
+val showMappings = taskKey[Unit]("showMappings")
+
+showMappings := {
+  val pairs = (mappings in Universal).value.sortBy(_._2)
+  pairs.foreach {
+    case (file, path) => println(file + " -> " + path)
+  }
+}
+
 lazy val omlConverters = Project("omlConverters", file("."))
   .enablePlugins(JavaAppPackaging)
   .enablePlugins(UniversalDeployPlugin)
@@ -74,6 +92,7 @@ lazy val omlConverters = Project("omlConverters", file("."))
     IMCEKeys.targetJDK := IMCEKeys.jdk18.value,
     git.baseVersion := Versions.version,
 
+    resolvers += Resolver.mavenLocal,
     resolvers += Resolver.bintrayRepo("jpl-imce", "gov.nasa.jpl.imce"),
     resolvers += Resolver.bintrayRepo("jpl-imce", "gov.nasa.jpl.imce.oml"),
 
@@ -144,9 +163,13 @@ lazy val omlConverters = Project("omlConverters", file("."))
       val upd: File = omlProductDir.value
       val s = streams.value
 
+      // This logic works in the case where there are no SBT sub-projects
+      // (i.e., there is no 'links.sbt' file  ).
+      // In this case, there is only 1 SBT project, omlConverters.
+      // Finding the 'gov.nasa.jpl.imce.oml.product' dependency artifact works.
+
       if (!upd.exists) {
         s.log.warn("Looking for OML product...")
-
         for {
           c <- update.value.configurations
           if c.configuration == "compile"
@@ -177,6 +200,54 @@ lazy val omlConverters = Project("omlConverters", file("."))
           ()
         }
       }
+
+      // Finding the 'gov.nasa.jpl.imce.oml.product' dependency artifact fails
+      // precisely when there are SBT sub-projects via the 'links.sbt' trick.
+      // In that case, we copy the dependency artifact directly from its'
+      // repository URL location since we can't get this information from SBT's dependencies.
+
+      // This is an ugly hack but it workss.
+
+      if (!upd.exists) {
+        upd.mkdirs()
+
+        val omlProductURL = url(
+          s"${omlProductRepo.value}/gov/nasa/jpl/imce/oml/gov.nasa.jpl.imce.oml.product/${Versions_oml_core.version}/gov.nasa.jpl.imce.oml.product-${Versions_oml_core.version}-linux.gtk.x86_64.tar.gz")
+        s.log.warn(s"Directly copying artifact from omlProductURL=$omlProductURL")
+
+        val omlArchive = upd / "oml.tar.gz"
+        (omlProductURL #> omlArchive).! match {
+          case 0 =>
+            Process(Seq("tar", "-zxf", omlArchive.getAbsolutePath), Some(upd)).! match {
+              case 0 =>
+                s.log.warn(s"=> Extracted ${omlArchive.getName} from $omlArchive")
+              case n =>
+                sys.error(s"Error extracting $omlArchive; exit code: $n")
+            }
+
+          case n =>
+            sys.error(s"Error copying $omlProductURL; exit code: $n")
+        }
+
+
+        ()
+      }
+
+      // Eclipse is astonishingly painful for Maven-centric development with for several reasons:
+      // 1) Maven/Tycho in the so-called "manifest-first" paradigm produces POM files that
+      //    lack dependency information. It is unclear how to switch to the "pom-first" alternative
+      //    paradigm since it requires generating the metadata files that Eclipse needs.
+      // 2) It is unclear whether Eclipse.org has any official policy for publishing
+      //    Maven artifacts about Eclipse plugins/features. Some of the Eclipse.org artifacts
+      //    on Maven central are stale.
+      // 3) Eclipse.org provides several P2 repositories with Eclipse plugins/features;
+      //    however, finding what's in these P2 repositories is anything but developer-friendly.
+      //    Some P2 repos do not provide a web UI view for browsing their contents, others do.
+      //    This variation means that one cannot rely on having a web UI for browsing arbitrary Eclipse.org repos.
+      // 4) The contents of Eclipse.org P2 repos changes; even for supposedly released versions.
+      // The practical workaround to these Eclipse-related artifact publishing problems
+      // involves building a complete Eclipse application that has all the needed plugins/features,
+      // download that application and copy the needed plugins/features from its installation.
 
       val plugins = upd / "plugins"
 
@@ -262,8 +333,14 @@ lazy val omlConverters = Project("omlConverters", file("."))
 
       jars
     },
+
+    // Use when owlapi is not a sub-project.
     unmanagedJars in Compile := extractOMLProduct.value.classpath ++ owlapiLibs.value,
     unmanagedJars in (Compile, doc) := extractOMLProduct.value.classpath ++ owlapiLibs.value,
+
+    // Use when owlapi is a subproject
+//    unmanagedJars in Compile := extractOMLProduct.value.classpath,
+//    unmanagedJars in (Compile, doc) := extractOMLProduct.value.classpath,
 
     fork in run := true,
     javaOptions in run ++= Seq(
