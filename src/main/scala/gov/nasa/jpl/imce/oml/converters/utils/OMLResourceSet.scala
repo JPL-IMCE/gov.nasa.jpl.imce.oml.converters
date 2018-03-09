@@ -19,6 +19,7 @@
 package gov.nasa.jpl.imce.oml.converters.utils
 
 import ammonite.ops.Path
+import gov.nasa.jpl.imce.oml.dsl.linking.OMLLinkingService
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.model.common.{Extent, Module}
 import gov.nasa.jpl.imce.oml.model.extensions.{OMLCatalog, OMLCatalogManager, OMLExtensions}
@@ -136,9 +137,9 @@ object OMLResourceSet {
   = {
     val omlTables: OMLSpecificationTables = OMLZipResource.getOrInitializeOMLSpecificationTables(rs)
     val result = omlFiles.foldLeft(Map.empty[tables.taggedTypes.IRI, Module].right[EMFProblems]) {
-      case (acc, f) =>
+      case (acc1, f) =>
         for {
-          prev <- acc
+          prev <- acc1
           omlFile <- {
             if (f.toIO.exists() && f.toIO.canRead)
               \/-(f)
@@ -151,13 +152,17 @@ object OMLResourceSet {
           modules <- OMLResourceSet.loadOMLResource(
             rs,
             URI.createFileURI(omlFile.toString))
-          _ = modules.foreach(omlTables.includeModule)
-          updated = modules.foldLeft(prev) { case (acc, module) =>
-            acc + (tables.taggedTypes.iri(module.iri()) -> module)
+          _ = modules.foreach(omlTables.queueModule)
+          updated = modules.foldLeft(prev) { case (acc2, module) =>
+            acc2 + (tables.taggedTypes.iri(module.iri()) -> module)
           }
         } yield updated
     }
     OMLZipResource.clearOMLSpecificationTables(rs)
+
+    OMLLinkingService.clearCache(rs)
+    OMLLinkingService.initializeCache(rs)
+
     result
   }
 
