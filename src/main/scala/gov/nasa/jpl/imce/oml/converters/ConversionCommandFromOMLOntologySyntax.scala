@@ -19,12 +19,10 @@
 package gov.nasa.jpl.imce.oml.converters
 
 import java.lang.System
-import java.nio.file.Paths
 import java.util.Properties
 
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
-import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
 import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.tables
@@ -38,11 +36,10 @@ import org.semanticweb.owlapi.model.IRI
 import org.apache.spark.sql.{SQLContext, SparkSession}
 
 import scala.collection.immutable.{Seq, Set}
-import scala.{Int, None, Ordering, Some, StringContext, Unit}
+import scala.{Int, None, Option, Ordering, Some, StringContext}
 import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
-import scala.util.{Failure, Success}
 import scalax.collection.Graph
 import scalax.collection.GraphEdge.DiEdge
 import scalax.collection.GraphPredef.EdgeAssoc
@@ -53,28 +50,12 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
   override def convert
   (omlCatalogScope: OMLCatalogScope,
-   outCatalog: Path,
-   conversions: ConversionCommand.OutputConversions)
+   outputCatalog: Option[Path],
+   options: OMLConverter.Options)
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
-  = for {
-    in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
-    (inStore, inCat) = in_store_cat
-    out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
-    (outStore, outCat) = out_store_cat
-    result <- convert(inStore, omlCatalogScope, outStore, outCat, outCatalog, conversions)
-  } yield result
-
-  def convert
-  (inStore: OWLAPIOMFGraphStore,
-   omlCatalogScope: OMLCatalogScope,
-   outStore: OWLAPIOMFGraphStore,
-   outCat: CatalogScope,
-   outCatalog: Path,
-   conversions: ConversionCommand.OutputConversions)
-  (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ (Option[CatalogScope], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
+
     implicit val mOrder: Ordering[OWLAPIOMF#ImmutableModule] = new Ordering[OWLAPIOMF#ImmutableModule] {
       override def compare(x: ImmutableModule, y: ImmutableModule): Int = x.iri.toString.compareTo(y.iri.toString)
     }
@@ -89,9 +70,9 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
       override def compare(x: IRI, y: IRI): Int = x.toString.compareTo(y.toString)
     }
 
-    val result
-    : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
-    = for {
+    val tuple = for {
+      in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
+      (inStore, inCat) = in_store_cat
 
       drc <- inStore.loadBuiltinDatatypeMap()
       om <- inStore.initializeOntologyMapping(drc)
@@ -123,7 +104,9 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         gi + fI ~> tI
       }
 
-      g2 = m2i.values.find { _.iri == OWLAPIOMFLoader.omlIRI } match {
+      g2 = m2i.values.find {
+        _.iri == OWLAPIOMFLoader.omlIRI
+      } match {
         case Some(iOML) =>
           (g1 /: builtInEdges.map(_._1)) { case (gi, fI) =>
             System.out.println(s"convert from OWL(oml) ${iOML.iri} ~> $fI")
@@ -156,7 +139,7 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
 
       iorder <- gorder.foldLeft(Seq.empty[ImmutableModule].right[OMFError.Throwables]) { case (acc, iri) =>
         acc.flatMap { prev =>
-          is.find{ i => i.iri == iri } match {
+          is.find { i => i.iri == iri } match {
             case Some(i) =>
               (prev :+ i).right[OMFError.Throwables]
             case None =>
@@ -179,96 +162,12 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
         }
       }
 
-      // List of module IRIs
+      iri2tables = ts.map { case (m, t) => tables.taggedTypes.iri(m.iri.toString) -> t }
 
-      _ <- conversions.modules match {
-        case Some(file) =>
-          internal
-            .writeModuleIRIs(ts.map { case (m, _) => tables.taggedTypes.iri(m.iri.toString) }, file)
+      extents <- ResolverUtilities.resolveTables(ResolverUtilities.initializeResolver(),iri2tables)
 
-        case None =>
-          \/-(())
-      }
+    } yield (extents, iri2tables)
 
-      // 1) Convert from OMF/OWLAPI => OML Tables
-
-      _ <- if (conversions.toOMLZip || conversions.isEmpty)
-        toTables(outStore, ts)
-      else
-        \/-(())
-
-      // 2) Convert from OML Tables => OML Resolver
-
-      extents <- ResolverUtilities.resolveTables(
-        ResolverUtilities.initializeResolver(),
-        ts.map { case (m, t) => tables.taggedTypes.iri(m.iri.toString) -> t})
-
-      // 3) Convert from OML Resolver => OML Textual Concrete Syntax
-
-      _ <- if (conversions.toText) {
-        internal
-          .toText(outCatalog, extents)
-          .leftMap(_.toThrowables)
-      } else
-        \/-(())
-
-      // 4) Convert from OML Resolver => OMF/OWLAPI again
-
-      _ <- if (conversions.toOWL) {
-        for {
-          _ <- internal
-            .OMLResolver2Ontology
-            .convert(extents, outStore)
-          _ <- conversions.fuseki match {
-            case None =>
-              \/-(())
-            case Some(fuseki) =>
-              internal.tdbUpload(outCatalog, fuseki)
-          }
-        } yield ()
-      } else
-        \/-(())
-
-      // 5) Convert from OML Tables => SQL
-
-      _ <- conversions.toSQL match {
-        case Some(server) =>
-          val tables = ts.map(_._2).reduceLeft(OMLSpecificationTables.mergeTables)
-          OMLSpecificationTypedDatasets
-            .sqlWriteOMLSpecificationTables(tables, server, props) match {
-            case Success(_) =>
-              \/-(())
-            case Failure(t) =>
-              -\/(Set(t))
-          }
-        case None =>
-          \/-(())
-      }
-
-    } yield outCat -> ts.map { case (m, t) => tables.taggedTypes.iri(m.iri.toString) -> t }
-
-    result
+    internal.process(tuple, outputCatalog, options, props)
   }
-
-  protected def toTables(outStore: OWLAPIOMFGraphStore, ts: Seq[(ImmutableModule, OMLSpecificationTables)])
-  : OMFError.Throwables \/ Unit
-  = ts.foldLeft {
-    ().right[OMFError.Throwables]
-  } { case (acc, (im, t)) =>
-
-    for {
-      _ <- acc
-      tURI = outStore.catalogIRIMapper.resolveIRI(im.iri, saveResolutionStrategyForOMLTables).toURI
-      tFile = Paths.get(tURI).toFile
-
-      _ <- OMLSpecificationTables
-        .saveOMLSpecificationTables(t, tFile)
-        .toDisjunction
-        .leftMap(Set[java.lang.Throwable](_))
-
-      _ = System.out.println(s"Saved oml.tables in: $tFile")
-
-    } yield ()
-  }
-
 }

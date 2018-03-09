@@ -42,7 +42,8 @@ object OMLConverter {
    output: ConversionCommand.OutputConversions = ConversionCommand.OutputConversions(),
    deleteOutputIfExists: Boolean = false,
    outputFolder: Option[Path] = None,
-   verboseFiles: Boolean = false
+   verboseFiles: Boolean = false,
+   resolveAll: Boolean = false
   )
 
   def getAbsolutePath(f: File)
@@ -67,48 +68,133 @@ object OMLConverter {
     head("BuildInfo", BuildInfo.toString)
 
     cmd("text")
-      .text(s"${smallIndent}Converts all input OML textual syntax files ('*.oml' and/or '*.omlzip') found in scope of an `oml.catalog.xml`")
+      .text(
+        s"""${smallIndent}Converts all input OML textual syntax files ('*.oml' and/or '*.omlzip') found in scope of an `oml.catalog.xml`
+           |""".stripMargin)
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromText))
       }
+      .children (
+
+        note(s"${smallIndent}[options]:"),
+
+        opt[Unit]("resolve:all")
+          .text(
+            """Invoke EcoreUtils.resolveAll() before conversion
+              |""".stripMargin)
+          .optional()
+          .action { (_, c) =>
+            c.copy(resolveAll = true)
+          },
+
+        note(s"${smallIndent}required arguments:"),
+
+        arg[File]("<oml.catalog.xml>")
+          .text(
+            s"""An OASIS XML Catalog file named 'oml.catalog.xml' to search for '*.oml' and '*.oml.zip' files.
+               |""".stripMargin)
+          .abbr("c")
+          .optional()
+          .maxOccurs(1)
+          .validate(ConversionCommand.Request.validateCatalog)
+          .action { (catalog, c) =>
+            c.copy(input = c.input.addCatalog(getAbsolutePath(catalog)))
+          }
+      )
 
     note("")
 
     cmd("owl")
-      .text(s"${smallIndent}Converts all input OML files in OWL2-DL + SWRL rules ('*.owl') found in scope of an `oml.catalog.xml`")
+      .text(
+        s"""${smallIndent}Converts all input OML files in OWL2-DL + SWRL rules ('*.owl') found in scope of an `oml.catalog.xml`
+           |""".stripMargin)
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWL))
       }
+      .children(
+
+        note(s"${smallIndent}required arguments:"),
+
+        arg[File]("<oml.catalog.xml>")
+          .text(
+            s"""An OASIS XML Catalog file named 'oml.catalog.xml' to search for '*.owl' files.
+               |""".stripMargin)
+          .abbr("c")
+          .optional()
+          .maxOccurs(1)
+          .validate(ConversionCommand.Request.validateCatalog)
+          .action { (catalog, c) =>
+            c.copy(input = c.input.addCatalog(getAbsolutePath(catalog)))
+          }
+      )
 
     note("")
 
     cmd("json")
-      .text(s"${smallIndent}Converts all input OML tabular json archive files ('*.omlzip') found in scope of an `oml.catalog.xml`")
+      .text(
+        s"""${smallIndent}Converts all input OML tabular json archive files ('*.omlzip') found in scope of an `oml.catalog.xml`
+           |""".stripMargin)
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CatalogInputConversion(from = ConversionCommand.ConversionFromOWLZip))
       }
+      .children(
+
+        note(s"${smallIndent}required arguments:"),
+
+        arg[File]("<oml.catalog.xml>")
+          .text(
+            s"""An OASIS XML Catalog file named 'oml.catalog.xml' to search for '*.omlzip' files.
+               |""".stripMargin)
+          .abbr("c")
+          .optional()
+          .maxOccurs(1)
+          .validate(ConversionCommand.Request.validateCatalog)
+          .action { (catalog, c) =>
+            c.copy(input = c.input.addCatalog(getAbsolutePath(catalog)))
+          }
+      )
 
     note("")
 
     cmd("parquet")
-      .text(s"${smallIndent}Convert from folders of OML parquet table files, '<dir>/<oml table>.parquet'.")
+      .text(
+        s"""${smallIndent}Convert from folders of OML parquet table files, '<dir>/<oml table>.parquet'.
+           |""".stripMargin)
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.ParquetInputConversion())
       }
+      .children(
+
+        note(s"${smallIndent}required arguments:"),
+
+        arg[File]("<oml.parquet folder>")
+          .text(
+            s"""A folder of OML parquet table files: '<dir>/<oml table>.parquet'.
+               |""".stripMargin)
+          .abbr("d")
+          .required()
+          .maxOccurs(1)
+          .action { (folder, c) =>
+            c.copy(input = c.input.addParquetFolder(getAbsolutePath(folder)))
+          }
+      )
 
     note("")
 
     cmd("sql")
-      .text(s"${smallIndent}Convert from an SQL server.")
+      .text(
+        s"""${smallIndent}Convert from an SQL server.
+           |""".stripMargin)
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.SQLInputConversion())
       }
       .children(
+        note(s"${smallIndent}required arguments:"),
         arg[String]("<server>")
           .text("SQL server")
           .required()
@@ -120,12 +206,15 @@ object OMLConverter {
     note("")
 
     cmd("diff")
-      .text(s"${smallIndent}Convert from OML files in OWL2-DL + SWRL rules, '*.owl'")
+      .text(
+        s"""${smallIndent}Compare OML files recursively between two directories.
+           |""".stripMargin)
       .optional()
       .action { (_, c) =>
         c.copy(input = ConversionCommand.CompareDirectories())
       }
       .children(
+        note(s"${smallIndent}required arguments:"),
         arg[File]("<dir1>")
           .text("Left side comparison, <dir1>.")
           .required()
@@ -157,8 +246,9 @@ object OMLConverter {
       }
       .children(
 
-        arg[File]("<oml.parquet folder>")
-          .text("Path to an 'oml.parquet' folder to include in the merge.")
+        note(s"${smallIndent}required arguments:"),
+        arg[File]("<oml.parquet folder>...")
+          .text("One or more paths to 'oml.parquet' folders to include in the merge.")
           .required()
           .unbounded()
           .validate(ConversionCommand.Request.validateExistingFolder("Invalid argument <oml.parquet folder>."))
@@ -169,7 +259,7 @@ object OMLConverter {
       )
 
     note("")
-    note("Options:")
+    note("General Options:")
     note("")
 
     version("version")
@@ -193,30 +283,26 @@ object OMLConverter {
 
     note("")
 
-    opt[File]("cat")
+    opt[Unit]("verbose:files")
+      .abbr("v:files")
       .text(
-        s"""An OASIS XML Catalog file named 'oml.catalog.xml'.
-           |$helpIndent(Applicable only for 'text', 'owl' or 'json' commands.)
-           |""".stripMargin)
-      .abbr("c")
+        """Verbose: show the input files found for each 'rewriteURI' entry of an OML Catalog.
+          |""".stripMargin)
       .optional()
-      .maxOccurs(1)
-      .validate(ConversionCommand.Request.validateCatalog)
-      .action { (catalog, c) =>
-        c.copy(input = c.input.addCatalog(getAbsolutePath(catalog)))
+      .action { (_, c) =>
+        c.copy(verboseFiles = true)
       }
 
-    opt[File]("dir")
+    opt[File]("output:modules")
       .text(
-        s"""A folder of OML parquet table files: '<dir>/<oml table>.parquet'.
-           |$helpIndent(Applicable only for 'parquet' command.)
+        s"""Output the IRIs of all OML modules.
+           |$helpIndent(Not applicable for 'diff' command).
            |""".stripMargin)
-      .abbr("d")
+      .abbr("out:modules")
       .optional()
       .maxOccurs(1)
-      .validate(ConversionCommand.Request.validateExistingFolder("Invalid parquet folder."))
-      .action { (folder, c) =>
-        c.copy(input = c.input.addParquetFolder(getAbsolutePath(folder)))
+      .action { (file, c) =>
+        c.copy(output = c.output.copy(modules = Some(getAbsolutePath(file))))
       }
 
     opt[File]("output:catalog")
@@ -231,16 +317,16 @@ object OMLConverter {
         c.copy(output = c.output.addCatalog(getAbsolutePath(catalog)))
       }
 
-    opt[File]("output:modules")
+    opt[File]("output")
       .text(
-        s"""Output the IRIs of all OML modules.
-           |$helpIndent(Not applicable for 'diff' command).
+        s"""Output folder where to write conversion results.
+           |$helpIndent(Cannot be used with --output:catalog or -out:cat).
            |""".stripMargin)
-      .abbr("out:modules")
+      .abbr("out")
       .optional()
       .maxOccurs(1)
-      .action { (file, c) =>
-        c.copy(output = c.output.copy(modules = Some(getAbsolutePath(file))))
+      .action { (folder, c) =>
+        c.copy(outputFolder = Some(getAbsolutePath(folder)))
       }
 
     opt[URL]("output:fuseki")
@@ -257,28 +343,6 @@ object OMLConverter {
       .maxOccurs(1)
       .action { (url, c) =>
         c.copy(output = c.output.copy(fuseki = Some(url)))
-      }
-
-    opt[File]("output")
-      .text(
-        s"""Output folder where to write conversion results.
-           |$helpIndent(Cannot be used with --output:catalog or -out:cat).
-           |""".stripMargin)
-      .abbr("out")
-      .optional()
-      .maxOccurs(1)
-      .action { (folder, c) =>
-        c.copy(outputFolder = Some(getAbsolutePath(folder)))
-      }
-
-    opt[Unit]("verbose:files")
-      .abbr("v:files")
-      .text(
-        """Verbose: show the input files found for each 'rewriteURI' entry of an OML Catalog.
-          |""".stripMargin)
-      .optional()
-      .action { (_, c) =>
-        c.copy(verboseFiles = true)
       }
 
     opt[Unit]("clear")
@@ -369,8 +433,10 @@ object OMLConverter {
 
   def main(argv: Array[String]): Unit = {
 
+    val t0 = System.currentTimeMillis()
+
     optionsParser.parse(argv, Options()) match {
-      case Some(Options(ConversionCommand.NoRequest(), _, _, _, _)) =>
+      case Some(Options(ConversionCommand.NoRequest(), _, _, _, _, _, _)) =>
         System.err.println("Abnormal exit; no command requested.")
 
       case Some(options) =>
@@ -401,7 +467,7 @@ object OMLConverter {
                           conversion,
                           omlCatalogScope,
                           outCatalog,
-                          options.output,
+                          options,
                           if (options.verboseFiles) Some(System.out) else None)
                       case -\/(errors) =>
                         internal.showErrors(errors)
@@ -458,6 +524,12 @@ object OMLConverter {
       case None =>
         System.err.println("Abnormal exit; no operation performed.")
     }
+
+    val t1 = System.currentTimeMillis()
+    val dt = t1 - t0
+    val dt_ms = dt % 1000
+    val dt_s = dt / 1000
+    System.out.println(s"Converter ran in ${dt_s}s, ${dt_ms}ms")
   }
 
   def parquetInputConversion
@@ -548,8 +620,8 @@ object OMLConverter {
   (c: ConversionCommand.CatalogInputConversionWithCatalog,
    conversion: ConversionCommand,
    omlCatalogScope: OMLCatalogScope,
-   outCatalogPath: Path,
-   output: ConversionCommand.OutputConversions,
+   outCatalogPath: Option[Path],
+   options: Options,
    verboseFiles: Option[PrintStream])
   : Unit
   = {
@@ -566,10 +638,9 @@ object OMLConverter {
     System.out.println(s"conversion=$conversion")
     System.out.println(s"# => ${omlCatalogScope.omlFiles.size} OML files to convert...")
 
-    conversion.convert(omlCatalogScope, outCatalogPath, output) match {
-      case \/-((outCatalog, ts)) =>
-        if (output.toParquet)
-          internal.toParquet(output, outCatalog, outCatalogPath / up, ts)
+    conversion.convert(omlCatalogScope, outCatalogPath, options) match {
+      case \/-(_) =>
+        ()
       case -\/(errors) =>
         internal.showErrors(errors)
     }

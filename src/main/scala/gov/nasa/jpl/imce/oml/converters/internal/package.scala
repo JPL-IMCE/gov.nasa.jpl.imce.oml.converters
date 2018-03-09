@@ -21,6 +21,7 @@ package gov.nasa.jpl.imce.oml.converters
 import java.io.File
 import java.lang.{IllegalArgumentException, System}
 import java.net.URL
+import java.nio.file.Paths
 
 import ammonite.ops.{%%, Path, cp, mkdir, pwd, rm, up, write}
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
@@ -31,15 +32,17 @@ import gov.nasa.jpl.imce.oml.resolver
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.imce.xml.catalog.scope.CatalogScope
+import gov.nasa.jpl.omf.scala.binding.owlapi.OWLAPIOMFGraphStore
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{SQLContext, SparkSession}
 import org.eclipse.emf.common.util.{URI => EURI}
+import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable.{Seq, Set}
-import scala.util.Properties
+import scala.util.{Failure, Properties, Success}
 import scala.{Boolean, Left, None, Option, Right, Some, StringContext, Unit}
-import scala.Predef.{String, augmentString, require}
+import scala.Predef.{ArrowAssoc, String, augmentString, require}
 import scalaz._
 import Scalaz._
 import scala.util.control.Exception.nonFatalCatch
@@ -81,8 +84,9 @@ package object internal {
       deleteIfExists: Boolean,
       outDir: Option[Path],
       inCatalog: Path,
-      outCatalog: Option[Path]): OMFError.Throwables \/ Path =
-    nonFatalCatch[OMFError.Throwables \/ Path]
+      outCatalog: Option[Path])
+  : OMFError.Throwables \/ Option[Path]
+  = nonFatalCatch[OMFError.Throwables \/ Option[Path]]
       .withApply { (t: java.lang.Throwable) =>
         -\/(Set(t))
       }
@@ -95,7 +99,7 @@ package object internal {
                 mkdir(dir)
                 val outCat = dir / inCatalog.segments.last
                 cp(inCatalog, outCat)
-                \/-(outCat)
+                \/-(Some(outCat))
               } else
                 -\/(
                   Set[java.lang.Throwable](new IllegalArgumentException(
@@ -104,7 +108,7 @@ package object internal {
               mkdir(dir)
               val outCat = dir / inCatalog.segments.last
               cp(inCatalog, outCat)
-              \/-(outCat)
+              \/-(Some(outCat))
             }
 
           case (None, Some(outCat)) =>
@@ -114,15 +118,14 @@ package object internal {
             rm(dir)
             mkdir(dir)
             cp(tmp, outCat)
-            \/-(outCat)
+            \/-(Some(outCat))
 
           case (Some(dir), Some(outCat)) =>
             -\/(Set[java.lang.Throwable](new IllegalArgumentException(
               s"Output is ambiguous: --output $dir and --output:catalog $outCat")))
 
           case (None, None) =>
-            -\/(Set[java.lang.Throwable](new IllegalArgumentException(
-              s"Must specify either --output <dir> or --output:catalog <catalog>")))
+            \/-(None)
 
         }
       }
@@ -182,6 +185,140 @@ package object internal {
       |	 <rewriteURI rewritePrefix="file:./" 							uriStartString="http://"/>
       |</catalog>
     """.stripMargin
+
+  def process
+  (extents_iri2tables: OMFError.Throwables \/ (Seq[resolver.api.Extent], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)]),
+   outputCatalog: Option[Path],
+   options: OMLConverter.Options,
+   props: java.util.Properties)
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (Option[CatalogScope], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  = outputCatalog match {
+    case Some(outCatalog) =>
+      for {
+        tuple <- extents_iri2tables
+        (extents, iri2tables) = tuple
+
+        // List of module IRIs
+
+        _ <- options.output.modules match {
+          case Some(file) =>
+            writeModuleIRIs(iri2tables.map { case (iri, _) => iri }, file)
+
+          case None =>
+            \/-(())
+        }
+
+        out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
+        (outStore, outCat) = out_store_cat
+        result <- outputConversions(extents, iri2tables, outStore, outCat, outCatalog, options, props)
+      } yield result
+
+    case None =>
+      for {
+        tuple <- extents_iri2tables
+        (extents, iri2tables) = tuple
+
+        // List of module IRIs
+
+        _ <- options.output.modules match {
+          case Some(file) =>
+            writeModuleIRIs(iri2tables.map { case (iri, _) => iri }, file)
+
+          case None =>
+            \/-(())
+        }
+
+      } yield None -> iri2tables
+  }
+
+  def outputConversions
+  (extents: Seq[resolver.api.Extent],
+   ts: Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)],
+   outStore: OWLAPIOMFGraphStore,
+   outCat: CatalogScope,
+   outCatalog: Path,
+   options: OMLConverter.Options,
+   props: java.util.Properties)
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ (Option[CatalogScope], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  = for {
+
+    // 1) OML Tables
+
+    _ <- if (options.output.toOMLZip || options.output.isEmpty)
+      toTables(outStore, ts)
+    else
+      \/-(())
+
+    // 2) OML Textual Concrete Syntax
+
+    _ <- if (options.output.toText) {
+      toText(outCatalog, extents).leftMap(_.toThrowables)
+    } else
+      \/-(())
+
+    // 3) OML OWL (via OMF/OWLAPI) and optionally upload to fuseki
+
+    _ <- if (options.output.toOWL) {
+      for {
+        _ <- OMLResolver2Ontology.convert(extents, outStore)
+        _ <- options.output.fuseki match {
+          case None =>
+            \/-(())
+          case Some(fuseki) =>
+            tdbUpload(outCatalog, fuseki)
+        }
+      } yield ()
+    } else
+      \/-(())
+
+    // 4) Upload to SQL
+
+    _ <- options.output.toSQL match {
+      case Some(server) =>
+        val tables = ts.map(_._2).reduceLeft(OMLSpecificationTables.mergeTables)
+        OMLSpecificationTypedDatasets
+          .sqlWriteOMLSpecificationTables(tables, server, props) match {
+          case Success(_) =>
+            \/-(())
+          case Failure(t) =>
+            -\/(Set(t))
+        }
+      case None =>
+        \/-(())
+    }
+
+    // 5) Parquet
+
+    _ = if (options.output.toParquet)
+      toParquet(options.output, outCat, outCatalog / up, ts)
+    else
+      ()
+
+  } yield Some(outCat) -> ts
+
+  protected def toTables
+  (outStore: OWLAPIOMFGraphStore, ts: Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ Unit
+  = ts.foldLeft {
+    ().right[OMFError.Throwables]
+  } { case (acc, (iri, t)) =>
+
+    for {
+      _ <- acc
+      tURI = outStore.catalogIRIMapper.resolveIRI(IRI.create(iri), saveResolutionStrategyForOMLTables).toURI
+      tFile = Paths.get(tURI).toFile
+
+      _ <- OMLSpecificationTables
+        .saveOMLSpecificationTables(t, tFile)
+        .toDisjunction
+        .leftMap(Set[java.lang.Throwable](_))
+
+      _ = System.out.println(s"Saved oml.tables in: $tFile")
+
+    } yield ()
+  }
 
   protected[converters] def toText(
       outCatalog: Path,

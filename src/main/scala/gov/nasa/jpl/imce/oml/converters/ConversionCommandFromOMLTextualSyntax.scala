@@ -22,23 +22,20 @@ import java.lang.System
 import java.util.Properties
 
 import ammonite.ops.{Path, up}
-import gov.nasa.jpl.imce.oml.converters.utils.{EMFProblems, FileSystemUtilities, OMLResourceSet}
-import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
-import gov.nasa.jpl.imce.oml.model.extensions.OMLCatalog
+import gov.nasa.jpl.imce.oml.converters.utils.{FileSystemUtilities, OMLResourceSet}
 import gov.nasa.jpl.imce.oml.resolver.{Extent2Tables, api, impl}
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
 import gov.nasa.jpl.imce.oml.{tables, uuid}
 import gov.nasa.jpl.imce.xml.catalog.scope.CatalogScope
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
+import org.eclipse.emf.ecore.util.EcoreUtil
 
-import scala.collection.immutable.{Iterable, List, Seq, Set}
-import scala.util.{Failure, Success}
+import scala.collection.immutable.{Iterable, Seq, Set}
 import scala.util.control.Exception.nonFatalCatch
-import scala.{None, Some, StringContext, Unit}
+import scala.{Option, StringContext}
 import scala.Predef.ArrowAssoc
 import scalaz._
-import Scalaz._
 
 case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
@@ -46,11 +43,11 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
   override def convert
   (omlCatalogScope: OMLCatalogScope,
-   outCatalog: Path,
-   conversions: ConversionCommand.OutputConversions)
+   outputCatalog: Option[Path],
+   options: OMLConverter.Options)
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
-  = nonFatalCatch[OMFError.Throwables \/ (OMLCatalog, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])]
+  : OMFError.Throwables \/ (Option[CatalogScope], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  = nonFatalCatch[OMFError.Throwables \/ (Option[CatalogScope], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])]
     .withApply {
       (t: java.lang.Throwable) =>
         -\/(Set(t))
@@ -65,19 +62,37 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
       val inDir: Path = omlCatalogScope.omlCatalogFile / up
 
-      val result = for {
+      org.eclipse.emf.ecore.resource.Resource.Factory.Registry.INSTANCE.getContentTypeToFactoryMap.put("omlzip", new gov.nasa.jpl.imce.oml.zip.OMLZipResourceFactory())
+      org.eclipse.emf.ecore.resource.Resource.Factory.Registry.INSTANCE.getExtensionToFactoryMap.put("omlzip", new gov.nasa.jpl.imce.oml.zip.OMLZipResourceFactory())
+
+      val tuple = for {
         in_rs_cm_cat <- OMLResourceSet.initializeResourceSetWithCatalog(omlCatalogScope.omlCatalogFile)
         (in_rs, in_cm, in_cat) = in_rs_cm_cat
 
-        out_store_cat <- ConversionCommand
-          .createOMFStoreAndLoadCatalog(outCatalog)
-          .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
-        (outStore, outCat) = out_store_cat
 
         omlFileScope = omlCatalogScope.omlFiles.values.to[Iterable]
 
+        beforeLoad = System.currentTimeMillis()
+
         fileModules <- OMLResourceSet.loadOMLResources(in_rs, inDir, omlFileScope)
-        _ = System.out.println(s"# Loaded all OML resources (no EcoreUtil.resolveAll!).")
+
+        load_delta = System.currentTimeMillis() - beforeLoad
+        load_ms = load_delta % 1000
+        load_s = load_delta / 1000
+
+        _ = if (options.resolveAll) {
+
+          System.out.println(s"# Loaded all OML resources in ${load_s}s, ${load_ms}ms.")
+          val beforeResolve = System.currentTimeMillis()
+          EcoreUtil.resolveAll(in_rs)
+
+          val resolve_delta = System.currentTimeMillis() - beforeResolve
+          val resolve_ms = resolve_delta % 1000
+          val resolve_s = resolve_delta / 1000
+          System.out.println(s"# Resolved all OML resources in ${resolve_s}s, ${resolve_ms}ms.")
+
+        } else
+          System.out.println(s"# Loaded all OML resources (no EcoreUtil.resolveAll!) in ${load_s}s, ${load_ms}ms.")
 
         omlUUIDg = uuid.JVMUUIDGenerator()
         factory: api.OMLResolvedFactory = impl.OMLResolvedFactoryImpl(omlUUIDg)
@@ -86,100 +101,13 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
 
         (_, sortedAPIModuleExtents) = o2rMap_sorted
 
-        // List of module IRIs
+        iri2tables = sortedAPIModuleExtents.map { case (m, extent) => m.iri -> Extent2Tables.convert(extent) }
 
-        _ <- conversions.modules match {
-          case Some(file) =>
-            internal
-              .writeModuleIRIs(sortedAPIModuleExtents.map { case (m, _) => m.iri }, file)
-              .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
+        extents = sortedAPIModuleExtents.map(_._2)
 
-          case None =>
-            ().right[EMFProblems]
-        }
+      } yield (extents, iri2tables)
 
-        // Convert to tables
+      internal.process(tuple.leftMap(_.toThrowables), outputCatalog, options, props)
 
-        _ <- if (conversions.toOMLZip)
-          sortedAPIModuleExtents.foldLeft[EMFProblems \/ Unit](\/-(())) {
-            case (acc, (_, extent)) =>
-              for {
-                _ <- acc
-                m <- extent.singleModule match {
-                  case Success(module) =>
-                    \/-(module)
-                  case Failure(t) =>
-                    -\/(new EMFProblems(t))
-                }
-
-                outputFile <- internal
-                  .resolveOutputCatalogFileWithExtension(outCat, m.iri, ".omlzip")
-                  .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
-
-                tables = Extent2Tables.convert(extent)
-                _ <- OMLSpecificationTables
-                  .saveOMLSpecificationTables(tables, outputFile.toIO) match {
-                  case Success(_) =>
-                    System.out.println(s"... saved tables: ${m.iri} => $outputFile")
-                    \/-(())
-                  case Failure(t) =>
-                    -\/(new EMFProblems(t))
-                }
-              } yield ()
-          }
-        else
-          ().right[EMFProblems]
-
-        // Convert to OWL
-
-        _ <- if (conversions.toOWL) {
-          for {
-           _ <- internal
-            .OMLResolver2Ontology
-            .convert(sortedAPIModuleExtents.map(_._2), outStore)
-            .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
-            _ <- conversions.fuseki match {
-              case None =>
-                ().right[EMFProblems]
-              case Some(fuseki) =>
-                internal
-                  .tdbUpload(outCatalog, fuseki)
-                  .leftMap(ts => EMFProblems(exceptions = ts.to[List]))
-            }
-          } yield ()
-        } else
-          ().right[EMFProblems]
-
-        // Convert to OML
-
-        _ <- if (conversions.toText)
-          internal
-            .toText(outCatalog, sortedAPIModuleExtents.map(_._2))
-        else
-          ().right[EMFProblems]
-
-        // Convert to SQL
-
-        _ <- conversions.toSQL match {
-          case Some(server) =>
-            val tables =
-              sortedAPIModuleExtents
-                .map { case (_, extent) => Extent2Tables.convert(extent) }
-                .reduceLeft(OMLSpecificationTables.mergeTables)
-            OMLSpecificationTypedDatasets
-              .sqlWriteOMLSpecificationTables(tables, server, props) match {
-              case Success(_) =>
-                ().right[EMFProblems]
-              case Failure(t) =>
-                EMFProblems(exceptions = List(t)).left
-            }
-          case None =>
-            ().right[EMFProblems]
-        }
-
-      } yield outCat -> sortedAPIModuleExtents.map { case (m, extent) => m.iri -> Extent2Tables.convert(extent) }
-
-      result.leftMap(_.toThrowables)
     }
-
 }

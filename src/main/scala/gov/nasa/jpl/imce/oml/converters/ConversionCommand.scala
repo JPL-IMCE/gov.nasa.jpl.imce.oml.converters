@@ -45,10 +45,10 @@ trait ConversionCommand {
 
   def convert
   (omlCatalogScope: OMLCatalogScope,
-    outCatalog: Path,
-    conversions: ConversionCommand.OutputConversions)
+    outCatalog: Option[Path],
+    options: OMLConverter.Options)
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ (Option[CatalogScope], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
 }
 
 object ConversionCommand {

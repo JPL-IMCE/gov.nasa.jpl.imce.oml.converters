@@ -24,19 +24,16 @@ import java.util.Properties
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.covariantTag.@@
-import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
 import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.resolver.TableUtilities
 import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.{OMLSpecificationTables, taggedTypes}
 import gov.nasa.jpl.imce.xml.catalog.scope.CatalogScope
-import gov.nasa.jpl.omf.scala.binding.owlapi.OWLAPIOMFGraphStore
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
-import org.apache.xml.resolver.Catalog
 
-import scala.{Int, None, Ordering, Some, StringContext}
+import scala.{Int, Option, Ordering, StringContext}
 import scala.collection.immutable.{Map, Seq, Set}
 import scala.util.{Failure, Success, Try}
 import scala.Predef.{ArrowAssoc, String}
@@ -66,29 +63,12 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
   override def convert
   (omlCatalogScope: OMLCatalogScope,
-   outCatalog: Path,
-   conversions: ConversionCommand.OutputConversions)
+   outputCatalog: Option[Path],
+   options: OMLConverter.Options)
   (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
-  = for {
-    in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
-    (inStore, inCat) = in_store_cat
-    out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
-    (outStore, outCat) = out_store_cat
-    result <- convert(inStore, inCat, omlCatalogScope, outStore, outCat, outCatalog, conversions)
-  } yield result
-
-  def convert
-  (inStore: OWLAPIOMFGraphStore,
-   inCat: Catalog,
-   omlCatalogScope: OMLCatalogScope,
-   outStore: OWLAPIOMFGraphStore,
-   outCat: CatalogScope,
-   outCatalog: Path,
-   conversions: ConversionCommand.OutputConversions)
-  (implicit spark: SparkSession, sqlContext: SQLContext)
-  : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+  : OMFError.Throwables \/ (Option[CatalogScope], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
+
     val props = new Properties()
     props.setProperty("useSSL", "false")
 
@@ -103,7 +83,9 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
 
     val allModules
     : Map[taggedTypes.IRI, OMLSpecificationTables]
-    = allTables.foldLeft(Map.empty[taggedTypes.IRI, OMLSpecificationTables]) { _ ++ TableUtilities.tableModules(_) }
+    = allTables.foldLeft(Map.empty[taggedTypes.IRI, OMLSpecificationTables]) {
+      _ ++ TableUtilities.tableModules(_)
+    }
 
     val g0
     : Graph[taggedTypes.IRI, DiEdge]
@@ -118,75 +100,19 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
       gj
     }
 
-    for {
+    val tuple = for {
       gorder <- GraphUtilities.hierarchicalTopologicalSort(Seq(g1)).map(_.reverse)
 
       _ = gorder.foreach { m =>
         System.out.println(s"convert from OWL(tables): $m")
       }
 
-      ts = gorder.map(iri => iri -> allModules(iri))
+      iri2tables = gorder.map(iri => iri -> allModules(iri))
 
-      // List of module IRIs
+      extents <- ResolverUtilities.resolveTables(ResolverUtilities.initializeResolver(), iri2tables)
 
-      _ <- conversions.modules match {
-        case Some(file) =>
-          internal
-            .writeModuleIRIs(ts.map { case (iri, _) => iri }, file)
+    } yield (extents, iri2tables)
 
-        case None =>
-          \/-(())
-      }
-
-      // 2) Convert from OML Tables => OML Resolver
-
-      extents <- ResolverUtilities.resolveTables(
-        ResolverUtilities.initializeResolver(),
-        ts)
-
-      // 3) Convert from OML Resolver => OML Textual Concrete Syntax
-
-      _ <- if (conversions.toText)
-        internal
-          .toText(outCatalog, extents)
-          .leftMap(_.toThrowables)
-      else
-        \/-(())
-
-      // 4) Convert from OML Resolver => OMF/OWLAPI again
-
-      _ <- if (conversions.toOWL) {
-        for {
-          _ <- internal
-            .OMLResolver2Ontology
-            .convert(extents, outStore)
-          _ <- conversions.fuseki match {
-            case None =>
-              \/-(())
-            case Some(fuseki) =>
-              internal.tdbUpload(outCatalog, fuseki)
-          }
-        } yield ()
-      } else
-        \/-(())
-
-      // 6) Convert from OML Tables => SQL
-
-      _ <- conversions.toSQL match {
-        case Some(server) =>
-          val tables = ts.map(_._2).reduceLeft(OMLSpecificationTables.mergeTables)
-          OMLSpecificationTypedDatasets
-            .sqlWriteOMLSpecificationTables(tables, server, props) match {
-            case Success(_) =>
-              \/-(())
-            case Failure(t) =>
-              -\/(Set(t))
-          }
-        case None =>
-          \/-(())
-      }
-
-    } yield outCat -> ts
+    internal.process(tuple, outputCatalog, options, props)
   }
-
 }
