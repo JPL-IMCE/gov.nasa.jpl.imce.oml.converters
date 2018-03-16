@@ -21,6 +21,7 @@ package gov.nasa.jpl.imce.oml.converters.internal
 import java.lang.{IllegalArgumentException, System}
 import java.util.UUID
 
+import gov.nasa.jpl.imce.oml.converters.ConversionCommand
 import gov.nasa.jpl.imce.oml.resolver.Filterable._
 import gov.nasa.jpl.imce.oml.resolver.api
 import gov.nasa.jpl.imce.oml.resolver.Extent2Tables.toUUIDString
@@ -29,14 +30,14 @@ import gov.nasa.jpl.omf.scala.binding.owlapi
 import gov.nasa.jpl.omf.scala.binding.owlapi.descriptions.ImmutableDescriptionBox
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.terminologies.ImmutableTerminologyBox
 import gov.nasa.jpl.omf.scala.binding.owlapi.types.{terminologies => owlapiterminologies}
-import gov.nasa.jpl.omf.scala.binding.owlapi.{OntologyMapping, OWLAPIOMFGraphStore, descriptions => owlapidescriptions}
+import gov.nasa.jpl.omf.scala.binding.owlapi.{OWLAPIOMFGraphStore, OntologyMapping, descriptions => owlapidescriptions}
 import gov.nasa.jpl.omf.scala.core
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable.{::, Iterable, List, Map, Nil, Seq, Set}
 import scala.{Boolean, Function, None, Option, Some, StringContext, Unit}
-import scala.Predef.{ArrowAssoc,String}
+import scala.Predef.{ArrowAssoc, String}
 import scalaz._
 import Scalaz._
 
@@ -588,8 +589,9 @@ object OMLResolver2Ontology {
       convertReifiedRelationshipRestrictions(acc, queue, List.empty)
     else
       Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
-        s"convertReifiedRelationshipRestrictions: no progress with ${queue.size} reified relationships in the queue: " +
-          queue.map(_._2.name).mkString(", "))).left
+        ConversionCommand.explainProblems(
+          s"convertReifiedRelationshipRestrictions: no progress with ${queue.size} reified relationships in the queue",
+          queue.map(_._2.name)))).left
   } else acc match {
     case \/-(r2o) =>
       val (ext, rr0, t0) = rrs.head
@@ -646,8 +648,9 @@ object OMLResolver2Ontology {
       convertReifiedRelationships(acc, queue, List.empty)
     else
       Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
-        s"convertReifiedRelationships: no progress with ${queue.size} reified relationships in the queue: " +
-          queue.map(_._2.name).mkString(", "))).left
+        ConversionCommand.explainProblems(
+          s"convertReifiedRelationships: no progress with ${queue.size} reified relationships in the queue",
+          queue.map(_._2.name)))).left
   } else acc match {
     case \/-(r2o) =>
       val (ext, rr0, t0) = rrs.head
@@ -848,8 +851,9 @@ object OMLResolver2Ontology {
       convertRestrictedDataRanges(acc, queue, List.empty)
     else
       Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
-        s"convertRestrictedDataRanges: no progress with ${queue.size} data ranges in the queue: " +
-          queue.map(_._1.name).mkString(", "))).left
+        ConversionCommand.explainProblems(
+          s"convertRestrictedDataRanges: no progress with ${queue.size} data ranges in the queue",
+          queue.map(_._1.name)))).left
   }
   else acc match {
     case \/-(r2o) =>

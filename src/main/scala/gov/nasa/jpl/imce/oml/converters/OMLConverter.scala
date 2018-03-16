@@ -317,6 +317,7 @@ object OMLConverter {
       .action { (catalog, c) =>
         c.copy(output = c.output.addCatalog(getAbsolutePath(catalog)))
       }
+      .validate(ConversionCommand.Request.validateCatalog)
 
     opt[File]("output")
       .text(

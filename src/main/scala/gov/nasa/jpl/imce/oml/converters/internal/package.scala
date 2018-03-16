@@ -336,6 +336,7 @@ package object internal {
           case (iri, (_, omlModule)) =>
             val omlIRI = iri + ".oml"
             val resolvedIRI = outCat.resolveURI(omlIRI)
+            require(null != resolvedIRI)
             val uri: EURI = EURI.createURI(resolvedIRI)
             val r = rs.createResource(uri)
             val omlExtent = common.CommonFactory.eINSTANCE.createExtent()
@@ -389,7 +390,7 @@ package object internal {
       ts.foreach {
         case (iri, t) =>
           val resolved = outCat.resolveURI(iri)
-          require(resolved.startsWith("file:"))
+          require(null != resolved && resolved.startsWith("file:"))
 
           val tDir = new File(resolved.stripPrefix("file:") + "/oml.parquet")
           tDir.mkdirs()

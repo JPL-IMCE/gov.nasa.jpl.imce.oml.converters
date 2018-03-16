@@ -25,6 +25,7 @@ import ammonite.ops.Path
 import frameless.syntax._
 import frameless._
 
+import gov.nasa.jpl.imce.oml.converters.ConversionCommand
 import gov.nasa.jpl.imce.oml.frameless.{OMLSpecificationTypedDatasets, api}
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets.tagInjection
 import gov.nasa.jpl.imce.oml.tables.taggedTypes
@@ -148,13 +149,13 @@ object OMLMerge {
 
         if (diff1.nonEmpty)
           problems +=
-            s"${diff1.size} differences! (same iri, different moduleUUID)\n" +
-              diff1.map(_.toString).mkString("\n")
+            ConversionCommand.explainProblems(
+              s"${diff1.size} differences! (same iri, different moduleUUID)",  diff1.map(_.toString))
 
         if (diff2.nonEmpty)
           problems +=
-            s"${diff2.size} differences! (same iri, different abbrevIRI)\n" +
-              diff2.map(_.toString).mkString("\n")
+            ConversionCommand.explainProblems(
+              s"${diff2.size} differences! (same iri, different abbrevIRI)", diff2.map(_.toString))
 
         val j2: TypedDataset[(api.AnnotationProperty, api.AnnotationProperty)]
         = mi.annotationProperties.join(omlTD.annotationProperties,
@@ -169,18 +170,17 @@ object OMLMerge {
 
         if (diff3.nonEmpty)
           problems +=
-            s"${diff3.size} differences! (same abbrevIRI, different moduleUUID)\n" +
-              diff3.map(_.toString).mkString("\n")
+            ConversionCommand.explainProblems(
+              s"${diff3.size} differences! (same abbrevIRI, different moduleUUID)", diff3.map(_.toString))
 
         if (diff4.nonEmpty)
           problems +=
-            s"${diff4.size} differences! (same abbrevIRI, different iri)\n" +
-              diff4.map(_.toString).mkString("\n")
+            ConversionCommand.explainProblems(
+              s"${diff4.size} differences! (same abbrevIRI, different iri)", diff4.map(_.toString))
 
         if (problems.nonEmpty)
           throw new IllegalArgumentException(
-            s"Problems found when merging $path\n" + problems.mkString("\n")
-          )
+            ConversionCommand.explainProblems(s"Problems found when merging $path", problems))
 
         mi.copy(annotationProperties = (mi.annotationProperties union omlTD.annotationProperties).distinct)
 

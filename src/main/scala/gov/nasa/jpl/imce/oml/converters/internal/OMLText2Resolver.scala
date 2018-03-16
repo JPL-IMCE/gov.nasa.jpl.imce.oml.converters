@@ -19,7 +19,7 @@
 package gov.nasa.jpl.imce.oml.converters.internal
 
 import gov.nasa.jpl.imce.oml.tables
-import gov.nasa.jpl.imce.oml.converters.emf2tables
+import gov.nasa.jpl.imce.oml.converters.{ConversionCommand, emf2tables}
 import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model.bundles._
 import gov.nasa.jpl.imce.oml.model.common._
@@ -639,8 +639,9 @@ object OMLText2Resolver {
       convertReifiedRelationshipRestrictions(state, queue, List.empty)
     else
       new EMFProblems(new java.lang.IllegalArgumentException(
-        s"convertReifiedRelationshipRestrictions(...): Failed to resolve " +
-          queue.map(_.getName).mkString(", ")
+        ConversionCommand.explainProblems(
+          s"convertReifiedRelationshipRestrictions(...): Failed to resolve ${queue.size} reified relationship restrictions",
+          queue.map(_.getName))
       )).left
   } else
     state match {
@@ -712,8 +713,9 @@ object OMLText2Resolver {
       convertReifiedRelationships(state, queue, List.empty)
     else
       new EMFProblems(new java.lang.IllegalArgumentException(
-        s"convertReifiedRelationships(...): Failed to resolve " +
-          queue.map(_.getName).mkString(", ")
+        ConversionCommand.explainProblems(
+          s"convertReifiedRelationships(...): Failed to resolve ${queue.size} reified relationships",
+          queue.map(_.getName))
       )).left
   } else
     state match {
@@ -1311,8 +1313,9 @@ object OMLText2Resolver {
       convertRestrictedDataRanges(state, queue, List.empty)
     else
       new EMFProblems(new java.lang.IllegalArgumentException(
-        s"convertRestrictedDataRanges(...): Failed to resolve " +
-          queue.map(_.getName).mkString(", ")
+        ConversionCommand.explainProblems(
+          s"convertRestrictedDataRanges(...): Failed to resolve ${queue.size} data ranges",
+          queue.map(_.getName))
       )).left
   } else
     state match {

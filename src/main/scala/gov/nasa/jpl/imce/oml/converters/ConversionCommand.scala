@@ -53,6 +53,10 @@ trait ConversionCommand {
 
 object ConversionCommand {
 
+  def explainProblems(message: String, problems: scala.collection.Iterable[String])
+  : String
+  = message + problems.mkString("\n => ", "\n => ", "\n")
+
   sealed abstract trait ConversionFrom
   case object ConversionFromUnspecified extends ConversionFrom
   case object ConversionFromOWL extends ConversionFrom
@@ -101,7 +105,7 @@ object ConversionCommand {
       case Nil =>
         Right(())
       case ms =>
-        Left("Invalid OML catalog file."+ms.mkString("\n", "\n", "\n"))
+        Left(explainProblems(s"Invalid OML catalog file: $catalog", ms))
     }
 
     def validateExistingFolder(message: String)(folder: File): Either[String, Unit]
@@ -109,7 +113,7 @@ object ConversionCommand {
       case Nil =>
         Right(())
       case ms =>
-        Left(message + ms.mkString("\n", "\n", "\n"))
+        Left(explainProblems(message, ms))
     }
   }
 
@@ -288,8 +292,8 @@ object ConversionCommand {
           output.check(outputFolder, deleteIfExists)
         else
           Left(s"Input parquet folder must end in 'oml.parquet' ($folder)")
-      case m =>
-        Left("Invalid input parquet folder." + m.mkString("\n","\n","\n"))
+      case ms =>
+        Left(explainProblems(s"Invalid input parquet folder: $folder", ms))
     }
   }
 
@@ -353,7 +357,6 @@ object ConversionCommand {
       .apply {
         Right(())
       }
-
   }
 
   def createOMFStoreAndLoadCatalog(catalogFile: Path)
@@ -373,10 +376,7 @@ object ConversionCommand {
         OWLAPIOMFModule
           .owlAPIOMFModule(cm, withOMFMetadata = false)
           .valueOr { (errors: Set[java.lang.Throwable]) =>
-            val message = s"${errors.size} errors" + errors
-              .map(_.getMessage)
-              .toList
-              .mkString("\n => ", "\n => ", "\n")
+            val message = explainProblems(s"${errors.size} errors", errors.map(_.getMessage))
             throw new java.lang.IllegalArgumentException(message)
           },
         OWLManager.createOWLOntologyManager(),
@@ -387,10 +387,7 @@ object ConversionCommand {
       omfStore.catalogIRIMapper
         .parseCatalog(catalogFile.toIO.toURI)
         .valueOr { (errors: Set[java.lang.Throwable]) =>
-          val message = s"${errors.size} errors" + errors
-            .map(_.getMessage)
-            .toList
-            .mkString("\n => ", "\n => ", "\n")
+          val message = explainProblems(s"${errors.size} errors", errors.map(_.getMessage))
           throw new java.lang.IllegalArgumentException(message)
         }
 

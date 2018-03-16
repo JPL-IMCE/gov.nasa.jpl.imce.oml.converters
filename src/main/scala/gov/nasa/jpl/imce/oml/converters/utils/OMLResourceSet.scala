@@ -52,8 +52,25 @@ object OMLResourceSet {
       Option.apply(OMLExtensions.getCatalog(rs))
     ) match {
       case (Some(cm: OMLCatalogManager), Some(cat: OMLCatalog)) =>
-        cat.parseCatalog(catalogFile.toIO.toURI.toURL)
-        (rs, cm, cat).right
+        nonFatalCatch[EMFProblems \/ (XtextResourceSet, OMLCatalogManager, OMLCatalog)]
+          .withApply(t => new EMFProblems(new java.lang.IllegalArgumentException(
+            s"Failed to parse the OASIS Catalog: $catalogFile", t
+          )).left)
+          .apply {
+            val nbParsed = cat.getParsedCatalogs.size()
+            val nbEntries = cat.entries().size()
+            cat.parseCatalog(catalogFile.toIO.toURI.toURL)
+            if (nbParsed == cat.getParsedCatalogs.size())
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"Failed to parse the OASIS Catalog: $catalogFile"
+              )).left
+            else if (nbEntries == cat.entries().size())
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"Parsed an empty OASIS Catalog: $catalogFile"
+              )).left
+            else
+              (rs, cm, cat).right
+          }
       case _ =>
         new EMFProblems(new java.lang.IllegalArgumentException(
           s"Failed to create an OASIS Catalog"

@@ -21,7 +21,7 @@ package gov.nasa.jpl.imce.oml.converters.internal
 import java.lang.IllegalArgumentException
 import java.util.UUID
 
-import gov.nasa.jpl.imce.oml.converters.tables2emf
+import gov.nasa.jpl.imce.oml.converters.{ConversionCommand, tables2emf}
 import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable.filterable
 import gov.nasa.jpl.imce.oml.converters.utils.EMFProblems
 import gov.nasa.jpl.imce.oml.model._
@@ -33,7 +33,7 @@ import org.eclipse.xtext.resource.XtextResourceSet
 
 import scala.collection.immutable._
 import scala.{Boolean, None, Option, Some, StringContext}
-import scala.Predef.{require,ArrowAssoc,String}
+import scala.Predef.{ArrowAssoc, String, require}
 import scalaz.Scalaz._
 import scalaz._
 
@@ -645,8 +645,9 @@ object OMLResolver2Text {
       convertReifiedRelationshipRestrictions(acc, queue, List.empty)
     else
       new EMFProblems(new IllegalArgumentException(
-        s"convertReifiedRelationshipRestrictions: no progress with ${queue.size} reified relationships in the queue: " +
-          queue.map(_._2.name).mkString(", "))).left
+        ConversionCommand.explainProblems(
+          s"convertReifiedRelationshipRestrictions: no progress with ${queue.size} reified relationships in the queue",
+          queue.map(_._2.name)))).left
   } else acc match {
     case \/-(r2t) =>
       val (rr0, t0) = rrs.head
@@ -699,8 +700,9 @@ object OMLResolver2Text {
       convertReifiedRelationships(acc, queue, List.empty)
     else
       new EMFProblems(new IllegalArgumentException(
-        s"convertReifiedRelationships: no progress with ${queue.size} reified relationships in the queue: " +
-          queue.map(_._2.name).mkString(", "))).left
+        ConversionCommand.explainProblems(
+          s"convertReifiedRelationships: no progress with ${queue.size} reified relationships in the queue",
+          queue.map(_._2.name)))).left
   } else acc match {
     case \/-(r2t) =>
       val (rr0, t0) = rrs.head
@@ -865,8 +867,9 @@ object OMLResolver2Text {
       convertRestrictedDataRanges(acc, queue, List.empty)
     else
       new EMFProblems(new java.lang.IllegalArgumentException(
-        s"convertRestrictedDataRanges: no progress with ${queue.size} data ranges in the queue: " +
-          queue.map(_._1.name).mkString(", "))).left
+        ConversionCommand.explainProblems(
+          s"convertRestrictedDataRanges: no progress with ${queue.size} data ranges in the queue",
+          queue.map(_._1.name)))).left
   }
   else
     acc match {

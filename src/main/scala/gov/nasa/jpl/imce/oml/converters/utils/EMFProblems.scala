@@ -20,6 +20,7 @@ package gov.nasa.jpl.imce.oml.converters.utils
 
 import org.eclipse.emf.ecore.resource.Resource
 
+import gov.nasa.jpl.imce.oml.converters.ConversionCommand
 import scala.collection.immutable._
 import scala.util.control.Exception
 import scala.{Option,None,Some,StringContext,Unit}
@@ -36,17 +37,15 @@ case class EMFProblems
   = Set.empty[java.lang.Throwable] ++
     errors.map { case (r, ds) =>
       new java.lang.IllegalArgumentException(
-        s"${ds.size} errors in ${r.getURI}: " +
-          ds
-            .map(d => s"${d.getLine}:${d.getColumn} in ${d.getLocation}: ${d.getMessage}")
-            .mkString("\n#", "\n#", "\n"))
+        ConversionCommand.explainProblems(
+          s"${ds.size} errors in ${r.getURI}: ",
+          ds.map(d => s"${d.getLine}:${d.getColumn} in ${d.getLocation}: ${d.getMessage}")))
     } ++
     errors.map { case (r, ds) =>
       new java.lang.IllegalArgumentException(
-        s"${ds.size} warnings in ${r.getURI}: " +
-          ds
-            .map(d => s"${d.getLine}:${d.getColumn} in ${d.getLocation}: ${d.getMessage}")
-            .mkString("\n#", "\n#", "\n"))
+        ConversionCommand.explainProblems(
+          s"${ds.size} warnings in ${r.getURI}: ",
+          ds.map(d => s"${d.getLine}:${d.getColumn} in ${d.getLocation}: ${d.getMessage}")))
     } ++
     exceptions.to[Set]
 
