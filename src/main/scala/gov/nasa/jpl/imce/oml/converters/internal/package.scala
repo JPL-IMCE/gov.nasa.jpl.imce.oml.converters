@@ -113,11 +113,13 @@ package object internal {
 
           case (None, Some(outCat)) =>
             val tmp = Path(File.createTempFile("omlConverter", "xml"))
+            rm(tmp)
             cp(outCat, tmp)
             val dir = outCat / up
             rm(dir)
             mkdir(dir)
             cp(tmp, outCat)
+            rm(tmp)
             \/-(Some(outCat))
 
           case (Some(dir), Some(outCat)) =>
