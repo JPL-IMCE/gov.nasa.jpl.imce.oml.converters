@@ -12,7 +12,7 @@ import gov.nasa.jpl.imce.oml.resolver.TableUtilities
 import gov.nasa.jpl.imce.oml.tables.{OMLSpecificationTables, taggedTypes}
 import org.apache.spark.sql.SparkSession
 
-import scala.{Int, None, Ordering, Some, StringContext, Unit}
+import scala.{sys, Int, None, Ordering, Some, StringContext, Unit}
 import scala.collection.immutable.{Seq, Set}
 import scala.util.{Failure, Success}
 import scala.Predef.{ArrowAssoc, String}
@@ -145,7 +145,7 @@ object ConversionCommandFromOMLSQL {
           System.err.println(t.getMessage)
           t.printStackTrace(System.err)
         }
-        System.exit(-1)
+        sys.exit(-1)
     }
   }
 

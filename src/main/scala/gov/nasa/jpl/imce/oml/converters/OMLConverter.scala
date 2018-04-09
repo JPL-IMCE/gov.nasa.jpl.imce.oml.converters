@@ -30,7 +30,7 @@ import org.apache.spark.sql.{SQLContext, SparkSession}
 import scopt.Read
 
 import scala.collection.immutable._
-import scala.{Array, Boolean, None, Option, Some, StringContext, Unit}
+import scala.{sys, Array, Boolean, None, Option, Some, StringContext, Unit}
 import scala.Predef.{String, augmentString, wrapRefArray}
 import scala.util.{Failure, Success}
 import scalaz._
@@ -446,9 +446,12 @@ object OMLConverter {
 
     val t0 = System.currentTimeMillis()
 
+    System.out.println(argv.mkString("# Running:\n#\n# omlConverter \\\n# ", " \\\n# ", "\n#\n"))
+
     optionsParser.parse(argv, Options()) match {
       case Some(Options(ConversionCommand.NoRequest(), _, _, _, _, _, _)) =>
         System.err.println("Abnormal exit; no command requested.")
+        sys.exit(-1)
 
       case Some(options) =>
         options.input match {
@@ -481,15 +484,15 @@ object OMLConverter {
                           options,
                           if (options.verboseFiles) Some(System.out) else None)
                       case -\/(errors) =>
-                        internal.showErrors(errors)
+                        internal.showErrorsAndExit(errors)
                     }
 
                   case -\/(errors) =>
-                    internal.showErrors(errors)
+                    internal.showErrorsAndExit(errors)
                 }
 
               case -\/(errors) =>
-                internal.showErrors(errors)
+                internal.showErrorsAndExit(errors)
             }
 
           case s: ConversionCommand.SQLInputConversionWithServer =>
@@ -499,7 +502,7 @@ object OMLConverter {
                   .sqlInputConversion(s, options.output, outCatalogPath)
 
               case -\/(errors) =>
-                internal.showErrors(errors)
+                internal.showErrorsAndExit(errors)
             }
 
           case m: ConversionCommand.MergeCatalogs =>
@@ -521,19 +524,21 @@ object OMLConverter {
                       internal.toParquet(options.output, outCatalog, outCatalogPath / up, ts)
 
                   case -\/(errors) =>
-                    internal.showErrors(errors)
+                    internal.showErrorsAndExit(errors)
                 }
 
               case -\/(errors) =>
-                internal.showErrors(errors)
+                internal.showErrorsAndExit(errors)
             }
 
           case _ =>
             System.err.println("Abnormal exit; no operation performed.")
+            sys.exit(-1)
         }
 
       case None =>
         System.err.println("Abnormal exit; no operation performed.")
+        sys.exit(-1)
     }
 
     val t1 = System.currentTimeMillis()
@@ -623,7 +628,7 @@ object OMLConverter {
       case \/-(_) =>
         ()
       case -\/(errors) =>
-        internal.showErrors(errors)
+        internal.showErrorsAndExit(errors)
     }
   }
 
@@ -653,7 +658,7 @@ object OMLConverter {
       case \/-(_) =>
         ()
       case -\/(errors) =>
-        internal.showErrors(errors)
+        internal.showErrorsAndExit(errors)
     }
   }
 

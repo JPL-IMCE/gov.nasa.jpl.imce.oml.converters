@@ -11,3 +11,5 @@ gov.nasa.jpl.imce.oml.converters 0.10.0 is a significant update of 0.9.4
 ## [#58 Need to delete copy file target before copying with Ammonite.ops](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/58)
 
 ## [#59 Eclipse URI NPE](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/59)
+
+## [#62 OML Converter should return a non-zero status if errors are detected.](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/62)

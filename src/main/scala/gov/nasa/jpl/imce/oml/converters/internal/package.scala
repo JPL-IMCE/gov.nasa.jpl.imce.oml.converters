@@ -41,7 +41,7 @@ import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable.{Seq, Set}
 import scala.util.{Failure, Properties, Success}
-import scala.{Boolean, Left, None, Option, Right, Some, StringContext, Unit}
+import scala.{sys, Boolean, Left, None, Option, Right, Some, StringContext, Unit}
 import scala.Predef.{ArrowAssoc, String, augmentString, require}
 import scalaz._
 import Scalaz._
@@ -49,13 +49,13 @@ import scala.util.control.Exception.nonFatalCatch
 
 package object internal {
 
-  def showErrors(ts: Set[java.lang.Throwable]): Unit = {
+  def showErrorsAndExit(ts: Set[java.lang.Throwable]): Unit = {
     System.err.println(s"### ${ts.size} Conversion Errors! ###")
     ts.foreach { t =>
       System.err.println(t.getMessage)
       t.printStackTrace(System.err)
     }
-    System.exit(-1)
+    sys.exit(-1)
   }
 
   /**
