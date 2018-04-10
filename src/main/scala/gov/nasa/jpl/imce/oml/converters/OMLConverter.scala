@@ -51,7 +51,7 @@ object OMLConverter {
    outputFolder: Option[Path] = None,
    verboseFiles: Boolean = false,
    resolveAll: Boolean = false,
-   hierarchicalSort: Boolean = false
+   hierarchicalSort: Boolean = true
   )
 
   def getAbsolutePath(f: File)
@@ -365,11 +365,11 @@ object OMLConverter {
 
     opt[Unit]("hsort")
       .text(
-        """Hierarchically sort the hypergraph of OML Modules before output conversion (default = false)
+        """Disable hierarchically sort the hypergraph of OML Modules before output conversion (default = enabled)
           |""".stripMargin)
       .optional()
       .action { (_, c) =>
-        c.copy(hierarchicalSort = true)
+        c.copy(hierarchicalSort = false)
       }
 
     opt[Unit]("text")
