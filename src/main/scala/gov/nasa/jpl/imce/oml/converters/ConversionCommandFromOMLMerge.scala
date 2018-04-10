@@ -4,7 +4,6 @@ import java.lang.System
 import java.util.Properties
 
 import ammonite.ops.{Path, up}
-import gov.nasa.jpl.imce.oml.covariantTag.@@
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
 import gov.nasa.jpl.imce.oml.resolver.{GraphUtilities, ResolverUtilities, TableUtilities}
 import gov.nasa.jpl.imce.oml.tables
@@ -14,8 +13,8 @@ import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
 
 import scala.collection.immutable.{Seq, Set}
-import scala.{Int, None, Ordering, Some, StringContext, Unit}
-import scala.Predef.{ArrowAssoc, String}
+import scala.{None, Some, StringContext, Unit}
+import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
 import scala.util.{Failure, Success}
@@ -25,13 +24,6 @@ import scalax.collection.GraphPredef.EdgeAssoc
 
 object ConversionCommandFromOMLMerge {
 
-  implicit def covariantOrdering[Tag]: Ordering[String @@ Tag] = new Ordering[String @@ Tag] {
-
-    override def compare(x: @@[String, Tag], y: @@[String, Tag])
-    : Int
-    = x.compareTo(y)
-
-  }
 
   def summarize(t: tables.OMLSpecificationTables)
   : Unit
@@ -53,6 +45,8 @@ object ConversionCommandFromOMLMerge {
   (implicit spark: SparkSession, sqlContext: SQLContext)
   : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
+    import internal.covariantOrdering
+
     val props = new Properties()
     props.setProperty("useSSL", "false")
 

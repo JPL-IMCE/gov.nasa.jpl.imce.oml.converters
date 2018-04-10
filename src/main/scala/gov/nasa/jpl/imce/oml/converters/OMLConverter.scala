@@ -25,13 +25,20 @@ import java.util.Properties
 
 import ammonite.ops.{Path, pwd, up}
 import gov.nasa.jpl.imce.oml.frameless.OMLSpecificationTypedDatasets
+import gov.nasa.jpl.imce.oml.resolver.{GraphUtilities, ResolverUtilities, TableUtilities}
+import gov.nasa.jpl.imce.oml.tables
 import gov.nasa.jpl.imce.oml.tables.OMLSpecificationTables
+
 import org.apache.spark.sql.{SQLContext, SparkSession}
+
+import scalax.collection.Graph
+import scalax.collection.GraphEdge.DiEdge
+import scalax.collection.GraphPredef.EdgeAssoc
 import scopt.Read
 
 import scala.collection.immutable._
-import scala.{sys, Array, Boolean, None, Option, Some, StringContext, Unit}
-import scala.Predef.{String, augmentString, wrapRefArray}
+import scala.{Array, Boolean, None, Option, Some, StringContext, Unit, sys}
+import scala.Predef.{ArrowAssoc, String, augmentString, wrapRefArray}
 import scala.util.{Failure, Success}
 import scalaz._
 
@@ -459,8 +466,14 @@ object OMLConverter {
             DiffConversionsCommand.diff(dir1, dir2)
 
           case p: ConversionCommand.ParquetInputConversionWithFolder =>
-            parquetInputConversion(
-              p, options.output, options.deleteOutputIfExists, options.outputFolder)
+            internal.makeOutputCatalogIfNeeded(options.deleteOutputIfExists, options.outputFolder, options.output.catalog) match {
+              case \/-(outCatalogPath) =>
+                parquetInputConversion(
+                 p, outCatalogPath, options.output, options.deleteOutputIfExists, options.outputFolder)
+
+              case -\/(errors) =>
+                internal.showErrorsAndExit(errors)
+            }
 
           case c: ConversionCommand.CatalogInputConversionWithCatalog =>
             c.conversionCommand() match {
@@ -550,11 +563,14 @@ object OMLConverter {
 
   def parquetInputConversion
   (p: ConversionCommand.ParquetInputConversionWithFolder,
+   outCatalog: Path,
    output: ConversionCommand.OutputConversions,
    deleteOutputIfExists: Boolean,
    outputFolder: Option[Path])
   : Unit
   = {
+    import internal.covariantOrdering
+
     val conf = internal.sparkConf(this.getClass.getSimpleName)
 
     implicit val spark: SparkSession = SparkSession
@@ -622,6 +638,46 @@ object OMLConverter {
         case None =>
           \/-(())
       }
+
+      allModules = TableUtilities.partitionModules(omlTables)
+
+      g0 = Graph[tables.taggedTypes.IRI, DiEdge](allModules.keys.toSeq: _*)
+
+      g1 = (g0 /: allModules) { case (gi, (_, ti)) =>
+        val gj = gi ++ TableUtilities.tableEdges(ti).map { case (src, dst) => src ~> dst }
+        gj
+      }
+
+      gorder <- GraphUtilities.hierarchicalTopologicalSort(Seq(g1)).map(_.reverse)
+
+      ts = gorder.map(iri => iri -> allModules(iri))
+
+      extents <- ResolverUtilities.resolveTables(ResolverUtilities.initializeResolver(), ts)
+
+      _ <- if (output.toText)
+        internal
+          .toText(outCatalog, extents)
+          .leftMap(_.toThrowables)
+      else
+        \/-(())
+
+      _ <- if (output.toOWL) {
+        for {
+          out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
+          (outStore, outCat) = out_store_cat
+          _ <- internal
+            .OMLResolver2Ontology
+            .convert(extents, outStore)
+          _ <- output.fuseki match {
+            case None =>
+              \/-(())
+            case Some(fuseki) =>
+              internal.tdbUpload(outCatalog, fuseki)
+          }
+        } yield ()
+      } else
+        \/-(())
+
     } yield ()
 
     ok match {

@@ -41,13 +41,23 @@ import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable.{Seq, Set}
 import scala.util.{Failure, Properties, Success}
-import scala.{sys, Boolean, Left, None, Option, Right, Some, StringContext, Unit}
+import scala.{Boolean, Int, Left, None, Option, Ordering, Right, Some, StringContext, Unit, sys}
 import scala.Predef.{ArrowAssoc, String, augmentString, require}
 import scalaz._
 import Scalaz._
+import gov.nasa.jpl.imce.oml.covariantTag.@@
+
 import scala.util.control.Exception.nonFatalCatch
 
 package object internal {
+
+  implicit def covariantOrdering[Tag]: Ordering[String @@ Tag] = new Ordering[String @@ Tag] {
+
+    override def compare(x: @@[String, Tag], y: @@[String, Tag])
+    : Int
+    = x.compareTo(y)
+
+  }
 
   def showErrorsAndExit(ts: Set[java.lang.Throwable]): Unit = {
     System.err.println(s"### ${ts.size} Conversion Errors! ###")
@@ -183,8 +193,8 @@ package object internal {
 
   protected[converters] val defaultOMLCatalog: String =
     """<?xml version='1.0'?>
-      |<catalog xmlns="urn:oasis:names:tc:entity:xmlns:xml:catalog" prefer="public">|
-      |	 <rewriteURI rewritePrefix="file:./" 							uriStartString="http://"/>
+      |<catalog xmlns="urn:oasis:names:tc:entity:xmlns:xml:catalog" prefer="public">
+      |	 <rewriteURI rewritePrefix="file:./" uriStartString="http://"/>
       |</catalog>
     """.stripMargin
 
