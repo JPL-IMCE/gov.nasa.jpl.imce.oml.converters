@@ -96,12 +96,12 @@ lazy val omlConverters = Project("omlConverters", file("."))
     resolvers += Resolver.bintrayRepo("jpl-imce", "gov.nasa.jpl.imce"),
     resolvers += Resolver.bintrayRepo("jpl-imce", "gov.nasa.jpl.imce.oml"),
 
-    resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases",
-    scalacOptions in (Compile, compile) += s"-P:artima-supersafe:config-file:${baseDirectory.value}/project/supersafe.cfg",
-    scalacOptions in (Test, compile) += s"-P:artima-supersafe:config-file:${baseDirectory.value}/project/supersafe.cfg",
-    scalacOptions in (Compile,doc) ++= Seq("-groups", "-implicits", "-Xplugin-disable:artima-supersafe"),
-    scalacOptions in (Test, doc) ++= Seq("-groups", "-implicits", "-Xplugin-disable:artima-supersafe"),
-    scalacOptions += "-g:vars",
+//    resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases",
+//    scalacOptions in (Compile, compile) += s"-P:artima-supersafe:config-file:${baseDirectory.value}/project/supersafe.cfg",
+//    scalacOptions in (Test, compile) += s"-P:artima-supersafe:config-file:${baseDirectory.value}/project/supersafe.cfg",
+//    scalacOptions in (Compile,doc) ++= Seq("-groups", "-implicits", "-Xplugin-disable:artima-supersafe"),
+//    scalacOptions in (Test, doc) ++= Seq("-groups", "-implicits", "-Xplugin-disable:artima-supersafe"),
+//    scalacOptions += "-g:vars",
 
     scalacOptions in (Compile,doc) ++= Seq(
       "-diagrams",
