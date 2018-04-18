@@ -17,3 +17,5 @@ gov.nasa.jpl.imce.oml.converters 0.10.0 is a significant update of 0.9.4
 ## [#63 Add missing conversions from parquet format.](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/63)
 
 ## [#64 Enable hierarchical topological sort with option to disable it](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/64)
+
+## [#66 When converting from OML/OMLZip, an OMLAnnotationPropertyValue may have a null value!](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/66)

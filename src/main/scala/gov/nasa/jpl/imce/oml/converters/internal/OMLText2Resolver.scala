@@ -2594,7 +2594,9 @@ object OMLText2Resolver {
             o2rk.rextent,
             aSubject,
             aProperty,
-            tables.taggedTypes.stringDataType(a0.getValue.value))
+            Option
+              .apply(tables.taggedTypes.stringDataType(a0.getValue.value))
+              .getOrElse(tables.taggedTypes.stringDataType("")))
           o2rl = o2rk.copy(rextent = el)
         } yield o2rl
       }
