@@ -2590,13 +2590,12 @@ object OMLText2Resolver {
                 s"convertAnnotations: Cannot find: ${a0.getProperty} "
               )).left
           }
+          aValue = a0.getValue
           (el, _) = f.createAnnotationPropertyValue(
             o2rk.rextent,
             aSubject,
             aProperty,
-            Option
-              .apply(tables.taggedTypes.stringDataType(a0.getValue.value))
-              .getOrElse(tables.taggedTypes.stringDataType("")))
+            tables.taggedTypes.stringDataType(StringArray.decode2StringIfNeeded(a0.getValue.value)))
           o2rl = o2rk.copy(rextent = el)
         } yield o2rl
       }
