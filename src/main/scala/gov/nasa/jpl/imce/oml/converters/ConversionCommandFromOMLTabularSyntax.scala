@@ -24,6 +24,7 @@ import java.util.Properties
 import ammonite.ops.Path
 import gov.nasa.jpl.imce.oml.converters.utils.FileSystemUtilities
 import gov.nasa.jpl.imce.oml.covariantTag.@@
+import gov.nasa.jpl.imce.oml.resolver
 import gov.nasa.jpl.imce.oml.resolver.GraphUtilities
 import gov.nasa.jpl.imce.oml.resolver.ResolverUtilities
 import gov.nasa.jpl.imce.oml.resolver.TableUtilities
@@ -87,7 +88,9 @@ case object ConversionCommandFromOMLTabularSyntax extends ConversionCommand {
       _ ++ TableUtilities.tableModules(_)
     }
 
-    val tuple = for {
+    val tuple
+    : OMFError.Throwables \/ (Seq[resolver.api.Extent], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
+    = for {
       iri2tables <- if (!options.hierarchicalSort)
         allModules.to[Seq].right[OMFError.Throwables]
       else {

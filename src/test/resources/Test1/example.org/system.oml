@@ -1,0 +1,27 @@
+final descriptionBox <http://example.org/system> {
+	extends <http://example.org/vocabulary>
+	
+	conceptInstance (x1 is-a vocabulary:A)
+	
+	x1 . vocabulary:ID = 1
+	
+	conceptInstance (x2 is-a vocabulary:B)
+	
+	x2 . vocabulary:ID = 2
+	
+	conceptInstance (x3 is-a vocabulary:C)
+	
+	x3 . vocabulary:name = "C3"
+	
+	tuple {
+		unreifiedRelationship vocabulary:a2b
+		domain x1
+		range x2
+	}
+	
+	reifiedRelationshipInstance (x4 is-a vocabulary:B2C) 
+	
+	domain ( x4 ) = x2
+	
+	range ( x4 ) = x3
+}

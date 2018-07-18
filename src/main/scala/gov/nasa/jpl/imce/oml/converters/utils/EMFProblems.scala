@@ -19,13 +19,15 @@
 package gov.nasa.jpl.imce.oml.converters.utils
 
 import org.eclipse.emf.ecore.resource.Resource
-
+import gov.nasa.jpl.imce.oml.model
 import gov.nasa.jpl.imce.oml.converters.ConversionCommand
+
 import scala.collection.immutable._
 import scala.util.control.Exception
-import scala.{Option,None,Some,StringContext,Unit}
-import scala.Predef.{require,wrapRefArray,String}
-import scalaz._, Scalaz._
+import scala.{None, Option, Some, StringContext, Unit}
+import scala.Predef.{String, require, wrapRefArray}
+import scalaz._
+import Scalaz._
 
 case class EMFProblems
 (errors: Map[Resource, List[Resource.Diagnostic]] = Map.empty,
@@ -109,6 +111,34 @@ object EMFProblems {
   def nonFatalCatch[U](body: => U)
   : EMFProblems \/ U
   = Exception.nonFatalCatch[EMFProblems \/ U]
-  .withApply { (cause: java.lang.Throwable) => new EMFProblems(cause).left }
-  .apply(body.right)
+    .withApply { cause: java.lang.Throwable => new EMFProblems(cause).left }
+    .apply(body.right)
+
+  implicit class ResourceAccessor[U <: model.common.Resource](u: U) {
+
+    def accessFeature[V](getter: U => V, feature: String)
+    : EMFProblems \/ V
+    = Option.apply(getter(u)) match {
+      case Some(v) =>
+        v.right[EMFProblems]
+      case _ =>
+        val buff = new scala.collection.mutable.StringBuilder
+        buff ++= s"No value for required feature ${u.eClass().getName}.$feature on ${u.iri}"
+        new EMFProblems(new java.lang.IllegalArgumentException(buff.toString)).left
+    }
+  }
+
+  implicit class TermAxiomAccessor[U <: model.terminologies.TermAxiom](u: U) {
+
+    def accessFeature[V](getter: U => V, feature: String)
+    : EMFProblems \/ V
+    = Option.apply(getter(u)) match {
+      case Some(v) =>
+        v.right[EMFProblems]
+      case _ =>
+        val buff = new scala.collection.mutable.StringBuilder
+        buff ++= s"No value for required feature ${u.eClass().getName}.$feature of axiom in ${u.getTbox.getIri}"
+        new EMFProblems(new java.lang.IllegalArgumentException(buff.toString)).left
+    }
+  }
 }

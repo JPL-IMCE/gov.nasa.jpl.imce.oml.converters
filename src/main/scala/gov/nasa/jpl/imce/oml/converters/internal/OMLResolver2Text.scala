@@ -48,8 +48,8 @@ case class OMLResolver2Text
 
  aps: Map[api.AnnotationProperty, common.AnnotationProperty] = Map.empty,
 
- aspects: Map[api.Aspect, terminologies.Aspect] = Map.empty,
- concepts: Map[api.Concept, terminologies.Concept] = Map.empty,
+ aspects: Map[api.AspectKind, terminologies.AspectKind] = Map.empty,
+ concepts: Map[api.ConceptKind, terminologies.ConceptKind] = Map.empty,
  reifiedRelationshipRestrictions: Map[api.ReifiedRelationshipRestriction, terminologies.ReifiedRelationshipRestriction] = Map.empty,
  reifiedRelationships: Map[api.ReifiedRelationship, terminologies.ReifiedRelationship] = Map.empty,
  forwardProperrties: Map[api.ForwardProperty, terminologies.ForwardProperty] = Map.empty,
@@ -111,8 +111,8 @@ case class OMLResolver2Text
 
   def entityLookup(e: api.Entity)
   : Option[terminologies.Entity] = e match {
-    case a: api.Aspect => aspects.get(a)
-    case c: api.Concept => concepts.get(c)
+    case a: api.AspectKind => aspects.get(a)
+    case c: api.ConceptKind => concepts.get(c)
     case rr: api.ReifiedRelationshipRestriction => reifiedRelationshipRestrictions.get(rr)
     case rr: api.ReifiedRelationship => reifiedRelationships.get(rr)
     case _ => None

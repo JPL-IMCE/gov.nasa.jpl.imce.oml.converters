@@ -97,13 +97,12 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         omlUUIDg = uuid.JVMUUIDGenerator()
         factory: api.OMLResolvedFactory = impl.OMLResolvedFactoryImpl(omlUUIDg)
 
-        o2rMap_sorted <- internal.OMLText2Resolver.convert(fileModules, options.hierarchicalSort)(factory)
+        result <- internal.OMLText2Resolver.convert(fileModules)(factory)
+        (_, m2e) = result
 
-        (_, sortedAPIModuleExtents) = o2rMap_sorted
+        iri2tables = m2e.map { case (m, extent) => m.iri -> Extent2Tables.convert(extent) }
 
-        iri2tables = sortedAPIModuleExtents.map { case (m, extent) => m.iri -> Extent2Tables.convert(extent) }
-
-        extents = sortedAPIModuleExtents.map(_._2)
+        extents = m2e.map(_._2)
 
       } yield (extents, iri2tables)
 

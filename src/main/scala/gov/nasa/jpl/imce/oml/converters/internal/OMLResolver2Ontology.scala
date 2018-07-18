@@ -1753,11 +1753,11 @@ case class OMLResolver2Ontology
  = Map.empty,
 
  aspects
- : Map[api.Aspect, owlapi.types.terms.Aspect]
+ : Map[api.AspectKind, owlapi.types.terms.AspectKind]
  = Map.empty,
 
  concepts
- : Map[api.Concept, owlapi.types.terms.Concept]
+ : Map[api.ConceptKind, owlapi.types.terms.ConceptKind]
  = Map.empty,
 
  reifiedRelationshipRestrictions
@@ -2023,7 +2023,7 @@ case class OMLResolver2Ontology
       )).left
   }
 
-  def lookupAspect(a0: api.Aspect)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.Aspect
+  def lookupAspect(a0: api.AspectKind)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.AspectKind
   = aspects.get(a0) match {
     case Some(a1) =>
       a1.right
@@ -2032,7 +2032,7 @@ case class OMLResolver2Ontology
         s"OMLResolver2Ontology.lookupAspect(a=${a0.iri()}) failed")).left
   }
 
-  def lookupConcept(c0: api.Concept)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.Concept
+  def lookupConcept(c0: api.ConceptKind)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.ConceptKind
   = concepts.get(c0) match {
     case Some(c1) =>
       c1.right
@@ -2136,7 +2136,7 @@ case class OMLResolver2Ontology
         s"OMLResolver2Ontology.entityLookup(e=${e0.iri()}) failed")).left
   }
 
-  def restrictableRelationshipLookup(e0: api.RestrictableRelationship)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.common.RestrictableRelationship
+  def restrictableRelationshipLookup(e0: api.RestrictableRelationship)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.types.terms.RestrictableRelationship
   = e0 match {
     case u0: api.UnreifiedRelationship =>
       unreifiedRelationships.get(u0) match {
