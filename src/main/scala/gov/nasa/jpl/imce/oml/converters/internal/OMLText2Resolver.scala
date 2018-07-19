@@ -329,6 +329,21 @@ object OMLText2Resolver {
     : Boolean
     = s.values.forall(_.isResolved)
 
+    def unresolved
+    : Map[Module, OMLText2Resolver]
+    = s.filter(!_._2.isResolved)
+
+    def o2r(m: Module)
+    : EMFProblems \/ OMLText2Resolver
+    = s.get(m) match {
+      case Some(o2r) =>
+        o2r.right
+      case _ =>
+        new EMFProblems(new java.lang.IllegalArgumentException(
+          s"ERROR: There should be an OMLText2Resolver for module: ${m.iri}"
+        )).left
+    }
+
     def lookupTerminologyBox(tbox: TerminologyBox)
     : Option[api.TerminologyBox]
     = s
@@ -500,7 +515,10 @@ object OMLText2Resolver {
                 prev.get(extendedi).flatMap(_.tboxes.get(extendedi)) ) match {
                 case (Some(extendingj), Some(extendedj)) =>
                   val (rj, axj) = f.createTerminologyExtensionAxiom(o2ri.rextent, extendingj, extendedj.iri)
-                  o2ri.copy(rextent = rj, moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
+                  o2ri.copy(
+                    rextent = rj,
+                    queue_edges = o2ri.queue_edges - axi,
+                    moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
                 case (extendingj, extendedj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
                     s"convertTerminologyExtensions: " +
@@ -539,7 +557,10 @@ object OMLText2Resolver {
               o2ri.rextent,
               o2ri.tboxes(ai.getTbox),
               tables.taggedTypes.localName(ai.name()))
-            o2rj = o2ri.copy(rextent = rj, aspects = o2ri.aspects + (ai -> aj))
+            o2rj = o2ri.copy(
+              rextent = rj,
+              queue_elements = o2ri.queue_elements - ai,
+              aspects = o2ri.aspects + (ai -> aj))
             next = prev.updated(tbox, o2rj)
           } yield next
         }
@@ -566,7 +587,10 @@ object OMLText2Resolver {
               o2ri.rextent,
               o2ri.tboxes(ci.getTbox),
               tables.taggedTypes.localName(ci.name()))
-            o2rj = o2ri.copy(rextent = rj, concepts = o2ri.concepts + (ci -> cj))
+            o2rj = o2ri.copy(
+              rextent = rj,
+              queue_elements = o2ri.queue_elements - ci,
+              concepts = o2ri.concepts + (ci -> cj))
             next = prev.updated(tbox, o2rj)
           } yield next
         }
@@ -593,7 +617,10 @@ object OMLText2Resolver {
               o2ri.rextent,
               o2ri.tboxes(sci.getTbox),
               tables.taggedTypes.localName(sci.name()))
-            o2rj = o2ri.copy(rextent = rj, structures = o2ri.structures + (sci -> scj))
+            o2rj = o2ri.copy(
+              rextent = rj,
+              queue_elements = o2ri.queue_elements - sci,
+              structures = o2ri.structures + (sci -> scj))
             next = prev.updated(tbox, o2rj)
           } yield next
         }
@@ -620,7 +647,10 @@ object OMLText2Resolver {
               o2ri.rextent,
               o2ri.tboxes(sci.getTbox),
               tables.taggedTypes.localName(sci.name()))
-            o2rj = o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (sci -> scj))
+            o2rj = o2ri.copy(
+              rextent = rj,
+              queue_elements = o2ri.queue_elements - sci,
+              dataRanges = o2ri.dataRanges + (sci -> scj))
             next = prev.updated(tbox, o2rj)
           } yield next
         }
@@ -668,108 +698,121 @@ object OMLText2Resolver {
           s"convertRestrictedDataRanges(...): Failed to resolve ${queue.size} data ranges",
           queue.map(_.getName))
       )).left
-  } else
+  } else {
+    import EMFProblems.ResourceAccessor
     state match {
       case \/-(prev) =>
         val rdri: RestrictedDataRange = rdrs.head
-        val tboxi: TerminologyBox = rdri.getTbox
-        val o2ri: OMLText2Resolver = prev(tboxi)
-        val rsi: DataRange = rdri.getRestrictedRange
-        ( prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
-          prev.get(rsi.getTbox).flatMap(_.dataRanges.get(rsi)) ) match {
-          case (Some(tboxj), Some(rsj)) =>
-            val (rj, rdrj) = rdri match {
-              case rri: BinaryScalarRestriction =>
-                f.createBinaryScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  length = Option.apply(rri.getLength).map(emf2tables),
-                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                  name = tables.taggedTypes.localName(rri.name))
-              case rri: IRIScalarRestriction =>
-                f.createIRIScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  length = Option.apply(rri.getLength).map(emf2tables),
-                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                  pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
-                  name = tables.taggedTypes.localName(rri.name))
-              case rri: NumericScalarRestriction =>
-                f.createNumericScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
-                  minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
-                  maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
-                  maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
-                  name = tables.taggedTypes.localName(rri.name))
-              case rri: PlainLiteralScalarRestriction =>
-                f.createPlainLiteralScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  length = Option.apply(rri.getLength).map(emf2tables),
-                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                  pattern = Option.apply(rri.getPattern).map(emf2tables),
-                  langRange = Option.apply(rri.getLangRange).map(emf2tables),
-                  name = tables.taggedTypes.localName(rri.name))
-              case rri: ScalarOneOfRestriction =>
-                f.createScalarOneOfRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  name = tables.taggedTypes.localName(rri.name))
-              case rri: StringScalarRestriction =>
-                f.createStringScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  length = Option.apply(rri.getLength).map(emf2tables),
-                  minLength = Option.apply(rri.getMinLength).map(emf2tables),
-                  maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
-                  pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
-                  name = tables.taggedTypes.localName(rri.name))
-              case rri: SynonymScalarRestriction =>
-                f.createSynonymScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  name = tables.taggedTypes.localName(rri.name))
-              case rri: TimeScalarRestriction =>
-                f.createTimeScalarRestriction(
-                  extent = o2ri.rextent,
-                  tbox = tboxj,
-                  restrictedRange = rsj,
-                  minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
-                  minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
-                  maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
-                  maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
-                  name = tables.taggedTypes.localName(rri.name))
+        ( rdri.accessFeature(_.getTbox, "tbox"),
+          rdri.accessFeature(_.getRestrictedRange, "restrictedRange") ) match {
+          case (\/-(tboxi), \/-(rsi)) =>
+            (prev.o2r(tboxi),
+              prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
+              prev.get(rsi.getTbox).flatMap(_.dataRanges.get(rsi))) match {
+              case (\/-(o2ri), Some(tboxj), Some(rsj)) =>
+                val (rj, rdrj) = rdri match {
+                  case rri: BinaryScalarRestriction =>
+                    f.createBinaryScalarRestriction(
+                      extent = o2ri.rextent,
+                      tbox = tboxj,
+                      restrictedRange = rsj,
+                      length = Option.apply(rri.getLength).map(emf2tables),
+                      minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                      maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                      name = tables.taggedTypes.localName(rri.name))
+                  case rri: IRIScalarRestriction =>
+                    f.createIRIScalarRestriction(
+                      extent = o2ri.rextent,
+                      tbox = tboxj,
+                      restrictedRange = rsj,
+                      length = Option.apply(rri.getLength).map(emf2tables),
+                      minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                      maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                      pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
+                      name = tables.taggedTypes.localName(rri.name))
+                  case rri: NumericScalarRestriction =>
+                    f.createNumericScalarRestriction(
+                      extent = o2ri.rextent,
+                      tbox = tboxj,
+                      restrictedRange = rsj,
+                      minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
+                      minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
+                      maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
+                      maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
+                      name = tables.taggedTypes.localName(rri.name))
+                  case rri: PlainLiteralScalarRestriction =>
+                    f.createPlainLiteralScalarRestriction(
+                      extent = o2ri.rextent,
+                      tbox = tboxj,
+                      restrictedRange = rsj,
+                      length = Option.apply(rri.getLength).map(emf2tables),
+                      minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                      maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                      pattern = Option.apply(rri.getPattern).map(emf2tables),
+                      langRange = Option.apply(rri.getLangRange).map(emf2tables),
+                      name = tables.taggedTypes.localName(rri.name))
+                  case rri: ScalarOneOfRestriction =>
+                    f.createScalarOneOfRestriction(
+                      extent = o2ri.rextent,
+                      tbox = tboxj,
+                      restrictedRange = rsj,
+                      name = tables.taggedTypes.localName(rri.name))
+                  case rri: StringScalarRestriction =>
+                    f.createStringScalarRestriction(
+                      extent = o2ri.rextent,
+                      tbox = tboxj,
+                      restrictedRange = rsj,
+                      length = Option.apply(rri.getLength).map(emf2tables),
+                      minLength = Option.apply(rri.getMinLength).map(emf2tables),
+                      maxLength = Option.apply(rri.getMaxLength).map(emf2tables),
+                      pattern = Option.apply(rri.getPattern).map(p => tables.taggedTypes.literalPattern(p.value)),
+                      name = tables.taggedTypes.localName(rri.name))
+                  case rri: SynonymScalarRestriction =>
+                    f.createSynonymScalarRestriction(
+                      extent = o2ri.rextent,
+                      tbox = tboxj,
+                      restrictedRange = rsj,
+                      name = tables.taggedTypes.localName(rri.name))
+                  case rri: TimeScalarRestriction =>
+                    f.createTimeScalarRestriction(
+                      extent = o2ri.rextent,
+                      tbox = tboxj,
+                      restrictedRange = rsj,
+                      minExclusive = Option.apply(rri.getMinExclusive).map(emf2tables),
+                      minInclusive = Option.apply(rri.getMinInclusive).map(emf2tables),
+                      maxExclusive = Option.apply(rri.getMaxExclusive).map(emf2tables),
+                      maxInclusive = Option.apply(rri.getMaxInclusive).map(emf2tables),
+                      name = tables.taggedTypes.localName(rri.name))
+                }
+                val o2rj = o2ri.copy(
+                  rextent = rj,
+                  queue_elements = o2ri.queue_elements - rdri,
+                  dataRanges = o2ri.dataRanges + (rdri -> rdrj))
+                convertRestrictedDataRanges(prev.updated(tboxi, o2rj).right, rdrs.tail, queue, progress = true)
+              case (\/-(_), Some(_), None) =>
+                val rest = rdrs.tail
+                if (rest.isEmpty)
+                  convertRestrictedDataRanges(state, rdri :: queue, List.empty, progress)
+                else
+                  convertRestrictedDataRanges(state, rest, rdri :: queue)
+              case (\/-(_), tboxj, rsj) =>
+                new EMFProblems(new java.lang.IllegalArgumentException(
+                  s"convertRestrictedDataRanges(${rdri.iri()}): Failed to resolve " +
+                    tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
+                    rsj.fold(s" restricted data range: ${rsi.iri}")(_ => "")
+                )).left
+              case (-\/(errors), _, _) =>
+                -\/(errors)
             }
-            val o2rj = o2ri.copy(rextent = rj, dataRanges = o2ri.dataRanges + (rdri -> rdrj))
-            convertRestrictedDataRanges(prev.updated(tboxi, o2rj).right, rdrs.tail, queue, progress = true)
-          case (Some(_), None) =>
-            val rest = rdrs.tail
-            if (rest.isEmpty)
-              convertRestrictedDataRanges(state, rdri :: queue, List.empty, progress)
-            else
-              convertRestrictedDataRanges(state, rest, rdri :: queue)
-          case (tboxj, rsj) =>
-            new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertRestrictedDataRanges(${rdri.iri()}): Failed to resolve " +
-                tboxj.fold(s" tbox: ${tboxi.getIri}")(_ => "") +
-                rsj.fold(s" restricted data range: ${rsi.iri}")(_ => "")
-            )).left
+          case (-\/(errors1), _) =>
+            -\/(errors1)
+          case (_, -\/(errors2)) =>
+            -\/(errors2)
         }
       case _ =>
         state
     }
+  }
 
   protected def convertScalarOneOfLiteralAxioms
   (state: EMFProblems \/ Map[Module, OMLText2Resolver],
@@ -778,15 +821,16 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: ScalarOneOfLiteralAxiom => s }
         ss.foldLeft(state) { case (acc, li) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = li.getTbox
-            dri = li.getAxiom
+            o2ri <- prev.o2r(tbox)
+            tboxi <- li.accessFeature(_.getTbox, "tbox")
+            dri <- li.accessFeature(_.getAxiom, "axiom")
             o2rj <-
               (prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
                 prev.get(dri.getTbox).flatMap(_.dataRanges.get(dri))) match {
@@ -803,6 +847,7 @@ object OMLText2Resolver {
                             valueType = Some(vtj))
                           o2ri.copy(
                             rextent = rj,
+                            queue_elements = o2ri.queue_elements - li,
                             scalarOneOfLiterals = o2ri.scalarOneOfLiterals + (li -> lj),
                             termAxioms = o2ri.termAxioms + (li -> lj)).right
                         case _ =>
@@ -819,6 +864,7 @@ object OMLText2Resolver {
                         valueType = None)
                       o2ri.copy(
                         rextent = rj,
+                        queue_elements = o2ri.queue_elements - li,
                         scalarOneOfLiterals = o2ri.scalarOneOfLiterals + (li -> lj),
                         termAxioms = o2ri.termAxioms + (li -> lj)).right
                   }
@@ -842,16 +888,17 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.ResourceAccessor
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: EntityScalarDataProperty => s }
         ss.foldLeft(state) { case (acc, dpi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = dpi.getTbox
-            dpdi = dpi.getDomain
-            dpri = dpi.getRange
+            o2ri <- prev.o2r(tbox)
+            tboxi <- dpi.accessFeature(_.getTbox, "tbox")
+            dpdi <- dpi.accessFeature(_.getDomain, "domain")
+            dpri <- dpi.accessFeature(_.getRange, "range")
             o2rj <-
               (prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
                 prev.get(dpdi.getTbox).flatMap(_.entityLookup(dpdi)),
@@ -863,7 +910,10 @@ object OMLText2Resolver {
                     dpdj, dprj,
                     dpi.isIsIdentityCriteria,
                     tables.taggedTypes.localName(dpi.name()))
-                  o2ri.copy(rextent = rj, entityScalarDataProperties = o2ri.entityScalarDataProperties + (dpi -> dpj)).right
+                  o2ri.copy(
+                    rextent = rj,
+                    queue_elements = o2ri.queue_elements - dpi,
+                    entityScalarDataProperties = o2ri.entityScalarDataProperties + (dpi -> dpj)).right
                 case (tboxj, dpdj, dprj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
                     s"convertEntityScalarDataProperties: Cannot resolve " +
@@ -887,16 +937,17 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.ResourceAccessor
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: EntityStructuredDataProperty => s }
         ss.foldLeft(state) { case (acc, dpi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = dpi.getTbox
-            dpdi = dpi.getDomain
-            dpri = dpi.getRange
+            o2ri <- prev.o2r(tbox)
+            tboxi <- dpi.accessFeature(_.getTbox, "tbox")
+            dpdi <- dpi.accessFeature(_.getDomain, "domain")
+            dpri <- dpi.accessFeature(_.getRange, "range")
             o2rj <-
               (prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
                 prev.get(dpdi.getTbox).flatMap(_.entityLookup(dpdi)),
@@ -908,7 +959,10 @@ object OMLText2Resolver {
                     dpdj, dprj,
                     dpi.isIsIdentityCriteria,
                     tables.taggedTypes.localName(dpi.name()))
-                  o2ri.copy(rextent = rj, entityStructuredDataProperties = o2ri.entityStructuredDataProperties + (dpi -> dpj)).right
+                  o2ri.copy(
+                    rextent = rj,
+                    queue_elements = o2ri.queue_elements - dpi,
+                    entityStructuredDataProperties = o2ri.entityStructuredDataProperties + (dpi -> dpj)).right
                 case (tboxj, dpdj, dprj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
                     s"convertEntityStructuredDataProperties: Cannot resolve " +
@@ -932,16 +986,17 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.ResourceAccessor
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: ScalarDataProperty => s }
         ss.foldLeft(state) { case (acc, dpi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = dpi.getTbox
-            dpdi = dpi.getDomain
-            dpri = dpi.getRange
+            o2ri <- prev.o2r(tbox)
+            tboxi <- dpi.accessFeature(_.getTbox, "tbox")
+            dpdi <- dpi.accessFeature(_.getDomain, "domain")
+            dpri <- dpi.accessFeature(_.getRange, "range")
             o2rj <-
               (prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
                 prev.get(dpdi.getTbox).flatMap(_.structures.get(dpdi)),
@@ -952,7 +1007,10 @@ object OMLText2Resolver {
                     tboxj,
                     dpdj, dprj,
                     tables.taggedTypes.localName(dpi.name()))
-                  o2ri.copy(rextent = rj, scalarDataProperties = o2ri.scalarDataProperties + (dpi -> dpj)).right
+                  o2ri.copy(
+                    rextent = rj,
+                    queue_elements = o2ri.queue_elements - dpi,
+                    scalarDataProperties = o2ri.scalarDataProperties + (dpi -> dpj)).right
                 case (tboxj, dpdj, dprj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
                     s"convertScalarDataProperties: Cannot resolve " +
@@ -976,16 +1034,17 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.ResourceAccessor
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: StructuredDataProperty => s }
         ss.foldLeft(state) { case (acc, dpi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = dpi.getTbox
-            dpdi = dpi.getDomain
-            dpri = dpi.getRange
+            o2ri <- prev.o2r(tbox)
+            tboxi <- dpi.accessFeature(_.getTbox, "tbox")
+            dpdi <- dpi.accessFeature(_.getDomain, "domain")
+            dpri <- dpi.accessFeature(_.getRange, "range")
             o2rj <-
               (prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
                 prev.get(dpdi.getTbox).flatMap(_.structures.get(dpdi)),
@@ -996,7 +1055,10 @@ object OMLText2Resolver {
                     tboxj,
                     dpdj, dprj,
                     tables.taggedTypes.localName(dpi.name()))
-                  o2ri.copy(rextent = rj, structuredDataProperties = o2ri.structuredDataProperties + (dpi -> dpj)).right
+                  o2ri.copy(
+                    rextent = rj,
+                    queue_elements = o2ri.queue_elements - dpi,
+                    structuredDataProperties = o2ri.structuredDataProperties + (dpi -> dpj)).right
                 case (tboxj, dpdj, dprj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
                     s"convertStructuredDataProperties: Cannot resolve " +
@@ -1020,15 +1082,15 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
-    import EMFProblems.{ResourceAccessor,TermAxiomAccessor}
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: EntityRestrictionAxiom => s }
         ss.foldLeft(state) { case (acc, axi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = axi.getTbox
+            o2ri <- prev.o2r(tbox)
+            tboxi <- axi.accessFeature(_.getTbox, "tbox")
             rdi <- axi.accessFeature(_.getRestrictedDomain, "restrictedDomain")
             rri <- axi.accessFeature( _.getRestrictedRange, "restrictedRange")
             rli <- axi.accessFeature( _.getRestrictedRelationship, "restrictedRelationship")
@@ -1047,7 +1109,10 @@ object OMLText2Resolver {
                     case _: EntityUniversalRestrictionAxiom =>
                       f.createEntityUniversalRestrictionAxiom(o2ri.rextent, tboxj, rdj, rrj, rlj)
                   }
-                  o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axj)).right
+                  o2ri.copy(
+                    rextent = rj,
+                    queue_elements = o2ri.queue_elements - axi,
+                    termAxioms = o2ri.termAxioms + (axi -> axj)).right
                 case (tboxj, rdj, rrj, rlj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
                     s"convertEntityRestrictionAxioms: Cannot resolve " +
@@ -1072,16 +1137,17 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: EntityScalarDataPropertyRestrictionAxiom => s }
         ss.foldLeft(state) { case (acc, axi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = axi.getTbox
-            ei = axi.getRestrictedEntity
-            dpi = axi.getScalarProperty
+            o2ri <- prev.o2r(tbox)
+            tboxi <- axi.accessFeature(_.getTbox, "tbox")
+            ei <- axi.accessFeature(_.getRestrictedEntity, "restrictedEntity")
+            dpi <- axi.accessFeature(_.getScalarProperty, "scalarProperty")
             o2rj <-
               (prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
                 prev.get(ei.getTbox).flatMap(_.entityLookup(ei)),
@@ -1146,7 +1212,10 @@ object OMLText2Resolver {
                   }
                   axj match {
                     case \/-(axrj) =>
-                      o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axrj)).right
+                      o2ri.copy(
+                        rextent = rj,
+                        queue_elements = o2ri.queue_elements - axi,
+                        termAxioms = o2ri.termAxioms + (axi -> axrj)).right
                     case -\/(error) =>
                       error.left
                   }
@@ -1172,16 +1241,17 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: EntityStructuredDataPropertyParticularRestrictionAxiom => s }
         ss.foldLeft(state) { case (acc, axi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = axi.getTbox
-            ei = axi.getRestrictedEntity
-            dpi = axi.getStructuredDataProperty
+            o2ri <- prev.o2r(tbox)
+            tboxi <- axi.accessFeature(_.getTbox, "tbox")
+            ei <- axi.accessFeature(_.getRestrictedEntity, "restrictedEntity")
+            dpi <- axi.accessFeature(_.getStructuredDataProperty, "structuredDataProperty")
             dptboxi = dpi match {
               case edp: EntityStructuredDataProperty =>
                 edp.getTbox()
@@ -1195,7 +1265,11 @@ object OMLText2Resolver {
                 case (Some(tboxj), Some(ej), Some(dpj)) =>
                   val (rj, axj) =
                     f.createEntityStructuredDataPropertyParticularRestrictionAxiom(o2ri.rextent, tboxj, dpj, ej)
-                  convertRestrictionStructuredDataPropertyContext(o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axj)), Seq(axi -> axj))
+                  convertRestrictionStructuredDataPropertyContext(
+                    o2ri.copy(
+                      rextent = rj,
+                      queue_elements = o2ri.queue_elements - axi,
+                      termAxioms = o2ri.termAxioms + (axi -> axj)), Seq(axi -> axj))
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
                     s"convertEntityStructuredDataPropertyRestrictionAxioms: Cannot find EntityScalarDataPropertyRestrictionAxiom for" +
@@ -1220,15 +1294,18 @@ object OMLText2Resolver {
   = if (cs.isEmpty)
     o2r.right
   else {
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     val (ci, cj) = cs.head
     val values
     : EMFProblems \/ OMLText2Resolver
     = ci.getScalarDataPropertyRestrictions.asScala.foldLeft(o2r.right[EMFProblems]) { case (acc, vi) =>
       for {
         o2r1 <- acc
-        lv = emf2tables(vi.getScalarPropertyValue)
+        vli <- vi.accessFeature(_.getScalarPropertyValue, "scalarPropertyValue")
+        dpi <- vi.accessFeature(_.getScalarDataProperty, "scalarDataProperty")
+        lv = emf2tables(vli)
         o2r2 <- (
-          o2r1.dataRelationshipToScalarLookup(vi.getScalarDataProperty),
+          o2r1.dataRelationshipToScalarLookup(dpi),
           Option(vi.getValueType),
           Option(vi.getValueType).flatMap(o2r1.dataRanges.get)
         ) match {
@@ -1291,21 +1368,24 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: SpecializationAxiom => s }
         ss.foldLeft(state) { case (acc, axi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = axi.getTbox
-            supi = axi.parent()
-            subi = axi.child()
+            o2ri <- prev.o2r(tbox)
+            tboxi <- axi.accessFeature(_.getTbox, "tbox")
+            supi <- axi.accessFeature(_.parent, "parent")
+            supiTbox <- supi.accessFeature(_.getTbox, "tbox")
+            subi <- axi.accessFeature(_.child, "child")
+            subiTbox <- subi.accessFeature(_.getTbox, "tbox")
             (rj, axj: \/[EMFProblems, api.SpecializationAxiom]) =
             (axi,
               prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
-              prev.get(supi.getTbox).flatMap(_.entityLookup(supi)),
-              prev.get(subi.getTbox).flatMap(_.entityLookup(subi))) match {
+              prev.get(supiTbox).flatMap(_.entityLookup(supi)),
+              prev.get(subiTbox).flatMap(_.entityLookup(subi))) match {
               case (_: ConceptSpecializationAxiom, Some(tboxj), Some(supj: api.ConceptKind), Some(subj: api.ConceptKind)) =>
                 f.createConceptSpecializationAxiom(o2ri.rextent, tboxj, supj, subj) match {
                   case (rk, ak) => rk -> ak.right
@@ -1328,7 +1408,10 @@ object OMLText2Resolver {
             }
             o2rj <- axj match {
               case \/-(axrj) =>
-                o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axrj)).right
+                o2ri.copy(
+                  rextent = rj,
+                  queue_elements = o2ri.queue_elements - axi,
+                  termAxioms = o2ri.termAxioms + (axi -> axrj)).right
               case -\/(error) =>
                 error.left
             }
@@ -1347,16 +1430,17 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: SubDataPropertyOfAxiom => s }
         ss.foldLeft(state) { case (acc, axi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = axi.getTbox
-            subi = axi.getSubProperty()
-            supi = axi.getSuperProperty()
+            o2ri <- prev.o2r(tbox)
+            tboxi <- axi.accessFeature(_.getTbox, "tbox")
+            subi <- axi.accessFeature(_.getSubProperty, "subProperty")
+            supi <- axi.accessFeature(_.getSuperProperty, "superProperty")
             (rj, axj: \/[EMFProblems, api.SubDataPropertyOfAxiom]) =
             (prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
               prev.get(subi.getTbox).flatMap(_.entityScalarDataProperties.get(subi)),
@@ -1375,7 +1459,10 @@ object OMLText2Resolver {
             }
             o2rj <- axj match {
               case \/-(axrj) =>
-                o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axrj)).right
+                o2ri.copy(
+                  rextent = rj,
+                  queue_elements = o2ri.queue_elements - axi,
+                  termAxioms = o2ri.termAxioms + (axi -> axrj)).right
               case -\/(error) =>
                 error.left
             }
@@ -1394,20 +1481,23 @@ object OMLText2Resolver {
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
     import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (tbox: TerminologyBox, _) =>
         val ss = tbox.getBoxStatements.selectByKindOf { case s: SubObjectPropertyOfAxiom => s }
         ss.foldLeft(state) { case (acc, axi) =>
           for {
             prev <- acc
-            o2ri = prev(tbox)
-            tboxi = axi.getTbox
-            subi = axi.getSubProperty()
-            supi = axi.getSuperProperty()
+            o2ri <- prev.o2r(tbox)
+            tboxi <- axi.accessFeature(_.getTbox, "tbox")
+            subi <- axi.accessFeature(_.getSubProperty, "subProperty")
+            subiTbox <- subi.accessFeature(_.getTbox, "tbox")
+            supi <- axi.accessFeature(_.getSuperProperty, "superProperty")
+            supiTbox <- supi.accessFeature(_.getTbox, "tbox")
             (rj, axj: \/[EMFProblems, api.SubObjectPropertyOfAxiom]) =
             (prev.get(tboxi).flatMap(_.tboxes.get(tboxi)),
-              prev.get(subi.getTbox).flatMap(_.unreifiedRelationships.get(subi)),
-              prev.get(supi.getTbox).flatMap(_.unreifiedRelationships.get(supi))) match {
+              prev.get(subiTbox).flatMap(_.unreifiedRelationships.get(subi)),
+              prev.get(supiTbox).flatMap(_.unreifiedRelationships.get(supi))) match {
               case (Some(tboxj), Some(subj: api.UnreifiedRelationship), Some(supj: api.UnreifiedRelationship)) =>
                 f.createSubObjectPropertyOfAxiom(o2ri.rextent, tboxj, subj, supj) match {
                   case (rk, ak) => rk -> ak.right
@@ -1422,7 +1512,10 @@ object OMLText2Resolver {
             }
             o2rj <- axj match {
               case \/-(axrj) =>
-                o2ri.copy(rextent = rj, termAxioms = o2ri.termAxioms + (axi -> axrj)).right
+                o2ri.copy(
+                  rextent = rj,
+                  queue_elements = o2ri.queue_elements - axi,
+                  termAxioms = o2ri.termAxioms + (axi -> axrj)).right
               case -\/(error) =>
                 error.left
             }
@@ -1447,7 +1540,7 @@ object OMLText2Resolver {
         axs.foldLeft(state) { case (acc, axi) =>
           for {
             prev <- acc
-            o2ri = prev(b)
+            o2ri <- prev.o2r(b)
             o2rj <- convertConceptTreeDisjunction(o2ri, axi)
             next = prev.updated(b, o2rj)
           } yield next
@@ -1468,6 +1561,7 @@ object OMLText2Resolver {
           val (rj, rxj) = f.createRootConceptTaxonomyAxiom(o2r.rextent, b, c)
           val next = o2r.copy(
             rextent = rj,
+            queue_elements = o2r.queue_elements - rxi,
             conceptTreeDisjunctions = o2r.conceptTreeDisjunctions + (rxi -> rxj))
           convertDisjointUnionOfConceptAxioms(next, rxi.getDisjunctions.asScala.to[Set].map { dx => dx -> rxj })
         case _ =>
@@ -1514,7 +1608,6 @@ object OMLText2Resolver {
           tables.taggedTypes.localName(axi.getName))
         val next = o2r.copy(
           rextent = rj,
-          conceptTreeDisjunctions = o2r.conceptTreeDisjunctions + (axi -> axj),
           disjointUnionOfConceptAxioms = o2r.disjointUnionOfConceptAxioms + (axi -> axj))
         convertDisjointUnionOfConceptAxioms(next, remaining ++ axi.getDisjunctions.asScala.to[Set].map { dx => dx -> axj })
       case sxi: SpecificDisjointConceptAxiom =>
@@ -1541,18 +1634,20 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
+    import EMFProblems.ResourceAccessor
     entry match {
       case (dbox: DescriptionBox, _) =>
         val ss = dbox.getConceptInstances.asScala.to[Set]
         ss.foldLeft(state) { case (acc, di) =>
           for {
             prev <- acc
-            o2ri = prev(dbox)
-            dboxi = di.descriptionBox()
-            cli = di.getSingletonConceptClassifier
+            o2ri <- prev.o2r(dbox)
+            dboxi <- di.accessFeature(_.descriptionBox, "descriptionBox")
+            cli <- di.accessFeature(_.getSingletonConceptClassifier, "singletonConceptClassifier")
+            tboxi <- cli.accessFeature(_.getTbox, "tbox")
             o2rj <-
-              (prev.get(dboxi).flatMap(_.dboxes.get(dboxi)),
-                prev.get(cli.getTbox).flatMap(_.concepts.get(cli))) match {
+              ( prev.get(dboxi).flatMap(_.dboxes.get(dboxi)),
+                prev.get(tboxi).flatMap(_.concepts.get(cli)) ) match {
                 case (Some(dboxj), Some(clj)) =>
                   val (rj, dj) = f.createConceptInstance(
                     o2ri.rextent,
@@ -1561,6 +1656,7 @@ object OMLText2Resolver {
                     tables.taggedTypes.localName(di.getName))
                   o2ri.copy(
                     rextent = rj,
+                    queue_elements = o2ri.queue_elements - di,
                     conceptualEntitySingletonInstances = o2ri.conceptualEntitySingletonInstances + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1582,18 +1678,20 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
+    import EMFProblems.ResourceAccessor
     entry match {
       case (dbox: DescriptionBox, _) =>
         val ss = dbox.getReifiedRelationshipInstances.asScala.to[Set]
         ss.foldLeft(state) { case (acc, di) =>
           for {
             prev <- acc
-            o2ri = prev(dbox)
-            dboxi = di.descriptionBox()
-            cli = di.getSingletonConceptualRelationshipClassifier
+            o2ri <- prev.o2r(dbox)
+            dboxi <- di.accessFeature(_.descriptionBox, "descriptionBox")
+            cli <- di.accessFeature(_.getSingletonConceptualRelationshipClassifier, "singletonConceptualRelationshipClassifier")
+            tboxi <- cli.accessFeature(_.getTbox, "tbox")
             o2rj <-
               (prev.get(dboxi).flatMap(_.dboxes.get(dboxi)),
-                prev.get(cli.getTbox).flatMap(_.conceptualRelationshipLookup(cli))) match {
+                prev.get(tboxi).flatMap(_.conceptualRelationshipLookup(cli))) match {
                 case (Some(dboxj), Some(clj)) =>
                   val (rj, dj) = f.createReifiedRelationshipInstance(
                     o2ri.rextent,
@@ -1602,6 +1700,7 @@ object OMLText2Resolver {
                     tables.taggedTypes.localName(di.getName))
                   o2ri.copy(
                     rextent = rj,
+                    queue_elements = o2ri.queue_elements - di,
                     conceptualEntitySingletonInstances = o2ri.conceptualEntitySingletonInstances + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1623,24 +1722,28 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (dbox: DescriptionBox, _) =>
         val ss = dbox.getReifiedRelationshipInstanceDomains.asScala.to[Set]
         ss.foldLeft(state) { case (acc, di) =>
           for {
             prev <- acc
-            o2ri = prev(dbox)
-            dboxi = di.descriptionBox()
-            rrii = di.getReifiedRelationshipInstance
-            rdi = di.getDomain
+            o2ri <- prev.o2r(dbox)
+            dboxi <- di.accessFeature(_.descriptionBox, "descriptionBox")
+            rrii <- di.accessFeature(_.getReifiedRelationshipInstance, "reifiedRelationshipInstance")
+            rdi <- di.accessFeature(_.getDomain, "domain")
+            rriDbox <- rrii.accessFeature(_.descriptionBox, "descriptionBox")
+            rdDbox <- rdi.accessFeature(_.descriptionBox, "descriptionBox")
             o2rj <-
               (prev.get(dboxi).flatMap(_.dboxes.get(dboxi)),
-                prev.get(rrii.descriptionBox).flatMap(_.conceptualEntitySingletonInstances.get(rrii)),
-                prev.get(rdi.descriptionBox).flatMap(_.conceptualEntitySingletonInstances.get(rdi))) match {
+                prev.get(rriDbox).flatMap(_.conceptualEntitySingletonInstances.get(rrii)),
+                prev.get(rdDbox).flatMap(_.conceptualEntitySingletonInstances.get(rdi))) match {
                 case (Some(dboxj), Some(rrij: api.ReifiedRelationshipInstance), Some(rdj)) =>
                   val (rj, dj) = f.createReifiedRelationshipInstanceDomain(o2ri.rextent, dboxj, rrij, rdj)
                   o2ri.copy(
                     rextent = rj,
+                    queue_elements = o2ri.queue_elements - di,
                     reifiedRelationshipInstanceDomains = o2ri.reifiedRelationshipInstanceDomains + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1663,24 +1766,28 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (dbox: DescriptionBox, _) =>
         val ss = dbox.getReifiedRelationshipInstanceRanges.asScala.to[Set]
         ss.foldLeft(state) { case (acc, di) =>
           for {
             prev <- acc
-            o2ri = prev(dbox)
-            dboxi = di.descriptionBox()
-            rrii = di.getReifiedRelationshipInstance
-            rri = di.getRange
+            o2ri <- prev.o2r(dbox)
+            dboxi <- di.accessFeature(_.descriptionBox, "descriptionBox")
+            rrii <- di.accessFeature(_.getReifiedRelationshipInstance, "reifiedRelationshipInstance")
+            rri <- di.accessFeature(_.getRange, "range")
+            rriDbox <- rrii.accessFeature(_.descriptionBox, "descriptionBox")
+            rrDbox <- rri.accessFeature(_.descriptionBox, "descriptionBox")
             o2rj <-
               (prev.get(dboxi).flatMap(_.dboxes.get(dboxi)),
-                prev.get(rrii.descriptionBox).flatMap(_.conceptualEntitySingletonInstances.get(rrii)),
-                prev.get(rri.descriptionBox).flatMap(_.conceptualEntitySingletonInstances.get(rri))) match {
+                prev.get(rriDbox).flatMap(_.conceptualEntitySingletonInstances.get(rrii)),
+                prev.get(rrDbox).flatMap(_.conceptualEntitySingletonInstances.get(rri))) match {
                 case (Some(dboxj), Some(rrij: api.ReifiedRelationshipInstance), Some(rrj)) =>
                   val (rj, dj) = f.createReifiedRelationshipInstanceRange(o2ri.rextent, dboxj, rrij, rrj)
                   o2ri.copy(
                     rextent = rj,
+                    queue_elements = o2ri.queue_elements - di,
                     reifiedRelationshipInstanceRanges = o2ri.reifiedRelationshipInstanceRanges + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1703,26 +1810,30 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (dbox: DescriptionBox, _) =>
         val ss = dbox.getUnreifiedRelationshipInstanceTuples.asScala.to[Set]
         ss.foldLeft(state) { case (acc, di) =>
           for {
             prev <- acc
-            o2ri = prev(dbox)
-            dboxi = di.descriptionBox()
-            ui = di.getUnreifiedRelationship
-            udi = di.getDomain
-            uri = di.getRange
+            o2ri <- prev.o2r(dbox)
+            dboxi <- di.accessFeature(_.descriptionBox, "descriptionBox")
+            ui <- di.accessFeature(_.getUnreifiedRelationship, "unreifiedRelationship")
+            udi <- di.accessFeature(_.getDomain, "domain")
+            uri <- di.accessFeature(_.getRange, "range")
+            udDbox <- udi.accessFeature(_.descriptionBox, "descriptionBox")
+            urDbox <- uri.accessFeature(_.descriptionBox, "descriptionBox")
             o2rj <-
               (prev.get(dboxi).flatMap(_.dboxes.get(dboxi)),
                 prev.get(ui.getTbox).flatMap(_.unreifiedRelationships.get(ui)),
-                prev.get(udi.descriptionBox).flatMap(_.conceptualEntitySingletonInstances.get(udi)),
-                prev.get(uri.descriptionBox).flatMap(_.conceptualEntitySingletonInstances.get(uri))) match {
+                prev.get(udDbox).flatMap(_.conceptualEntitySingletonInstances.get(udi)),
+                prev.get(urDbox).flatMap(_.conceptualEntitySingletonInstances.get(uri))) match {
                 case (Some(dboxj), Some(uj), Some(udj), Some(urj)) =>
                   val (rj, dj) = f.createUnreifiedRelationshipInstanceTuple(o2ri.rextent, dboxj, uj, udj, urj)
                   o2ri.copy(
                     rextent = rj,
+                    queue_elements = o2ri.queue_elements - di,
                     unreifiedRelationshipInstanceTuples = o2ri.unreifiedRelationshipInstanceTuples + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1746,20 +1857,23 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (dbox: DescriptionBox, _) =>
         val ss = dbox.getSingletonScalarDataPropertyValues.asScala.to[Set]
         ss.foldLeft(state) { case (acc, di) =>
           for {
             prev <- acc
-            o2ri = prev(dbox)
-            dboxi = di.descriptionBox()
-            si = di.getSingletonInstance
-            dpi = di.getScalarDataProperty
+            o2ri <- prev.o2r(dbox)
+            dboxi <- di.accessFeature(_.descriptionBox, "descriptionBox")
+            si <- di.accessFeature(_.getSingletonInstance, "singletonInstance")
+            dpi <- di.accessFeature(_.getScalarDataProperty, "scalarDataProperty")
+            siDbox <- si.accessFeature(_.descriptionBox, "descriptionBox")
+            dpiTbox <- dpi.accessFeature(_.getTbox, "tbox")
             o2rj <-
               (prev.get(dboxi).flatMap(_.dboxes.get(dboxi)),
-                prev.get(si.descriptionBox()).flatMap(_.conceptualEntitySingletonInstances.get(si)),
-                prev.get(dpi.getTbox).flatMap(_.entityScalarDataProperties.get(dpi))) match {
+                prev.get(siDbox).flatMap(_.conceptualEntitySingletonInstances.get(si)),
+                prev.get(dpiTbox).flatMap(_.entityScalarDataProperties.get(dpi))) match {
                 case (Some(dboxj), Some(sj), Some(dpj)) =>
                   Option(di.getValueType) match {
                     case Some(vti) =>
@@ -1770,6 +1884,7 @@ object OMLText2Resolver {
                             emf2tables(di.getScalarPropertyValue), Some(vtj))
                           o2ri.copy(
                             rextent = rj,
+                            queue_elements = o2ri.queue_elements - di,
                             singletonInstanceScalarDataPropertyValues = o2ri.singletonInstanceScalarDataPropertyValues + (di -> dj)).right
                         case None =>
                           new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1785,6 +1900,7 @@ object OMLText2Resolver {
                         emf2tables(di.getScalarPropertyValue), None)
                       o2ri.copy(
                         rextent = rj,
+                        queue_elements = o2ri.queue_elements - di,
                         singletonInstanceScalarDataPropertyValues = o2ri.singletonInstanceScalarDataPropertyValues + (di -> dj)).right
                   }
                 case _ =>
@@ -1811,25 +1927,29 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     entry match {
       case (dbox: DescriptionBox, _) =>
         val ss = dbox.getSingletonStructuredDataPropertyValues.asScala.to[Set]
         ss.foldLeft(state) { case (acc, di) =>
           for {
             prev <- acc
-            o2ri = prev(dbox)
-            dboxi = di.descriptionBox()
-            si = di.getSingletonInstance
-            dpi = di.getStructuredDataProperty.asInstanceOf[EntityStructuredDataProperty]
+            o2ri <- prev.o2r(dbox)
+            dboxi <- di.accessFeature(_.descriptionBox, "descriptionBox")
+            si <- di.accessFeature(_.getSingletonInstance, "singletonInstance")
+            dpi <- di.accessFeature(_.getStructuredDataProperty, "structuredDataProperty").map(_.asInstanceOf[EntityStructuredDataProperty])
+            siDbox <- si.accessFeature(_.descriptionBox, "descriptionBox")
+            dpiTbox <- dpi.accessFeature(_.getTbox, "tbox")
             o2rj <-
               (prev.get(dboxi).flatMap(_.dboxes.get(dboxi)),
-                prev.get(si.descriptionBox()).flatMap(_.conceptualEntitySingletonInstances.get(si)),
-                prev.get(dpi.getTbox).flatMap(_.entityStructuredDataProperties.get(dpi))) match {
+                prev.get(siDbox).flatMap(_.conceptualEntitySingletonInstances.get(si)),
+                prev.get(dpiTbox).flatMap(_.entityStructuredDataProperties.get(dpi))) match {
                 case (Some(dboxj), Some(sj), Some(dpj)) =>
                   val (rj, dj) = f.createSingletonInstanceStructuredDataPropertyValue(o2ri.rextent, dboxj, sj, dpj)
                   convertSingletonInstanceStructuredDataPropertyContext(
                     o2ri.copy(
                       rextent = rj,
+                      queue_elements = o2ri.queue_elements - di,
                       singletonInstanceStructuredDataPropertyValues = o2ri.singletonInstanceStructuredDataPropertyValues + (di -> dj)),
                     di.getScalarDataPropertyValues.asScala.to[Seq].map(dj -> _),
                     di.getStructuredPropertyTuples.asScala.to[Seq].map(dj -> _))
@@ -1856,21 +1976,28 @@ object OMLText2Resolver {
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ OMLText2Resolver
   = if (sts.nonEmpty) {
+    import EMFProblems.{ResourceAccessor,LogicalElementAccessor}
     val ((ctx, sti), stt) = (sts.head, sts.tail)
-    o2r.dataRelationshipToStructureLookup(sti.getStructuredDataProperty) match {
-      case Some(stk) =>
-        val (rj, stj) = f.createStructuredDataPropertyTuple(o2r.rextent, ctx, stk)
-        convertSingletonInstanceStructuredDataPropertyContext(
-          o2r.copy(
-            rextent = rj,
-            structuredDataPropertyTuples = o2r.structuredDataPropertyTuples + (sti -> stj)),
-          scs ++ sti.getScalarDataPropertyValues.asScala.to[Seq].map(stj -> _),
-          stt ++ sti.getStructuredPropertyTuples.asScala.to[Seq].map(stj -> _))
-      case _ =>
-        new EMFProblems(new java.lang.IllegalArgumentException(
-          s"convertSingletonInstanceStructuredDataPropertyContext: Cannot find: " +
-            s"structured data property: ${sti.getStructuredDataProperty.abbrevIRI}"
-        )).left
+    sti.accessFeature(_.getStructuredDataProperty, "structuredDataProperty") match {
+      case \/-(stiSDP) =>
+
+        o2r.dataRelationshipToStructureLookup(stiSDP) match {
+          case Some(stk) =>
+            val (rj, stj) = f.createStructuredDataPropertyTuple(o2r.rextent, ctx, stk)
+            convertSingletonInstanceStructuredDataPropertyContext(
+              o2r.copy(
+                rextent = rj,
+                structuredDataPropertyTuples = o2r.structuredDataPropertyTuples + (sti -> stj)),
+              scs ++ sti.getScalarDataPropertyValues.asScala.to[Seq].map(stj -> _),
+              stt ++ sti.getStructuredPropertyTuples.asScala.to[Seq].map(stj -> _))
+          case _ =>
+            new EMFProblems(new java.lang.IllegalArgumentException(
+              s"convertSingletonInstanceStructuredDataPropertyContext: Cannot find: " +
+                s"structured data property: ${sti.getStructuredDataProperty.abbrevIRI}"
+            )).left
+        }
+      case -\/(errors) =>
+        -\/(errors)
     }
   } else if (scs.nonEmpty) {
     val ((ctx, sci), sct) = (scs.head, scs.tail)
@@ -1922,7 +2049,7 @@ object OMLText2Resolver {
       prev <- state
       allO2Rs = prev.values
       annotationProperties = allO2Rs.flatMap(_.aps).toMap
-      o2ri = prev(mi)
+      o2ri <- prev.o2r(mi)
       as = mi.getAnnotations.asScala ++
         mi.moduleElements().asScala.flatMap(_.getAnnotations.asScala) ++
         mi.moduleEdges().asScala.flatMap(_.getAnnotations.asScala)
@@ -2803,9 +2930,10 @@ object OMLText2Resolver {
               case _ =>
                 Seq.empty[SegmentPredicateInfo]
             }
+          case (Some(p1), None) =>
+            acc :+ p1
           case _ =>
             Seq.empty[SegmentPredicateInfo]
-
         }
       }
 
@@ -2813,17 +2941,16 @@ object OMLText2Resolver {
       : Iterable[(ChainRule, api.UnreifiedRelationship, Seq[SegmentPredicateInfo])]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: ChainRule => x }
+        .selectByKindOf {
+          case x: ChainRule if
+          Option.apply(x.getHead).isDefined && Option.apply(x.getFirstSegment).isDefined => x
+        }
         .flatMap { x =>
-          o2r.unreifiedRelationships.get(x.getHead).flatMap { head =>
-            val segments = Option.apply(x.getFirstSegment) match {
-              case Some(seg) =>
-                Option.apply(seg.getPredicate) match {
-                  case Some(pred) =>
-                    resolveSegmentPredicates(seg, pred)
-                  case None =>
-                    Seq.empty[SegmentPredicateInfo]
-                }
+          s.accessibleLookup(o2r, _.unreifiedRelationships.get(x.getHead)).flatMap { head =>
+            val seg = x.getFirstSegment
+            val segments = Option.apply(seg.getPredicate) match {
+              case Some(pred) =>
+                resolveSegmentPredicates(seg, pred)
               case None =>
                 Seq.empty[SegmentPredicateInfo]
             }
@@ -3148,8 +3275,8 @@ object OMLText2Resolver {
     
     c60 = c5N
 
-    c61 <- eliminationConverter2(\/-(c60))
-    c62 <- c61.foldLeft(c61.right[EMFProblems])(convertSpecializationAxioms)
+    c61 <- c60.foldLeft(c60.right[EMFProblems])(convertSpecializationAxioms)
+    c62 <- eliminationConverter2(\/-(c61))
     c63 <- c62.foldLeft(c62.right[EMFProblems])(convertSubDataPropertyOfAxioms)
     c64 <- c63.foldLeft(c63.right[EMFProblems])(convertSubObjectPropertyOfAxioms)
     
@@ -3200,9 +3327,11 @@ object OMLText2Resolver {
     _ <- if (cAN.isResolved)
       ().right[EMFProblems]
     else {
+      val unresolved = cAN.unresolved
       val buff = new mutable.StringBuilder
-      buff ++= s"Incomplete OML Text 2 Resolver conversion\n"
-      cAN.foreach { case (m, o2r) =>
+      buff ++= s"Incomplete OML Text 2 Resolver conversion for ${unresolved.size} modules\n"
+
+      unresolved.foreach { case (m, o2r) =>
         val kind = m match {
           case _: TerminologyGraph =>
             "TerminologyGraph"

@@ -128,7 +128,7 @@ object EMFProblems {
     }
   }
 
-  implicit class TermAxiomAccessor[U <: model.terminologies.TermAxiom](u: U) {
+  implicit class LogicalElementAccessor[U <: model.common.LogicalElement](u: U) {
 
     def accessFeature[V](getter: U => V, feature: String)
     : EMFProblems \/ V
@@ -137,8 +137,9 @@ object EMFProblems {
         v.right[EMFProblems]
       case _ =>
         val buff = new scala.collection.mutable.StringBuilder
-        buff ++= s"No value for required feature ${u.eClass().getName}.$feature of axiom in ${u.getTbox.getIri}"
+        buff ++= s"No value for required feature ${u.eClass().getName}.$feature in ${u.moduleContext.getIri}"
         new EMFProblems(new java.lang.IllegalArgumentException(buff.toString)).left
     }
   }
+
 }
