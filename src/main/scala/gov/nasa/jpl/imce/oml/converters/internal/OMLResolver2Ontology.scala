@@ -1379,14 +1379,14 @@ object OMLResolver2Ontology {
            p0.reifiedRelationshipInverseTarget,
            p0.unreifiedRelationshipInverse) match {
 
-            case (Some(a0: api.Aspect), _, _, _, _, _) =>
+            case (Some(a0: api.AspectKind), _, _, _, _, _) =>
               r2o.lookupAspect(a0)(ext).flatMap { a1 =>
                 r2o.ops.addSegmentPredicate(t1, s1, predicate=Some(a1))(r2o.omfStore).map { p1 =>
                   (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
                 }
               }
 
-            case (Some(c0: api.Concept), _, _, _, _, _) =>
+            case (Some(c0: api.ConceptKind), _, _, _, _, _) =>
               r2o.lookupConcept(c0)(ext).flatMap { c1 =>
                 r2o.ops.addSegmentPredicate(t1, s1, predicate=Some(c1))(r2o.omfStore).map { p1 =>
                   (r2o.copy(segmentPredicates = r2o.segmentPredicates + (p0 -> p1)), p1)
@@ -2117,9 +2117,9 @@ case class OMLResolver2Ontology
 
   def lookupEntity(e0: api.Entity): Option[owlapi.types.terms.Entity]
   = e0 match {
-    case a0: api.Aspect =>
+    case a0: api.AspectKind =>
       aspects.get(a0)
-    case c0: api.Concept =>
+    case c0: api.ConceptKind =>
       concepts.get(c0)
     case rs0: api.ReifiedRelationshipRestriction =>
       reifiedRelationshipRestrictions.get(rs0)
@@ -2301,9 +2301,9 @@ case class OMLResolver2Ontology
 
   def lookupModuleElement(me: api.ModuleElement)(implicit ext: api.Extent): core.OMFError.Throwables \/ owlapi.common.ModuleElement
   = me match {
-    case x: api.Aspect =>
+    case x: api.AspectKind =>
       lookupAspect(x)
-    case x: api.Concept =>
+    case x: api.ConceptKind =>
       lookupConcept(x)
     case x: api.ReifiedRelationshipRestriction =>
       lookupReifiedRelationshipRestriction(x)
