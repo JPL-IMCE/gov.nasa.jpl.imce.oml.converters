@@ -41,6 +41,9 @@ case class OMLResolver2Text
 (moduleExtents: Map[api.Module, api.Extent] = Map.empty,
  mappings: Seq[(tables.taggedTypes.IRI, (api.Module, common.Module))] = Seq.empty,
 
+ queue_edges: Set[(api.Extent,api.ModuleEdge)] = Set.empty,
+ queue_elements: Set[(api.Extent, api.ModuleElement)] = Set.empty,
+
  // Modules
  gs: Map[api.TerminologyGraph, graphs.TerminologyGraph] = Map.empty,
  bs: Map[api.Bundle, bundles.Bundle] = Map.empty,
@@ -50,9 +53,10 @@ case class OMLResolver2Text
 
  aspects: Map[api.AspectKind, terminologies.AspectKind] = Map.empty,
  concepts: Map[api.ConceptKind, terminologies.ConceptKind] = Map.empty,
+ cardinalityRestrictedReifiedRelationships: Map[api.CardinalityRestrictedReifiedRelationship, terminologies.CardinalityRestrictedReifiedRelationship] = Map.empty,
  reifiedRelationshipRestrictions: Map[api.ReifiedRelationshipRestriction, terminologies.ReifiedRelationshipRestriction] = Map.empty,
  reifiedRelationships: Map[api.ReifiedRelationship, terminologies.ReifiedRelationship] = Map.empty,
- forwardProperrties: Map[api.ForwardProperty, terminologies.ForwardProperty] = Map.empty,
+ forwardProperties: Map[api.ForwardProperty, terminologies.ForwardProperty] = Map.empty,
  inverseProperties: Map[api.InverseProperty, terminologies.InverseProperty] = Map.empty,
  unreifiedRelationships: Map[api.UnreifiedRelationship, terminologies.UnreifiedRelationship] = Map.empty,
 
@@ -82,12 +86,43 @@ case class OMLResolver2Text
  ruleBodySegments: Map[api.RuleBodySegment, terminologies.RuleBodySegment] = Map.empty,
  segmentPredicates: Map[api.SegmentPredicate, terminologies.SegmentPredicate] = Map.empty) {
 
+  def isResolved: Boolean
+  = queue_edges.isEmpty &&
+    queue_elements.isEmpty
+
+  def lookupMap[U <: api.LogicalElement, V <: api.LogicalElement]
+  (u: U, uv: Map[U, V])
+  (implicit ext: api.Extent)
+  : EMFProblems \/ V
+  = uv.get(u) match {
+    case Some(u) =>
+      u.right[EMFProblems]
+    case _ =>
+      new EMFProblems(new IllegalArgumentException(
+        s"OMLResolver2Text.lookupMap failed for: $u")).left
+  }
+
   def moduleLookup(m: api.Module)
   : Option[common.Module]
   = m match {
     case g: api.TerminologyGraph => gs.get(g)
     case b: api.Bundle => bs.get(b)
     case d: api.DescriptionBox => ds.get(d)
+  }
+
+  def getTbox(m0: api.TerminologyBox): EMFProblems \/ terminologies.TerminologyBox
+  = (m0 match {
+    case mt: api.TerminologyGraph =>
+      gs.get(mt)
+    case mb: api.Bundle =>
+      bs.get(mb)
+  }) match {
+    case Some(m1) =>
+      m1.right
+    case None =>
+      new EMFProblems(new java.lang.IllegalArgumentException(
+        s"OWLResolver2Ontology.getTbox(${m0.kind} ${m0.iri}) not found."
+      )).left
   }
 
   def tboxLookup(iri: tables.taggedTypes.IRI)
@@ -109,12 +144,25 @@ case class OMLResolver2Text
     case b: api.Bundle => bs.get(b)
   }
 
+  def graphLookup(m: api.TerminologyBox)
+  : Option[graphs.TerminologyGraph]
+  = m match {
+    case g: api.TerminologyGraph => gs.get(g)
+    case _ => None
+  }
+
   def entityLookup(e: api.Entity)
   : Option[terminologies.Entity] = e match {
-    case a: api.AspectKind => aspects.get(a)
-    case c: api.ConceptKind => concepts.get(c)
-    case rr: api.ReifiedRelationshipRestriction => reifiedRelationshipRestrictions.get(rr)
-    case rr: api.ReifiedRelationship => reifiedRelationships.get(rr)
+    case a: api.AspectKind =>
+      aspects.get(a)
+    case c: api.ConceptKind =>
+      concepts.get(c)
+    case crr: api.CardinalityRestrictedReifiedRelationship =>
+      cardinalityRestrictedReifiedRelationships.get(crr)
+    case rr: api.ReifiedRelationshipRestriction =>
+      reifiedRelationshipRestrictions.get(rr)
+    case rr: api.ReifiedRelationship =>
+      reifiedRelationships.get(rr)
     case _ => None
   }
 
@@ -124,23 +172,34 @@ case class OMLResolver2Text
     case r0: api.UnreifiedRelationship =>
       unreifiedRelationships.get(r0)
     case r0: api.ForwardProperty =>
-      forwardProperrties.get(r0)
+      forwardProperties.get(r0)
     case r0: api.InverseProperty =>
       inverseProperties.get(r0)
   }
 
   def conceptualRelationshipLookup(rl: api.ConceptualRelationship)
   : Option[terminologies.ConceptualRelationship] = rl match {
-    case rr: api.ReifiedRelationshipRestriction => reifiedRelationshipRestrictions.get(rr)
-    case rr: api.ReifiedRelationship => reifiedRelationships.get(rr)
+    case rr: api.CardinalityRestrictedReifiedRelationship =>
+      cardinalityRestrictedReifiedRelationships.get(rr)
+    case rr: api.ReifiedRelationshipRestriction =>
+      reifiedRelationshipRestrictions.get(rr)
+    case rr: api.ReifiedRelationship =>
+      reifiedRelationships.get(rr)
   }
 
   def entityRelationshipLookup(rl: api.EntityRelationship)
-  : Option[terminologies.EntityRelationship] = rl match {
-    case rr: api.ReifiedRelationshipRestriction => reifiedRelationshipRestrictions.get(rr)
-    case rr: api.ReifiedRelationship => reifiedRelationships.get(rr)
-    case ur: api.UnreifiedRelationship => unreifiedRelationships.get(ur)
-    case _ => None
+  : Option[terminologies.EntityRelationship]
+  = rl match {
+    case rr: api.CardinalityRestrictedReifiedRelationship =>
+      cardinalityRestrictedReifiedRelationships.get(rr)
+    case rr: api.ReifiedRelationshipRestriction =>
+      reifiedRelationshipRestrictions.get(rr)
+    case rr: api.ReifiedRelationship =>
+      reifiedRelationships.get(rr)
+    case ur: api.UnreifiedRelationship =>
+      unreifiedRelationships.get(ur)
+    case _ =>
+      None
   }
 
   def dataRelationshipToStructureLookup(dp: api.DataRelationshipToStructure)
@@ -194,6 +253,7 @@ case class OMLResolver2Text
 
     case t: api.Entity =>
       entityLookup(t)
+
     case r: api.EntityRelationship =>
       entityRelationshipLookup(r)
 
@@ -255,53 +315,72 @@ object OMLResolver2Text {
   = for {
 
     // Modules
+
     c011 <- extents.flatMap{ ext => ext.terminologyGraphs.map(ext -> _)}.foldLeft(conversions.right[EMFProblems])(convertTerminologyGraph)
     c012 <- extents.flatMap{ ext => ext.bundles.map(ext -> _)}.foldLeft(c011.right[EMFProblems])(convertBundle)
     c013 <- extents.flatMap{ ext => ext.descriptionBoxes.map(ext -> _)}.foldLeft(c012.right[EMFProblems])(convertDescription)
-    c01 = c013
+    c01N = c013
 
     // AnnotationProperties
-    c02 <- extents.flatMap(_.annotationProperties).foldLeft(c01.right[EMFProblems])(convertModuleAnnotationProperties)
+
+    c020 = c01N
+    c021 <- extents.flatMap(_.annotationProperties).foldLeft(c01N.right[EMFProblems])(convertModuleAnnotationProperties)
+    c02N = c021
 
     // TerminologyExtensions
-    c03 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxAxiom).foldLeft(c02.right[EMFProblems])(convertTerminologyExtension)
 
-    // Atomic Entities
-    c10 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c03.right[EMFProblems])(convertAspectOrConcept)
+    c030 = c02N
+    c031 <- c030.queue_edges.foldLeft(c030.right[EMFProblems])(convertTerminologyExtension)
+    c03N = c031
 
-    // Other ModuleEdges
-    c20 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxAxiom).foldLeft(c10.right[EMFProblems])(convertConceptDesignationTerminologyAxiom)
-    c21 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxAxiom).foldLeft(c20.right[EMFProblems])(convertTerminologyNestingAxiom)
-    c22 <- extents.flatMap(_.bundleOfTerminologyBundleAxiom).foldLeft(c21.right[EMFProblems])(convertBundledTerminologyAxiom)
-    c23 <- extents.flatMap(_.descriptionBoxOfDescriptionBoxExtendsClosedWorldDefinitions).foldLeft(c22.right[EMFProblems])(convertDescriptionBoxExtendsClosedWorldDefinition)
-    c24 <- extents.flatMap(_.descriptionBoxOfDescriptionBoxRefinement).foldLeft(c23.right[EMFProblems])(convertDescriptionBoxRefinement)
+    // Atomic Entities & DataTypes
 
-    // Relationships
+    c040 = c03N
+    c041 <- c040.queue_elements.foldLeft(c040.right[EMFProblems])(convertAspectOrConcept)
+    c042 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c041.right[EMFProblems])(convertStructure)
+    c043 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c042.right[EMFProblems])(convertScalar)
+    c04N = c043
 
-    c30 = c24
-    c31 <- convertReifiedRelationships(
-      c30.right[EMFProblems],
-      extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement.selectByKindOf { case (rr: api.ReifiedRelationship, t: api.TerminologyBox) => rr -> t }),
-      List.empty)
-    c32 <- convertReifiedRelationshipRestrictions(
-      c31.right[EMFProblems],
-      extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement.selectByKindOf { case (rr: api.ReifiedRelationshipRestriction, t: api.TerminologyBox) => rr -> t }),
-      List.empty)
-    c33 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c32.right[EMFProblems])(convertUnreifiedRelationship)
+    // Data Ranges
 
-    // DataTypes
-
-    c34 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c33.right[EMFProblems])(convertStructure)
-    c35 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c34.right[EMFProblems])(convertScalar)
-    c36 <- convertRestrictedDataRanges(
-      c35.right[EMFProblems],
+    c050 = c04N
+    c051 <- convertRestrictedDataRanges(
+      c050.right[EMFProblems],
       extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement.selectByKindOf { case (dr: api.RestrictedDataRange, t: api.TerminologyBox) => dr -> t }),
       List.empty)
-    c37 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c36.right[EMFProblems])(convertScalarOneOfLiteralAxiom)
+    c052 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c051.right[EMFProblems])(convertScalarOneOfLiteralAxiom)
+    c05N = c052
+
+    // Relational constructs
+
+    c060 = c05N
+    c061 <- eliminationConverter1(c060.right)
+    c06N = c061
+
+//    // Other ModuleEdges
+//
+//    c20 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxAxiom).foldLeft(c10.right[EMFProblems])(convertConceptDesignationTerminologyAxiom)
+//    c21 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxAxiom).foldLeft(c20.right[EMFProblems])(convertTerminologyNestingAxiom)
+//    c22 <- extents.flatMap(_.bundleOfTerminologyBundleAxiom).foldLeft(c21.right[EMFProblems])(convertBundledTerminologyAxiom)
+//    c23 <- extents.flatMap(_.descriptionBoxOfDescriptionBoxExtendsClosedWorldDefinitions).foldLeft(c22.right[EMFProblems])(convertDescriptionBoxExtendsClosedWorldDefinition)
+//    c24 <- extents.flatMap(_.descriptionBoxOfDescriptionBoxRefinement).foldLeft(c23.right[EMFProblems])(convertDescriptionBoxRefinement)
+//
+//    // Relationships
+//
+//    c30 = c24
+//    c31 <- convertReifiedRelationships(
+//      c30.right[EMFProblems],
+//      extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement.selectByKindOf { case (rr: api.ReifiedRelationship, t: api.TerminologyBox) => rr -> t }),
+//      List.empty)
+//    c32 <- convertReifiedRelationshipRestrictions(
+//      c31.right[EMFProblems],
+//      extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement.selectByKindOf { case (rr: api.ReifiedRelationshipRestriction, t: api.TerminologyBox) => rr -> t }),
+//      List.empty)
+//    c33 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c32.right[EMFProblems])(convertUnreifiedRelationship)
 
     // DataRelationships
 
-    c40 = c37
+    c40 = c06N
     c41 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c40.right[EMFProblems])(convertEntityScalarDataProperty)
     c42 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c41.right[EMFProblems])(convertEntityStructuredDataProperty)
     c43 <- extents.flatMap(_.terminologyBoxOfTerminologyBoxStatement).foldLeft(c42.right[EMFProblems])(convertScalarDataProperty)
@@ -376,6 +455,8 @@ object OMLResolver2Text {
         _ = g1.setKind(convertTerminologyKind(g0.kind))
         _ = g1.setIri(g0.iri)
         next = r2t.copy(
+          queue_edges = r2t.queue_edges ++ g0.moduleEdges()(e0).map(e0 -> _),
+          queue_elements = r2t.queue_elements ++ g0.moduleElements()(e0).map(e0 -> _),
           moduleExtents = r2t.moduleExtents + (g0 -> e0),
           mappings = r2t.mappings :+ (g0.iri -> (g0 -> g1)),
           gs = r2t.gs + (g0 -> g1))
@@ -392,6 +473,8 @@ object OMLResolver2Text {
         _ = b1.setKind(convertTerminologyKind(b0.kind))
         _ = b1.setIri(b0.iri)
         next = r2t.copy(
+          queue_edges = r2t.queue_edges ++ b0.moduleEdges()(e0).map(e0 -> _),
+          queue_elements = r2t.queue_elements ++ b0.moduleElements()(e0).map(e0 -> _),
           moduleExtents = r2t.moduleExtents + (b0 -> e0),
           mappings = r2t.mappings :+ (b0.iri -> (b0 -> b1)),
           bs = r2t.bs + (b0 -> b1))
@@ -408,6 +491,8 @@ object OMLResolver2Text {
         _ = d1.setKind(convertDescriptionKind(d0.kind))
         _ = d1.setIri(d0.iri)
         next = r2t.copy(
+          queue_edges = r2t.queue_edges ++ d0.moduleEdges()(e0).map(e0 -> _),
+          queue_elements = r2t.queue_elements ++ d0.moduleElements()(e0).map(e0 -> _),
           moduleExtents = r2t.moduleExtents + (d0 -> e0),
           mappings = r2t.mappings :+ (d0.iri -> (d0 -> d1)),
           ds = r2t.ds + (d0 -> d1))
@@ -442,69 +527,61 @@ object OMLResolver2Text {
 
   // TerminologyExtensions
 
-  private val convertTerminologyExtension
-  : (ConversionResult, (api.TerminologyBoxAxiom, api.TerminologyBox)) => ConversionResult
-  = {
-    case (acc, (ax0: api.TerminologyExtensionAxiom, t0)) =>
-      val ctw: ConversionResult = for {
+  private def convertTerminologyExtension
+  (acc: ConversionResult, pair: (api.Extent, api.ModuleEdge))
+  : ConversionResult
+  = pair match {
+    case (e0, ax0: api.TerminologyExtensionAxiom) =>
+      for {
         r2t <- acc
         ax1 = terminologies.TerminologiesFactory.eINSTANCE.createTerminologyExtensionAxiom()
-        upd <- (r2t.tboxLookup(t0), r2t.tboxLookup(ax0.extendedTerminology)) match {
+        upd <- ( r2t.tboxLookup(ax0.tbox),
+                 r2t.tboxLookup(ax0.extendedTerminology)) match {
           case (Some(t1), Some(e1)) =>
             ax1.setTbox(t1)
             ax1.setExtendedTerminology(e1)
-            r2t.copy(moduleEdges = r2t.moduleEdges + (ax0 -> ax1)).right
+            r2t.copy(
+              queue_edges = r2t.queue_edges - pair,
+              moduleEdges = r2t.moduleEdges + (ax0 -> ax1)).right
           case _ =>
             new EMFProblems(new java.lang.IllegalArgumentException(
               s"convertTerminologyExtensions: Failed to resolve " +
-                s"extending tbox: $t0" +
+                s"extending tbox: ${ax0.tbox}" +
                 s"extended tbox: ${ax0.extendedTerminology}")).left
         }
       } yield upd
-      ctw
-    case (acc, _) =>
+    case _ =>
       acc
   }
 
   // Atomic Entities
 
-  private val convertAspectOrConcept
-  : (ConversionResult, (api.TerminologyBoxStatement, api.TerminologyBox)) => ConversionResult
-  = {
-    case (acc, (a0: api.Aspect, t0)) =>
+  private def convertAspectOrConcept
+  (prev: ConversionResult, pair: (api.Extent, api.ModuleElement))
+  : ConversionResult
+  = pair match {
+    case (e0, a0: api.Aspect) =>
       for {
-        r2t <- acc
+        r2t <- prev
+        t1 <- r2t.lookupMap(a0, e0.terminologyBoxOfTerminologyBoxStatement)(e0).flatMap(r2t.getTbox)
         a1 = terminologies.TerminologiesFactory.eINSTANCE.createAspect()
-        upd <- r2t.tboxLookup(t0) match {
-          case Some(t1) =>
-            a1.setTbox(t1)
-            a1.setName(normalizeName(a0.name))
-            r2t.copy(aspects = r2t.aspects + (a0 -> a1)).right
-          case _ =>
-            new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertAspect: Failed to resolve " +
-                s"tbox: $t0" +
-                s" for defining aspect: $a0")).left
-        }
-      } yield upd
-    case (acc, (c0: api.Concept, t0)) =>
+        _ = a1.setTbox(t1)
+        _ = a1.setName(normalizeName(a0.name))
+      } yield r2t.copy(
+        queue_elements = r2t.queue_elements - (e0 -> a0),
+        aspects = r2t.aspects + (a0 -> a1))
+    case (e0, c0: api.Concept) =>
       for {
-        r2t <- acc
+        r2t <- prev
+        t1 <- r2t.lookupMap(c0, e0.terminologyBoxOfTerminologyBoxStatement)(e0).flatMap(r2t.getTbox)
         c1 = terminologies.TerminologiesFactory.eINSTANCE.createConcept()
-        upd <- r2t.tboxLookup(t0) match {
-          case Some(t1) =>
-            c1.setTbox(t1)
-            c1.setName(normalizeName(c0.name))
-            r2t.copy(concepts = r2t.concepts + (c0 -> c1)).right
-          case _ =>
-            new EMFProblems(new java.lang.IllegalArgumentException(
-              s"convertConcept: Failed to resolve " +
-                s"tbox: $t0" +
-                s" for defining concept: $c0")).left
-        }
-      } yield upd
-    case (acc, _) =>
-      acc
+        _ = c1.setTbox(t1)
+        _ = c1.setName(normalizeName(c0.name))
+      } yield r2t.copy(
+        queue_elements = r2t.queue_elements - (e0 -> c0),
+        concepts = r2t.concepts + (c0 -> c1))
+    case _ =>
+      prev
   }
 
   // Other ModuleEdges
@@ -742,7 +819,7 @@ object OMLResolver2Text {
 
           val next = r2t.copy(
             reifiedRelationships = r2t.reifiedRelationships + (rr0 -> rr1),
-            forwardProperrties = r2t.forwardProperrties + (fwd0 -> fwd1),
+            forwardProperties = r2t.forwardProperties + (fwd0 -> fwd1),
             inverseProperties = r2t.inverseProperties ++ inv1
           ).right
 
@@ -805,7 +882,7 @@ object OMLResolver2Text {
       acc
   }
 
-  // DataTypes
+  // Data Ranges
 
   private val convertStructure
   : (ConversionResult, (api.TerminologyBoxStatement, api.TerminologyBox)) => ConversionResult
@@ -986,6 +1063,545 @@ object OMLResolver2Text {
       } yield upd
     case (acc, _) =>
       acc
+  }
+
+  // Resolvers & Updaters
+
+  implicit def toCardinalityRestrictionKind
+  (k: tables.CardinalityRestrictionKind)
+  : terminologies.CardinalityRestrictionKind
+  = k match {
+    case tables.MinCardinalityRestriction =>
+      terminologies.CardinalityRestrictionKind.MIN
+    case tables.MaxCardinalityRestriction =>
+      terminologies.CardinalityRestrictionKind.MAX
+    case tables.ExactCardinalityRestriction =>
+      terminologies.CardinalityRestrictionKind.EXACT
+  }
+
+  case class ResolvableCardinalityAspectRestriction
+  (extent: api.Extent,
+   cr: api.CardinalityRestrictedAspect,
+   tbox: terminologies.TerminologyBox,
+   rel: terminologies.RestrictableRelationship,
+   range: Option[terminologies.Entity])
+
+  private def resolvableCardinalityAspectRestrictions
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableCardinalityAspectRestriction]
+  = r2t
+    .queue_elements
+    .collect { case (extent: api.Extent, x: api.CardinalityRestrictedAspect) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2t.tboxLookup),
+        r2t.restrictableRelationshipLookup(x.restrictedRelationship),
+        x.restrictedRange,
+        x.restrictedRange.flatMap(r2t.entityLookup)) match {
+        case (Some(tbox), Some(rel), Some(_), Some(range)) =>
+          Some(ResolvableCardinalityAspectRestriction(extent, x, tbox, rel, Some(range)))
+        case (Some(tbox), Some(rel), None, _) =>
+          Some(ResolvableCardinalityAspectRestriction(extent, x, tbox, rel, None))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateCardinalityAspectRestrictions
+  (current: ConversionResult,
+   x: ResolvableCardinalityAspectRestriction)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = terminologies.TerminologiesFactory.eINSTANCE.createCardinalityRestrictedAspect()
+    _ = y.setTbox(x.tbox)
+    _ = y.setName(x.cr.name)
+    _ = y.setRestrictionKind(x.cr.restrictionKind)
+    _ = y.setRestrictedRelationship(x.rel)
+    _ = x.range.foreach(y.setRestrictedRange)
+    _ = y.setRestrictedCardinality(new datatypes.PositiveIntegerValue(x.cr.restrictedCardinality))
+    next = r2t.copy(
+      queue_elements = r2t.queue_elements - (x.extent -> x.cr),
+      aspects = r2t.aspects + (x.cr -> y))
+  } yield next
+
+  case class ResolvableCardinalityConceptRestriction
+  (extent: api.Extent,
+   cr: api.CardinalityRestrictedConcept,
+   tbox: terminologies.TerminologyBox,
+   rel: terminologies.RestrictableRelationship,
+   range: Option[terminologies.Entity])
+
+  private def resolvableCardinalityConceptRestrictions
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableCardinalityConceptRestriction]
+  = r2t
+    .queue_elements
+    .collect { case (extent: api.Extent, x: api.CardinalityRestrictedConcept) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2t.tboxLookup),
+        r2t.restrictableRelationshipLookup(x.restrictedRelationship),
+        x.restrictedRange,
+        x.restrictedRange.flatMap(r2t.entityLookup)) match {
+        case (Some(tbox), Some(rel), Some(_), Some(range)) =>
+          Some(ResolvableCardinalityConceptRestriction(extent, x, tbox, rel, Some(range)))
+        case (Some(tbox), Some(rel), None, _) =>
+          Some(ResolvableCardinalityConceptRestriction(extent, x, tbox, rel, None))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateCardinalityConceptRestrictions
+  (current: ConversionResult,
+   x: ResolvableCardinalityConceptRestriction)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = terminologies.TerminologiesFactory.eINSTANCE.createCardinalityRestrictedConcept()
+    _ = y.setTbox(x.tbox)
+    _ = y.setName(x.cr.name)
+    _ = y.setRestrictionKind(x.cr.restrictionKind)
+    _ = y.setRestrictedRelationship(x.rel)
+    _ = x.range.foreach(y.setRestrictedRange)
+    _ = y.setRestrictedCardinality(new datatypes.PositiveIntegerValue(x.cr.restrictedCardinality))
+    next = r2t.copy(
+      queue_elements = r2t.queue_elements - (x.extent -> x.cr),
+      concepts = r2t.concepts + (x.cr -> y))
+  } yield next
+
+  case class ResolvableCardinalityReifiedRelationshipRestriction
+  (extent: api.Extent,
+   cr: api.CardinalityRestrictedReifiedRelationship,
+   tbox: terminologies.TerminologyBox,
+   rel: terminologies.RestrictableRelationship,
+   range: Option[terminologies.Entity])
+
+  private def resolvableCardinalityReifiedRelationshipRestrictions
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableCardinalityReifiedRelationshipRestriction]
+  = r2t
+    .queue_elements
+    .collect { case (extent: api.Extent, x: api.CardinalityRestrictedReifiedRelationship) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2t.tboxLookup),
+        r2t.restrictableRelationshipLookup(x.restrictedRelationship),
+        x.restrictedRange,
+        x.restrictedRange.flatMap(r2t.entityLookup) ) match {
+        case (Some(tbox), Some(rel), Some(_), Some(range)) =>
+          Some(ResolvableCardinalityReifiedRelationshipRestriction(extent, x, tbox, rel, Some(range)))
+        case (Some(tbox), Some(rel), None, _) =>
+          Some(ResolvableCardinalityReifiedRelationshipRestriction(extent, x, tbox, rel, None))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateCardinalityReifiedRelationshipRestrictions
+  (current: ConversionResult,
+   x: ResolvableCardinalityReifiedRelationshipRestriction)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = terminologies.TerminologiesFactory.eINSTANCE.createCardinalityRestrictedReifiedRelationship
+    _ = y.setTbox(x.tbox)
+    _ = y.setName(x.cr.name)
+    _ = y.setRestrictionKind(x.cr.restrictionKind)
+    _ = y.setRestrictedRelationship(x.rel)
+    _ = x.range.foreach(y.setRestrictedRange)
+    _ = y.setRestrictedCardinality(new datatypes.PositiveIntegerValue(x.cr.restrictedCardinality))
+    next = r2t.copy(
+      queue_elements = r2t.queue_elements - (x.extent -> x.cr),
+      cardinalityRestrictedReifiedRelationships = r2t.cardinalityRestrictedReifiedRelationships + (x.cr -> y))
+  } yield next
+
+  case class ResolvableConceptDesignationTerminologyAxiom
+  (extent: api.Extent,
+   ax: api.ConceptDesignationTerminologyAxiom,
+   tbox: terminologies.TerminologyBox,
+   c: terminologies.ConceptKind,
+   desTbox: terminologies.TerminologyBox)
+
+  private def resolvableConceptDesignationTerminologyAxioms
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableConceptDesignationTerminologyAxiom]
+  = r2t
+    .queue_edges
+    .collect { case (extent: api.Extent, x: api.ConceptDesignationTerminologyAxiom) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.terminologyBoxOfTerminologyBoxAxiom.get(x).flatMap(r2t.tboxLookup),
+        r2t.concepts.get(x.designatedConcept),
+        r2t.tboxLookup(x.designatedTerminology)) match {
+        case (Some(tbox), Some(c), Some(desTbox)) =>
+          Some(ResolvableConceptDesignationTerminologyAxiom(extent, x, tbox, c, desTbox))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateConceptDesignationTerminologyAxioms
+  (current: ConversionResult,
+   x: ResolvableConceptDesignationTerminologyAxiom)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = graphs.GraphsFactory.eINSTANCE.createConceptDesignationTerminologyAxiom
+    _ = y.setTbox(x.tbox)
+    _ = y.setDesignatedConcept(x.c)
+    _ = y.setDesignatedTerminology(x.desTbox)
+    next = r2t.copy(
+      queue_edges = r2t.queue_edges - (x.extent -> x.ax))
+  } yield next
+
+  case class ResolvableTerminologyNestingAxiom
+  (extent: api.Extent,
+   ax: api.TerminologyNestingAxiom,
+   tg: graphs.TerminologyGraph,
+   nestingC: terminologies.ConceptKind,
+   nestingTbox: terminologies.TerminologyBox)
+
+  private def resolvableTerminologyNestingAxioms
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableTerminologyNestingAxiom]
+  = r2t
+    .queue_edges
+    .collect { case (extent: api.Extent, x: api.TerminologyNestingAxiom) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.terminologyBoxOfTerminologyBoxAxiom.get(x).flatMap(r2t.graphLookup),
+        r2t.concepts.get(x.nestingContext),
+        r2t.tboxLookup(x.nestingTerminology)) match {
+        case (Some(tg), Some(c), Some(nestingTbox)) =>
+          Some(ResolvableTerminologyNestingAxiom(extent, x, tg, c, nestingTbox))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateTerminologyNestingAxioms
+  (current: ConversionResult,
+   x: ResolvableTerminologyNestingAxiom)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = graphs.GraphsFactory.eINSTANCE.createTerminologyNestingAxiom()
+    _ = y.setTbox(x.nestingTbox)
+    _ = y.setNestingContext(x.nestingC)
+    _ = y.setNestingTerminology(x.tg)
+    next = r2t.copy(
+      queue_edges = r2t.queue_edges - (x.extent -> x.ax))
+  } yield next
+
+  case class ResolvableBundledTerminologyAxiom
+  (extent: api.Extent,
+   ax: api.BundledTerminologyAxiom,
+   bundle: bundles.Bundle,
+   bundledTbox: terminologies.TerminologyBox)
+
+  private def resolvableBundledTerminologyAxioms
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableBundledTerminologyAxiom]
+  = r2t
+    .queue_edges
+    .collect { case (extent: api.Extent, x: api.BundledTerminologyAxiom) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.bundleOfTerminologyBundleAxiom.get(x).flatMap(r2t.bs.get),
+        r2t.tboxLookup(x.bundledTerminology)) match {
+        case (Some(bundle), Some(bundledTbox)) =>
+          Some(ResolvableBundledTerminologyAxiom(extent, x, bundle, bundledTbox))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateBundledTerminologyAxioms
+  (current: ConversionResult,
+   x: ResolvableBundledTerminologyAxiom)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = bundles.BundlesFactory.eINSTANCE.createBundledTerminologyAxiom() 
+    _ = y.setBundle(x.bundle)
+    _ = y.setBundledTerminology(x.bundledTbox)
+    next = r2t.copy(
+      queue_edges = r2t.queue_edges - (x.extent -> x.ax))
+  } yield next
+
+  case class ResolvableDescriptionBoxExtendsClosedWorldDefinitions
+  (extent: api.Extent,
+   ax: api.DescriptionBoxExtendsClosedWorldDefinitions,
+   dbox: descriptions.DescriptionBox,
+   tbox: terminologies.TerminologyBox)
+
+  private def resolvableDescriptionBoxExtendsClosedWorldDefinitions
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableDescriptionBoxExtendsClosedWorldDefinitions]
+  = r2t
+    .queue_edges
+    .collect { case (extent: api.Extent, x: api.DescriptionBoxExtendsClosedWorldDefinitions) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.descriptionBoxOfDescriptionBoxExtendsClosedWorldDefinitions.get(x).flatMap(r2t.ds.get),
+        r2t.tboxLookup(x.closedWorldDefinitions)) match {
+        case (Some(dbox), Some(tbox)) =>
+          Some(ResolvableDescriptionBoxExtendsClosedWorldDefinitions(extent, x, dbox, tbox))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateDescriptionBoxExtendsClosedWorldDefinitions
+  (current: ConversionResult,
+   x: ResolvableDescriptionBoxExtendsClosedWorldDefinitions)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = descriptions.DescriptionsFactory.eINSTANCE.createDescriptionBoxExtendsClosedWorldDefinitions()
+    _ = y.setDescriptionBox(x.dbox)
+    _ = y.setClosedWorldDefinitions(x.tbox)
+    next = r2t.copy(
+      queue_edges = r2t.queue_edges - (x.extent -> x.ax))
+  } yield next
+
+  case class ResolvableDescriptionBoxRefinement
+  (extent: api.Extent,
+   ax: api.DescriptionBoxRefinement,
+   dbox: descriptions.DescriptionBox,
+   refined: descriptions.DescriptionBox)
+
+  private def resolvableDescriptionBoxRefinements
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableDescriptionBoxRefinement]
+  = r2t
+    .queue_edges
+    .collect { case (extent: api.Extent, x: api.DescriptionBoxRefinement) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.descriptionBoxOfDescriptionBoxRefinement.get(x).flatMap(r2t.ds.get),
+        r2t.dboxLookup(x.refinedDescriptionBox)) match {
+        case (Some(dbox), Some(refined)) =>
+          Some(ResolvableDescriptionBoxRefinement(extent, x, dbox, refined))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateDescriptionBoxRefinements
+  (current: ConversionResult,
+   x: ResolvableDescriptionBoxRefinement)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = descriptions.DescriptionsFactory.eINSTANCE.createDescriptionBoxRefinement()
+    _ = y.setRefiningDescriptionBox(x.dbox)
+    _ = y.setRefinedDescriptionBox(x.refined)
+    next = r2t.copy(
+      queue_edges = r2t.queue_edges - (x.extent -> x.ax))
+  } yield next
+
+  case class ResolvableReifiedRelationship
+  (extent: api.Extent,
+   rr: api.ReifiedRelationship,
+   tbox: terminologies.TerminologyBox,
+   source: terminologies.Entity,
+   target: terminologies.Entity,
+   fwd: api.ForwardProperty,
+   inv: Option[api.InverseProperty])
+
+  private def resolvableReifiedRelationships
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableReifiedRelationship]
+  = r2t
+    .queue_elements
+    .collect { case (extent: api.Extent, x: api.ReifiedRelationship) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2t.tboxLookup),
+        r2t.entityLookup(x.source),
+        r2t.entityLookup(x.target),
+        x.allNestedElements()(extent).collectFirst { case f: api.ForwardProperty => f },
+        x.allNestedElements()(extent).collectFirst { case i: api.InverseProperty => i } ) match {
+        case (Some(tbox), Some(source), Some(target), Some(fwd), inv) =>
+          Some(ResolvableReifiedRelationship(extent, x, tbox, source, target, fwd, inv))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateReifiedRelationships
+  (current: ConversionResult,
+   x: ResolvableReifiedRelationship)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationship()
+    _ = y.setTbox(x.tbox)
+    _ = y.setName(x.rr.name)
+    _ = y.setSource(x.source)
+    _ = y.setTarget(x.target)
+    fwd1 = terminologies.TerminologiesFactory.eINSTANCE.createForwardProperty()
+    _ = fwd1.setName(x.fwd.name)
+    _ = fwd1.setReifiedRelationship(y)
+    invPair = x.inv.map { i0 =>
+      val i1 = terminologies.TerminologiesFactory.eINSTANCE.createInverseProperty()
+      i1.setName(i0.name)
+      i1.setReifiedRelationship(y)
+      i0 -> i1
+    }
+    _ = y.setIsAsymmetric(x.rr.isAsymmetric)
+    _ = y.setIsEssential(x.rr.isEssential)
+    _ = y.setIsFunctional(x.rr.isFunctional)
+    _ = y.setIsInverseEssential(x.rr.isInverseEssential)
+    _ = y.setIsInverseFunctional(x.rr.isInverseFunctional)
+    _ = y.setIsIrreflexive(x.rr.isIrreflexive)
+    _ = y.setIsReflexive(x.rr.isReflexive)
+    _ = y.setIsSymmetric(x.rr.isSymmetric)
+    _ = y.setIsTransitive(x.rr.isTransitive)
+    next = r2t.copy(
+      queue_elements = r2t.queue_elements - (x.extent -> x.rr),
+      reifiedRelationships = r2t.reifiedRelationships + (x.rr -> y),
+      forwardProperties = r2t.forwardProperties + (x.fwd -> fwd1),
+      inverseProperties = r2t.inverseProperties ++ invPair)
+  } yield next
+
+  case class ResolvableReifiedRelationshipRestriction
+  (extent: api.Extent,
+   rrr: api.ReifiedRelationshipRestriction,
+   tbox: terminologies.TerminologyBox,
+   source: terminologies.Entity,
+   target: terminologies.Entity)
+
+  private def resolvableReifiedRelationshipRestrictions
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableReifiedRelationshipRestriction]
+  = r2t
+    .queue_elements
+    .collect { case (extent: api.Extent, x: api.ReifiedRelationshipRestriction) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2t.tboxLookup),
+        r2t.entityLookup(x.source),
+        r2t.entityLookup(x.target) ) match {
+        case (Some(tbox), Some(source), Some(target)) =>
+          Some(ResolvableReifiedRelationshipRestriction(extent, x, tbox, source, target))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateReifiedRelationshipRestrictions
+  (current: ConversionResult,
+   x: ResolvableReifiedRelationshipRestriction)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = terminologies.TerminologiesFactory.eINSTANCE.createReifiedRelationshipRestriction()
+    _ = y.setTbox(x.tbox)
+    _ = y.setName(x.rrr.name)
+    _ = y.setSource(x.source)
+    _ = y.setTarget(x.target)
+    next = r2t.copy(
+      queue_elements = r2t.queue_elements - (x.extent -> x.rrr),
+      reifiedRelationshipRestrictions = r2t.reifiedRelationshipRestrictions + (x.rrr -> y))
+  } yield next
+  
+  case class ResolvableUnreifiedRelationship
+  (extent: api.Extent,
+   ur: api.UnreifiedRelationship,
+   tbox: terminologies.TerminologyBox,
+   source: terminologies.Entity,
+   target: terminologies.Entity)
+
+  private def resolvableUnreifiedRelationships
+  (r2t: OMLResolver2Text)
+  : Iterable[ResolvableUnreifiedRelationship]
+  = r2t
+    .queue_elements
+    .collect { case (extent: api.Extent, x: api.UnreifiedRelationship) => extent -> x }
+    .flatMap { case (extent, x) =>
+      ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2t.tboxLookup),
+        r2t.entityLookup(x.source),
+        r2t.entityLookup(x.target) ) match {
+        case (Some(tbox), Some(source), Some(target)) =>
+          Some(ResolvableUnreifiedRelationship(extent, x, tbox, source, target))
+        case _ =>
+          None
+      }
+    }
+
+  private def updateUnreifiedRelationships
+  (current: ConversionResult,
+   x: ResolvableUnreifiedRelationship)
+  : ConversionResult
+  = for {
+    r2t <- current
+    y = terminologies.TerminologiesFactory.eINSTANCE.createUnreifiedRelationship()
+    _ = y.setTbox(x.tbox)
+    _ = y.setName(x.ur.name)
+    _ = y.setSource(x.source)
+    _ = y.setTarget(x.target)
+
+    _ = y.setIsAsymmetric(x.ur.isAsymmetric)
+    _ = y.setIsEssential(x.ur.isEssential)
+    _ = y.setIsFunctional(x.ur.isFunctional)
+    _ = y.setIsInverseEssential(x.ur.isInverseEssential)
+    _ = y.setIsInverseFunctional(x.ur.isInverseFunctional)
+    _ = y.setIsIrreflexive(x.ur.isIrreflexive)
+    _ = y.setIsReflexive(x.ur.isReflexive)
+    _ = y.setIsTransitive(x.ur.isTransitive)
+
+    next = r2t.copy(
+      queue_elements = r2t.queue_elements - (x.extent -> x.ur),
+      unreifiedRelationships = r2t.unreifiedRelationships + (x.ur -> y))
+  } yield next
+
+  // Relational Constructs
+
+  private def eliminationConverter1
+  (c0: ConversionResult)
+  : ConversionResult
+  = c0 match {
+    case \/-(r2t) =>
+      if (r2t.isResolved)
+        \/-(r2t)
+      else {
+        val r1 = resolvableCardinalityAspectRestrictions(r2t)
+        val r2 = resolvableCardinalityConceptRestrictions(r2t)
+        val r3 = resolvableCardinalityReifiedRelationshipRestrictions(r2t)
+        val r4 = resolvableConceptDesignationTerminologyAxioms(r2t)
+        val r5 = resolvableTerminologyNestingAxioms(r2t)
+        val r6 = resolvableBundledTerminologyAxioms(r2t)
+        val r7 = resolvableDescriptionBoxExtendsClosedWorldDefinitions(r2t)
+        val r8 = resolvableDescriptionBoxRefinements(r2t)
+        val r9 = resolvableReifiedRelationships(r2t)
+        val rA = resolvableUnreifiedRelationships(r2t)
+        val rB = resolvableReifiedRelationshipRestrictions(r2t)
+
+        val more
+        = r1.nonEmpty ||
+          r2.nonEmpty ||
+          r3.nonEmpty ||
+          r4.nonEmpty ||
+          r5.nonEmpty ||
+          r6.nonEmpty ||
+          r7.nonEmpty ||
+          r8.nonEmpty ||
+          r9.nonEmpty ||
+          rA.nonEmpty ||
+          rB.nonEmpty
+
+        if (more) {
+          val c1 = r1.foldLeft(c0)(updateCardinalityAspectRestrictions)
+          val c2 = r2.foldLeft(c1)(updateCardinalityConceptRestrictions)
+          val c3 = r3.foldLeft(c2)(updateCardinalityReifiedRelationshipRestrictions)
+          val c4 = r4.foldLeft(c3)(updateConceptDesignationTerminologyAxioms)
+          val c5 = r5.foldLeft(c4)(updateTerminologyNestingAxioms)
+          val c6 = r6.foldLeft(c5)(updateBundledTerminologyAxioms)
+          val c7 = r7.foldLeft(c6)(updateDescriptionBoxExtendsClosedWorldDefinitions)
+          val c8 = r8.foldLeft(c7)(updateDescriptionBoxRefinements)
+          val c9 = r9.foldLeft(c8)(updateReifiedRelationships)
+          val cA = rA.foldLeft(c9)(updateUnreifiedRelationships)
+          val cB = rB.foldLeft(cA)(updateReifiedRelationshipRestrictions)
+          eliminationConverter1(cB)
+        } else
+          c0
+      }
+    case -\/(errors) =>
+      -\/(errors)
   }
 
   private val convertEntityScalarDataProperty
@@ -1277,8 +1893,8 @@ object OMLResolver2Text {
         ax1 <- (ax0, r2t.tboxLookup(t0), r2t.entityLookup(ax0.parent()), r2t.entityLookup(ax0.child())) match {
           case (_: api.ConceptSpecializationAxiom,
           Some(t1),
-          Some(sup: terminologies.Concept),
-          Some(sub: terminologies.Concept)) =>
+          Some(sup: terminologies.ConceptKind),
+          Some(sub: terminologies.ConceptKind)) =>
             val s1 = terminologies.TerminologiesFactory.eINSTANCE.createConceptSpecializationAxiom()
             s1.setTbox(t1)
             s1.setSuperConcept(sup)
@@ -1286,7 +1902,7 @@ object OMLResolver2Text {
             s1.right[EMFProblems]
           case (_: api.AspectSpecializationAxiom,
           Some(t1),
-          Some(sup: terminologies.Aspect),
+          Some(sup: terminologies.AspectKind),
           Some(sub)) =>
             val s1 = terminologies.TerminologiesFactory.eINSTANCE.createAspectSpecializationAxiom()
             s1.setTbox(t1)
