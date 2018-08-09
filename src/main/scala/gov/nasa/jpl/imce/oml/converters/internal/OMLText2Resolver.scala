@@ -43,8 +43,8 @@ import scala.collection.mutable
 case class OMLText2Resolver
 (iri: tables.taggedTypes.IRI,
  rextent: api.Extent,
- queue_edges: Set[ModuleEdge] = Set.empty,
- queue_elements: Set[ModuleElement] = Set.empty,
+ queue_edges: Map[String, ModuleEdge] = Map.empty,
+ queue_elements: Map[String, ModuleElement] = Map.empty,
 
  tboxes: Map[TerminologyBox, api.TerminologyBox] = Map.empty,
  dboxes: Map[DescriptionBox, api.DescriptionBox] = Map.empty,
@@ -430,8 +430,8 @@ object OMLText2Resolver {
             rextent = rj,
             tboxes = o2ri.tboxes + (gi -> gj),
             allImportedModules = ext.allImportedModules(mi).asScala.to[Set],
-            queue_edges = o2ri.queue_edges ++ gi.moduleEdges.asScala.to[Set],
-            queue_elements = o2ri.queue_elements ++ gi.moduleElements.asScala.to[Set])
+            queue_edges = o2ri.queue_edges ++ gi.moduleEdges.asScala.to[Set].map(e => e.uuid -> e),
+            queue_elements = o2ri.queue_elements ++ gi.moduleElements.asScala.to[Set].map(e => e.uuid -> e))
         case bi: Bundle =>
           val (rj, bj) = f.createBundle(
             o2ri.rextent,
@@ -441,8 +441,8 @@ object OMLText2Resolver {
             rextent = rj,
             allImportedModules = ext.allImportedModules(mi).asScala.to[Set],
             tboxes = o2ri.tboxes + (bi -> bj),
-            queue_edges = o2ri.queue_edges ++ bi.moduleEdges.asScala.to[Set],
-            queue_elements = o2ri.queue_elements ++ bi.moduleElements.asScala.to[Set])
+            queue_edges = o2ri.queue_edges ++ bi.moduleEdges.asScala.to[Set].map(e => e.uuid -> e),
+            queue_elements = o2ri.queue_elements ++ bi.moduleElements.asScala.to[Set].map(e => e.uuid -> e))
         case di: DescriptionBox =>
           val (rj, dj) = f.createDescriptionBox(
             o2ri.rextent,
@@ -452,8 +452,8 @@ object OMLText2Resolver {
             rextent = rj,
             allImportedModules = ext.allImportedModules(mi).asScala.to[Set],
             dboxes = o2ri.dboxes + (di -> dj),
-            queue_edges = o2ri.queue_edges ++ di.moduleEdges.asScala.to[Set],
-            queue_elements = o2ri.queue_elements ++ di.moduleElements.asScala.to[Set])
+            queue_edges = o2ri.queue_edges ++ di.moduleEdges.asScala.to[Set].map(e => e.uuid -> e),
+            queue_elements = o2ri.queue_elements ++ di.moduleElements.asScala.to[Set].map(e => e.uuid -> e))
       }
       next = prev.updated(mi, o2rj)
     } yield next
@@ -517,7 +517,7 @@ object OMLText2Resolver {
                   val (rj, axj) = f.createTerminologyExtensionAxiom(o2ri.rextent, extendingj, extendedj.iri)
                   o2ri.copy(
                     rextent = rj,
-                    queue_edges = o2ri.queue_edges - axi,
+                    queue_edges = o2ri.queue_edges - axi.uuid(),
                     moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
                 case (extendingj, extendedj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -559,7 +559,7 @@ object OMLText2Resolver {
               tables.taggedTypes.localName(ai.name()))
             o2rj = o2ri.copy(
               rextent = rj,
-              queue_elements = o2ri.queue_elements - ai,
+              queue_elements = o2ri.queue_elements - ai.uuid(),
               aspects = o2ri.aspects + (ai -> aj))
             next = prev.updated(tbox, o2rj)
           } yield next
@@ -589,7 +589,7 @@ object OMLText2Resolver {
               tables.taggedTypes.localName(ci.name()))
             o2rj = o2ri.copy(
               rextent = rj,
-              queue_elements = o2ri.queue_elements - ci,
+              queue_elements = o2ri.queue_elements - ci.uuid(),
               concepts = o2ri.concepts + (ci -> cj))
             next = prev.updated(tbox, o2rj)
           } yield next
@@ -619,7 +619,7 @@ object OMLText2Resolver {
               tables.taggedTypes.localName(sci.name()))
             o2rj = o2ri.copy(
               rextent = rj,
-              queue_elements = o2ri.queue_elements - sci,
+              queue_elements = o2ri.queue_elements - sci.uuid(),
               structures = o2ri.structures + (sci -> scj))
             next = prev.updated(tbox, o2rj)
           } yield next
@@ -649,7 +649,7 @@ object OMLText2Resolver {
               tables.taggedTypes.localName(sci.name()))
             o2rj = o2ri.copy(
               rextent = rj,
-              queue_elements = o2ri.queue_elements - sci,
+              queue_elements = o2ri.queue_elements - sci.uuid(),
               dataRanges = o2ri.dataRanges + (sci -> scj))
             next = prev.updated(tbox, o2rj)
           } yield next
@@ -786,7 +786,7 @@ object OMLText2Resolver {
                 }
                 val o2rj = o2ri.copy(
                   rextent = rj,
-                  queue_elements = o2ri.queue_elements - rdri,
+                  queue_elements = o2ri.queue_elements - rdri.uuid(),
                   dataRanges = o2ri.dataRanges + (rdri -> rdrj))
                 convertRestrictedDataRanges(prev.updated(tboxi, o2rj).right, rdrs.tail, queue, progress = true)
               case (\/-(_), Some(_), None) =>
@@ -847,7 +847,7 @@ object OMLText2Resolver {
                             valueType = Some(vtj))
                           o2ri.copy(
                             rextent = rj,
-                            queue_elements = o2ri.queue_elements - li,
+                            queue_elements = o2ri.queue_elements - li.uuid(),
                             scalarOneOfLiterals = o2ri.scalarOneOfLiterals + (li -> lj),
                             termAxioms = o2ri.termAxioms + (li -> lj)).right
                         case _ =>
@@ -864,7 +864,7 @@ object OMLText2Resolver {
                         valueType = None)
                       o2ri.copy(
                         rextent = rj,
-                        queue_elements = o2ri.queue_elements - li,
+                        queue_elements = o2ri.queue_elements - li.uuid(),
                         scalarOneOfLiterals = o2ri.scalarOneOfLiterals + (li -> lj),
                         termAxioms = o2ri.termAxioms + (li -> lj)).right
                   }
@@ -912,7 +912,7 @@ object OMLText2Resolver {
                     tables.taggedTypes.localName(dpi.name()))
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - dpi,
+                    queue_elements = o2ri.queue_elements - dpi.uuid(),
                     entityScalarDataProperties = o2ri.entityScalarDataProperties + (dpi -> dpj)).right
                 case (tboxj, dpdj, dprj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -961,7 +961,7 @@ object OMLText2Resolver {
                     tables.taggedTypes.localName(dpi.name()))
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - dpi,
+                    queue_elements = o2ri.queue_elements - dpi.uuid(),
                     entityStructuredDataProperties = o2ri.entityStructuredDataProperties + (dpi -> dpj)).right
                 case (tboxj, dpdj, dprj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1009,7 +1009,7 @@ object OMLText2Resolver {
                     tables.taggedTypes.localName(dpi.name()))
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - dpi,
+                    queue_elements = o2ri.queue_elements - dpi.uuid(),
                     scalarDataProperties = o2ri.scalarDataProperties + (dpi -> dpj)).right
                 case (tboxj, dpdj, dprj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1057,7 +1057,7 @@ object OMLText2Resolver {
                     tables.taggedTypes.localName(dpi.name()))
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - dpi,
+                    queue_elements = o2ri.queue_elements - dpi.uuid(),
                     structuredDataProperties = o2ri.structuredDataProperties + (dpi -> dpj)).right
                 case (tboxj, dpdj, dprj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1111,7 +1111,7 @@ object OMLText2Resolver {
                   }
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - axi,
+                    queue_elements = o2ri.queue_elements - axi.uuid(),
                     termAxioms = o2ri.termAxioms + (axi -> axj)).right
                 case (tboxj, rdj, rrj, rlj) =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1214,7 +1214,7 @@ object OMLText2Resolver {
                     case \/-(axrj) =>
                       o2ri.copy(
                         rextent = rj,
-                        queue_elements = o2ri.queue_elements - axi,
+                        queue_elements = o2ri.queue_elements - axi.uuid(),
                         termAxioms = o2ri.termAxioms + (axi -> axrj)).right
                     case -\/(error) =>
                       error.left
@@ -1268,7 +1268,7 @@ object OMLText2Resolver {
                   convertRestrictionStructuredDataPropertyContext(
                     o2ri.copy(
                       rextent = rj,
-                      queue_elements = o2ri.queue_elements - axi,
+                      queue_elements = o2ri.queue_elements - axi.uuid(),
                       termAxioms = o2ri.termAxioms + (axi -> axj)), Seq(axi -> axj))
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1410,7 +1410,7 @@ object OMLText2Resolver {
               case \/-(axrj) =>
                 o2ri.copy(
                   rextent = rj,
-                  queue_elements = o2ri.queue_elements - axi,
+                  queue_elements = o2ri.queue_elements - axi.uuid(),
                   termAxioms = o2ri.termAxioms + (axi -> axrj)).right
               case -\/(error) =>
                 error.left
@@ -1461,7 +1461,7 @@ object OMLText2Resolver {
               case \/-(axrj) =>
                 o2ri.copy(
                   rextent = rj,
-                  queue_elements = o2ri.queue_elements - axi,
+                  queue_elements = o2ri.queue_elements - axi.uuid(),
                   termAxioms = o2ri.termAxioms + (axi -> axrj)).right
               case -\/(error) =>
                 error.left
@@ -1514,7 +1514,7 @@ object OMLText2Resolver {
               case \/-(axrj) =>
                 o2ri.copy(
                   rextent = rj,
-                  queue_elements = o2ri.queue_elements - axi,
+                  queue_elements = o2ri.queue_elements - axi.uuid(),
                   termAxioms = o2ri.termAxioms + (axi -> axrj)).right
               case -\/(error) =>
                 error.left
@@ -1561,7 +1561,7 @@ object OMLText2Resolver {
           val (rj, rxj) = f.createRootConceptTaxonomyAxiom(o2r.rextent, b, c)
           val next = o2r.copy(
             rextent = rj,
-            queue_elements = o2r.queue_elements - rxi,
+            queue_elements = o2r.queue_elements - rxi.uuid(),
             conceptTreeDisjunctions = o2r.conceptTreeDisjunctions + (rxi -> rxj))
           convertDisjointUnionOfConceptAxioms(next, rxi.getDisjunctions.asScala.to[Set].map { dx => dx -> rxj })
         case _ =>
@@ -1656,7 +1656,7 @@ object OMLText2Resolver {
                     tables.taggedTypes.localName(di.getName))
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - di,
+                    queue_elements = o2ri.queue_elements - di.uuid(),
                     conceptualEntitySingletonInstances = o2ri.conceptualEntitySingletonInstances + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1700,7 +1700,7 @@ object OMLText2Resolver {
                     tables.taggedTypes.localName(di.getName))
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - di,
+                    queue_elements = o2ri.queue_elements - di.uuid(),
                     conceptualEntitySingletonInstances = o2ri.conceptualEntitySingletonInstances + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1743,7 +1743,7 @@ object OMLText2Resolver {
                   val (rj, dj) = f.createReifiedRelationshipInstanceDomain(o2ri.rextent, dboxj, rrij, rdj)
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - di,
+                    queue_elements = o2ri.queue_elements - di.uuid(),
                     reifiedRelationshipInstanceDomains = o2ri.reifiedRelationshipInstanceDomains + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1787,7 +1787,7 @@ object OMLText2Resolver {
                   val (rj, dj) = f.createReifiedRelationshipInstanceRange(o2ri.rextent, dboxj, rrij, rrj)
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - di,
+                    queue_elements = o2ri.queue_elements - di.uuid(),
                     reifiedRelationshipInstanceRanges = o2ri.reifiedRelationshipInstanceRanges + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1833,7 +1833,7 @@ object OMLText2Resolver {
                   val (rj, dj) = f.createUnreifiedRelationshipInstanceTuple(o2ri.rextent, dboxj, uj, udj, urj)
                   o2ri.copy(
                     rextent = rj,
-                    queue_elements = o2ri.queue_elements - di,
+                    queue_elements = o2ri.queue_elements - di.uuid(),
                     unreifiedRelationshipInstanceTuples = o2ri.unreifiedRelationshipInstanceTuples + (di -> dj)).right
                 case _ =>
                   new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1884,7 +1884,7 @@ object OMLText2Resolver {
                             emf2tables(di.getScalarPropertyValue), Some(vtj))
                           o2ri.copy(
                             rextent = rj,
-                            queue_elements = o2ri.queue_elements - di,
+                            queue_elements = o2ri.queue_elements - di.uuid(),
                             singletonInstanceScalarDataPropertyValues = o2ri.singletonInstanceScalarDataPropertyValues + (di -> dj)).right
                         case None =>
                           new EMFProblems(new java.lang.IllegalArgumentException(
@@ -1900,7 +1900,7 @@ object OMLText2Resolver {
                         emf2tables(di.getScalarPropertyValue), None)
                       o2ri.copy(
                         rextent = rj,
-                        queue_elements = o2ri.queue_elements - di,
+                        queue_elements = o2ri.queue_elements - di.uuid(),
                         singletonInstanceScalarDataPropertyValues = o2ri.singletonInstanceScalarDataPropertyValues + (di -> dj)).right
                   }
                 case _ =>
@@ -1949,7 +1949,7 @@ object OMLText2Resolver {
                   convertSingletonInstanceStructuredDataPropertyContext(
                     o2ri.copy(
                       rextent = rj,
-                      queue_elements = o2ri.queue_elements - di,
+                      queue_elements = o2ri.queue_elements - di.uuid(),
                       singletonInstanceStructuredDataPropertyValues = o2ri.singletonInstanceStructuredDataPropertyValues + (di -> dj)),
                     di.getScalarDataPropertyValues.asScala.to[Seq].map(dj -> _),
                     di.getStructuredPropertyTuples.asScala.to[Seq].map(dj -> _))
@@ -2090,12 +2090,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(CardinalityRestrictedAspect, api.RestrictableRelationship, Option[api.Entity])])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(CardinalityRestrictedAspect, api.RestrictableRelationship, Option[api.Entity])]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: CardinalityRestrictedAspect => x }
+        .collect { case (_, x: CardinalityRestrictedAspect) => x }
         .flatMap { x =>
           ( s.accessibleLookup(o2r, _.restrictableRelationshipLookup(x.getRestrictedRelationship)),
             Option.apply(x.getRestrictedRange),
@@ -2141,7 +2140,7 @@ object OMLText2Resolver {
         restrictionKind = x._1.getRestrictionKind)
       next = o2r.copy(
         rextent = rj,
-        queue_elements = o2r.queue_elements - x._1,
+        queue_elements = o2r.queue_elements - x._1.uuid(),
         aspects = o2r.aspects + (x._1 -> y))
     } yield next
 
@@ -2158,12 +2157,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(CardinalityRestrictedConcept, api.RestrictableRelationship, Option[api.Entity])])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(CardinalityRestrictedConcept, api.RestrictableRelationship, Option[api.Entity])]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: CardinalityRestrictedConcept => x }
+        .collect { case (_, x: CardinalityRestrictedConcept) => x }
         .flatMap { x =>
           ( s.accessibleLookup(o2r, _.restrictableRelationshipLookup(x.getRestrictedRelationship)),
             Option.apply(x.getRestrictedRange),
@@ -2209,7 +2207,7 @@ object OMLText2Resolver {
         restrictionKind = x._1.getRestrictionKind)
       next = o2r.copy(
         rextent = rj,
-        queue_elements = o2r.queue_elements - x._1,
+        queue_elements = o2r.queue_elements - x._1.uuid(),
         concepts = o2r.concepts + (x._1 -> y))
     } yield next
 
@@ -2226,12 +2224,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(CardinalityRestrictedReifiedRelationship, api.RestrictableRelationship, Option[api.Entity])])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(CardinalityRestrictedReifiedRelationship, api.RestrictableRelationship, Option[api.Entity])]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: CardinalityRestrictedReifiedRelationship => x }
+        .collect { case (_, x: CardinalityRestrictedReifiedRelationship) => x }
         .flatMap { x =>
           ( s.accessibleLookup(o2r, _.restrictableRelationshipLookup(x.getRestrictedRelationship)),
             Option.apply(x.getRestrictedRange),
@@ -2276,7 +2273,7 @@ object OMLText2Resolver {
         restrictionKind = x._1.getRestrictionKind)
       next = o2r.copy(
         rextent = rj,
-        queue_elements = o2r.queue_elements - x._1,
+        queue_elements = o2r.queue_elements - x._1.uuid(),
         cardinalityRestrictedReifiedRelationships = o2r.cardinalityRestrictedReifiedRelationships + (x._1 -> y))
     } yield next
 
@@ -2293,12 +2290,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(ConceptDesignationTerminologyAxiom, api.TerminologyBox, api.TerminologyBox, api.ConceptKind)])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(ConceptDesignationTerminologyAxiom, api.TerminologyBox, api.TerminologyBox, api.ConceptKind)]
       = o2r
           .queue_elements
-          .selectByKindOf { case x: ConceptDesignationTerminologyAxiom => x }
+          .collect { case (_, x: ConceptDesignationTerminologyAxiom) => x }
           .flatMap { x =>
             ( s.lookupTerminologyBox(x.designationTerminologyGraph),
               s.lookupTerminologyBox(x.getDesignatedTerminology),
@@ -2339,7 +2335,7 @@ object OMLText2Resolver {
         designatedTerminology = x._3.iri)
       next = o2r.copy(
         rextent = rj,
-        queue_edges = o2r.queue_edges - x._1,
+        queue_edges = o2r.queue_edges - x._1.uuid(),
         moduleEdges = o2r.moduleEdges + (x._1 -> y))
     } yield next
 
@@ -2356,12 +2352,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(TerminologyNestingAxiom, api.TerminologyGraph, api.TerminologyBox, api.ConceptKind)])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(TerminologyNestingAxiom, api.TerminologyGraph, api.TerminologyBox, api.ConceptKind)]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: TerminologyNestingAxiom => x }
+        .collect { case (_, x: TerminologyNestingAxiom) => x }
         .flatMap { x =>
           ( s.lookupTerminologyGraph(x.nestedTerminology),
             s.lookupTerminologyBox(x.getNestingTerminology),
@@ -2408,7 +2403,7 @@ object OMLText2Resolver {
         nestingTerminology = x._3.iri)
       next = o2r.copy(
         rextent = rj,
-        queue_edges = o2r.queue_edges - x._1,
+        queue_edges = o2r.queue_edges - x._1.uuid(),
         moduleEdges = o2r.moduleEdges + (x._1 -> y))
     } yield next
 
@@ -2425,12 +2420,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(BundledTerminologyAxiom, api.Bundle, api.TerminologyBox)])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(BundledTerminologyAxiom, api.Bundle, api.TerminologyBox)]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: BundledTerminologyAxiom => x }
+        .collect { case (_, x: BundledTerminologyAxiom) => x }
         .flatMap { x =>
           ( s.lookupBundle(x.getBundle),
             s.lookupTerminologyBox(x.getBundledTerminology) ) match {
@@ -2469,7 +2463,7 @@ object OMLText2Resolver {
         bundledTerminology = x._3.iri)
       next = o2r.copy(
         rextent = rj,
-        queue_edges = o2r.queue_edges - x._1,
+        queue_edges = o2r.queue_edges - x._1.uuid(),
         moduleEdges = o2r.moduleEdges + (x._1 -> y))
     } yield next
 
@@ -2486,12 +2480,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(DescriptionBoxExtendsClosedWorldDefinitions, api.DescriptionBox, api.TerminologyBox)])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(DescriptionBoxExtendsClosedWorldDefinitions, api.DescriptionBox, api.TerminologyBox)]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: DescriptionBoxExtendsClosedWorldDefinitions => x }
+        .collect { case (_, x: DescriptionBoxExtendsClosedWorldDefinitions) => x }
         .flatMap { x =>
           ( s.lookupDescriptionBox(x.getDescriptionBox),
             s.lookupTerminologyBox(x.getClosedWorldDefinitions) ) match {
@@ -2530,7 +2523,7 @@ object OMLText2Resolver {
         closedWorldDefinitions = x._3.iri)
       next = o2r.copy(
         rextent = rj,
-        queue_edges = o2r.queue_edges - x._1,
+        queue_edges = o2r.queue_edges - x._1.uuid(),
         moduleEdges = o2r.moduleEdges + (x._1 -> y))
     } yield next
 
@@ -2547,12 +2540,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(DescriptionBoxRefinement, api.DescriptionBox, api.DescriptionBox)])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(DescriptionBoxRefinement, api.DescriptionBox, api.DescriptionBox)]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: DescriptionBoxRefinement => x }
+        .collect { case (_, x: DescriptionBoxRefinement) => x }
         .flatMap { x =>
           ( s.lookupDescriptionBox(x.getRefiningDescriptionBox),
             s.lookupDescriptionBox(x.getRefinedDescriptionBox) ) match {
@@ -2591,7 +2583,7 @@ object OMLText2Resolver {
         refinedDescriptionBox = x._3.iri)
       next = o2r.copy(
         rextent = rj,
-        queue_edges = o2r.queue_edges - x._1,
+        queue_edges = o2r.queue_edges - x._1.uuid(),
         moduleEdges = o2r.moduleEdges + (x._1 -> y))
     } yield next
 
@@ -2608,12 +2600,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(ReifiedRelationship, api.Entity, ForwardProperty, Option[InverseProperty], api.Entity)])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(ReifiedRelationship, api.Entity, ForwardProperty, Option[InverseProperty], api.Entity)]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: ReifiedRelationship => x }
+        .collect { case (_, x: ReifiedRelationship) => x }
         .flatMap { x =>
           ( s.accessibleLookup(o2r, _.entityLookup(x.getSource)),
             Option.apply(x.getForwardProperty),
@@ -2681,7 +2672,7 @@ object OMLText2Resolver {
       }
       next = o2r.copy(
         rextent = rj3,
-        queue_elements = o2r.queue_elements - x._1,
+        queue_elements = o2r.queue_elements - x._1.uuid(),
         reifiedRelationships = o2r.reifiedRelationships + (x._1 -> y),
         forwardProperties = o2r.forwardProperties + (x._3 -> fwd),
         inverseProperties = o2r.inverseProperties ++ inv)
@@ -2700,12 +2691,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(UnreifiedRelationship, api.Entity, api.Entity)])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(UnreifiedRelationship, api.Entity, api.Entity)]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: UnreifiedRelationship => x }
+        .collect { case (_, x: UnreifiedRelationship) => x }
         .flatMap { x =>
           ( s.accessibleLookup(o2r, _.entityLookup(x.getSource)),
             s.accessibleLookup(o2r, _.entityLookup(x.getTarget)) ) match {
@@ -2755,7 +2745,7 @@ object OMLText2Resolver {
         name = tables.taggedTypes.localName(x._1.getName))
       next = o2r.copy(
         rextent = rj,
-        queue_elements = o2r.queue_elements - x._1,
+        queue_elements = o2r.queue_elements - x._1.uuid(),
         unreifiedRelationships = o2r.unreifiedRelationships + (x._1 -> y))
     } yield next
 
@@ -2772,12 +2762,11 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(ReifiedRelationshipRestriction, api.Entity, api.Entity)])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
       val tuples
       : Iterable[(ReifiedRelationshipRestriction, api.Entity, api.Entity)]
       = o2r
         .queue_elements
-        .selectByKindOf { case x: ReifiedRelationshipRestriction => x }
+        .collect { case (_, x: ReifiedRelationshipRestriction) => x }
         .flatMap { x =>
           ( s.accessibleLookup(o2r, _.entityLookup(x.getSource)),
             s.accessibleLookup(o2r, _.entityLookup(x.getTarget)) ) match {
@@ -2818,7 +2807,7 @@ object OMLText2Resolver {
         name = tables.taggedTypes.localName(x._1.getName))
       next = o2r.copy(
         rextent = rj,
-        queue_elements = o2r.queue_elements - x._1,
+        queue_elements = o2r.queue_elements - x._1.uuid(),
         reifiedRelationshipRestrictions = o2r.reifiedRelationshipRestrictions + (x._1 -> y))
     } yield next
 
@@ -2845,7 +2834,6 @@ object OMLText2Resolver {
   : Iterable[(TerminologyBox, Iterable[(ChainRule, api.UnreifiedRelationship, Seq[SegmentPredicateInfo])])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
-      import gov.nasa.jpl.imce.oml.converters.utils.EMFFilterable._
 
       @scala.annotation.tailrec
       def resolveSegmentPredicates
@@ -2941,8 +2929,8 @@ object OMLText2Resolver {
       : Iterable[(ChainRule, api.UnreifiedRelationship, Seq[SegmentPredicateInfo])]
       = o2r
         .queue_elements
-        .selectByKindOf {
-          case x: ChainRule if
+        .collect {
+          case (_, x: ChainRule) if
           Option.apply(x.getHead).isDefined && Option.apply(x.getFirstSegment).isDefined => x
         }
         .flatMap { x =>
@@ -3101,7 +3089,7 @@ object OMLText2Resolver {
         head = x._2)
       o2r1 <- updateSegmentPredicates(o2r0.copy(rextent = ext), Some(y), None, x._3)
       next = o2r1.copy(
-        queue_elements = o2r1.queue_elements - x._1,
+        queue_elements = o2r1.queue_elements - x._1.uuid(),
         chainRules = o2r1.chainRules + (x._1 -> y))
     } yield next
 

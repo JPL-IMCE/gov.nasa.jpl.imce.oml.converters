@@ -35,7 +35,7 @@ import gov.nasa.jpl.omf.scala.core
 import gov.nasa.jpl.omf.scala.core.OMFError
 import org.semanticweb.owlapi.model.IRI
 
-import scala.collection.immutable.{::, Iterable, List, Map, Nil, Seq, Set}
+import scala.collection.immutable.{::, Iterable, List, Map, Nil, Seq, Set, Vector}
 import scala.{Boolean, Function, None, Option, Some, StringContext, Unit}
 import scala.Predef.{ArrowAssoc, String}
 import scalaz._
@@ -396,16 +396,16 @@ object OMLResolver2Ontology {
   // Atomic Entities
 
   private def convertAspectOrConcept
-  (prev: ResolverResult, pair:(api.Extent, api.ModuleElement))
+  (prev: ResolverResult, entry_pair:(api.taggedTypes.ModuleElementUUID, (api.Extent, api.ModuleElement)))
   : ResolverResult
-  = pair match {
+  = entry_pair._2 match {
     case (e0, a0: api.Aspect) =>
       for {
         r2o <- prev
         t1 <- r2o.lookupMap(a0, e0.terminologyBoxOfTerminologyBoxStatement)(e0).flatMap(r2o.getTbox)
         a1 <- r2o.ops.addAspect(t1, tables.taggedTypes.localName(a0.name))(r2o.omfStore)
       } yield r2o.copy(
-        queue_elements = r2o.queue_elements - (e0 -> a0),
+        queue_elements = r2o.queue_elements - entry_pair._1,
         aspects = r2o.aspects + (a0 -> a1))
     case (e0, c0: api.Concept) =>
       for {
@@ -413,7 +413,7 @@ object OMLResolver2Ontology {
         t1 <- r2o.lookupMap(c0, e0.terminologyBoxOfTerminologyBoxStatement)(e0).flatMap(r2o.getTbox)
         c1 <- r2o.ops.addConcept(t1, tables.taggedTypes.localName(c0.name))(r2o.omfStore)
       } yield r2o.copy(
-        queue_elements = r2o.queue_elements - (e0 -> c0),
+        queue_elements = r2o.queue_elements - entry_pair._1,
         concepts = r2o.concepts + (c0 -> c1))
     case _ =>
       prev
@@ -426,8 +426,8 @@ object OMLResolver2Ontology {
   = r2o.queue_edges.foldLeft(r2o.right[Throwables])(convertTerminologyExtension)
 
   private def convertTerminologyExtension
-  (acc: ResolverResult, pair: (api.Extent, api.ModuleEdge))
-  = pair match {
+  (acc: ResolverResult, entry_pair: (api.taggedTypes.ModuleEdgeUUID, (api.Extent, api.ModuleEdge)))
+  = entry_pair._2 match {
     case (e0, ax0: api.TerminologyExtensionAxiom) =>
       for {
         r2o <- acc
@@ -435,14 +435,15 @@ object OMLResolver2Ontology {
         e1 <- r2o.getTboxByIRI(ax0.extendedTerminology)
         ax1 <- r2o.ops.addTerminologyExtension(extendingG = t1, extendedG = e1)(r2o.omfStore)
       } yield r2o.copy(
-        queue_edges = r2o.queue_edges - pair,
+        queue_edges = r2o.queue_edges - entry_pair._1,
         edges = r2o.edges + (ax0 -> ax1))
     case _ =>
       acc
   }
 
   case class ResolvableCardinalityAspectRestriction
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleElementUUID,
+   extent: api.Extent,
    cr: api.CardinalityRestrictedAspect,
    tbox: owlapiterminologies.MutableTerminologyBox,
    rel: owlapi.types.terms.RestrictableRelationship,
@@ -453,16 +454,16 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableCardinalityAspectRestriction]
   = r2o
     .queue_elements
-    .collect { case (extent: api.Extent, x: api.CardinalityRestrictedAspect) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.CardinalityRestrictedAspect)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2o.lookupTbox),
         r2o.restrictableRelationshipLookup(x.restrictedRelationship)(extent),
         x.restrictedRange,
         x.restrictedRange.map(r2o.entityLookup(_)(extent)) ) match {
         case (Some(tbox), \/-(rel), Some(_), Some(\/-(range))) =>
-          Some(ResolvableCardinalityAspectRestriction(extent, x, tbox, rel, Some(range)))
+          Some(ResolvableCardinalityAspectRestriction(uuid, extent, x, tbox, rel, Some(range)))
         case (Some(tbox), \/-(rel), None, _) =>
-          Some(ResolvableCardinalityAspectRestriction(extent, x, tbox, rel, None))
+          Some(ResolvableCardinalityAspectRestriction(uuid, extent, x, tbox, rel, None))
         case _ =>
           None
       }
@@ -476,12 +477,13 @@ object OMLResolver2Ontology {
     r2o <- current
     y <- r2o.ops.addCardinalityRestrictedAspect(x.tbox, x.cr.name, x.cr.restrictionKind, x.rel, x.range, x.cr.restrictedCardinality)(r2o.omfStore)
     next = r2o.copy(
-      queue_elements = r2o.queue_elements - (x.extent -> x.cr),
+      queue_elements = r2o.queue_elements - x.uuid,
       aspects = r2o.aspects + (x.cr -> y))
   } yield next
 
   case class ResolvableCardinalityConceptRestriction
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleElementUUID,
+   extent: api.Extent,
    cr: api.CardinalityRestrictedConcept,
    tbox: owlapiterminologies.MutableTerminologyBox,
    rel: owlapi.types.terms.RestrictableRelationship,
@@ -492,16 +494,16 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableCardinalityConceptRestriction]
   = r2o
     .queue_elements
-    .collect { case (extent: api.Extent, x: api.CardinalityRestrictedConcept) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.CardinalityRestrictedConcept)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2o.lookupTbox),
         r2o.restrictableRelationshipLookup(x.restrictedRelationship)(extent),
         x.restrictedRange,
         x.restrictedRange.map(r2o.entityLookup(_)(extent)) ) match {
         case (Some(tbox), \/-(rel), Some(_), Some(\/-(range))) =>
-          Some(ResolvableCardinalityConceptRestriction(extent, x, tbox, rel, Some(range)))
+          Some(ResolvableCardinalityConceptRestriction(uuid, extent, x, tbox, rel, Some(range)))
         case (Some(tbox), \/-(rel), None, _) =>
-          Some(ResolvableCardinalityConceptRestriction(extent, x, tbox, rel, None))
+          Some(ResolvableCardinalityConceptRestriction(uuid, extent, x, tbox, rel, None))
         case _ =>
           None
       }
@@ -515,12 +517,13 @@ object OMLResolver2Ontology {
     r2o <- current
     y <- r2o.ops.addCardinalityRestrictedConcept(x.tbox, x.cr.name, x.cr.restrictionKind, x.rel, x.range, x.cr.restrictedCardinality)(r2o.omfStore)
     next = r2o.copy(
-      queue_elements = r2o.queue_elements - (x.extent -> x.cr),
+      queue_elements = r2o.queue_elements - x.uuid,
       concepts = r2o.concepts + (x.cr -> y))
   } yield next
 
   case class ResolvableCardinalityReifiedRelationshipRestriction
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleElementUUID,
+   extent: api.Extent,
    cr: api.CardinalityRestrictedReifiedRelationship,
    tbox: owlapiterminologies.MutableTerminologyBox,
    rel: owlapi.types.terms.RestrictableRelationship,
@@ -531,16 +534,16 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableCardinalityReifiedRelationshipRestriction]
   = r2o
     .queue_elements
-    .collect { case (extent: api.Extent, x: api.CardinalityRestrictedReifiedRelationship) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.CardinalityRestrictedReifiedRelationship)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2o.lookupTbox),
         r2o.restrictableRelationshipLookup(x.restrictedRelationship)(extent),
         x.restrictedRange,
         x.restrictedRange.map(r2o.entityLookup(_)(extent)) ) match {
         case (Some(tbox), \/-(rel), Some(_), Some(\/-(range))) =>
-          Some(ResolvableCardinalityReifiedRelationshipRestriction(extent, x, tbox, rel, Some(range)))
+          Some(ResolvableCardinalityReifiedRelationshipRestriction(uuid, extent, x, tbox, rel, Some(range)))
         case (Some(tbox), \/-(rel), None, _) =>
-          Some(ResolvableCardinalityReifiedRelationshipRestriction(extent, x, tbox, rel, None))
+          Some(ResolvableCardinalityReifiedRelationshipRestriction(uuid, extent, x, tbox, rel, None))
         case _ =>
           None
       }
@@ -554,12 +557,13 @@ object OMLResolver2Ontology {
     r2o <- current
     y <- r2o.ops.addCardinalityRestrictedReifiedRelationship(x.tbox, x.cr.name, x.cr.restrictionKind, x.rel, x.range, x.cr.restrictedCardinality)(r2o.omfStore)
     next = r2o.copy(
-      queue_elements = r2o.queue_elements - (x.extent -> x.cr),
+      queue_elements = r2o.queue_elements - x.uuid,
       cardinalityRestrictedReifiedRelationships = r2o.cardinalityRestrictedReifiedRelationships + (x.cr -> y))
   } yield next
 
   case class ResolvableReifiedRelationshipRestriction
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleElementUUID,
+   extent: api.Extent,
    rrr: api.ReifiedRelationshipRestriction,
    tbox: owlapiterminologies.MutableTerminologyBox,
    source: owlapi.types.terms.Entity,
@@ -570,13 +574,13 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableReifiedRelationshipRestriction]
   = r2o
     .queue_elements
-    .collect { case (extent: api.Extent, x: api.ReifiedRelationshipRestriction) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.ReifiedRelationshipRestriction)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2o.lookupTbox),
         r2o.lookupEntity(x.source),
         r2o.lookupEntity(x.target) ) match {
         case (Some(tbox), Some(source), Some(target)) =>
-          Some(ResolvableReifiedRelationshipRestriction(extent, x, tbox, source, target))
+          Some(ResolvableReifiedRelationshipRestriction(uuid, extent, x, tbox, source, target))
         case _ =>
           None
       }
@@ -590,12 +594,13 @@ object OMLResolver2Ontology {
     r2o <- current
     y <- r2o.ops.addReifiedRelationshipRestriction(x.tbox, x.rrr.name, x.source, x.target)(r2o.omfStore)
     next = r2o.copy(
-      queue_elements = r2o.queue_elements - (x.extent -> x.rrr),
+      queue_elements = r2o.queue_elements - x.uuid,
       reifiedRelationshipRestrictions = r2o.reifiedRelationshipRestrictions + (x.rrr -> y))
   } yield next
   
   case class ResolvableConceptDesignationTerminologyAxiom
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleEdgeUUID,
+   extent: api.Extent,
    ax: api.ConceptDesignationTerminologyAxiom,
    tbox: owlapiterminologies.MutableTerminologyBox,
    c: owlapi.types.terms.ConceptKind,
@@ -606,13 +611,13 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableConceptDesignationTerminologyAxiom]
   = r2o
     .queue_edges
-    .collect { case (extent: api.Extent, x: api.ConceptDesignationTerminologyAxiom) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.ConceptDesignationTerminologyAxiom)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.terminologyBoxOfTerminologyBoxAxiom.get(x).flatMap(r2o.lookupTbox),
         r2o.lookupConcept(x.designatedConcept)(extent),
         r2o.getTboxByIRI(x.designatedTerminology)) match {
         case (Some(tbox), \/-(c), \/-(desTbox)) =>
-          Some(ResolvableConceptDesignationTerminologyAxiom(extent, x, tbox, c, desTbox))
+          Some(ResolvableConceptDesignationTerminologyAxiom(uuid, extent, x, tbox, c, desTbox))
         case _ =>
           None
       }
@@ -626,12 +631,13 @@ object OMLResolver2Ontology {
     r2o <- current
     y <- r2o.ops.addEntityConceptDesignationTerminologyAxiom(x.tbox, x.c, x.desTbox)(r2o.omfStore)
     next = r2o.copy(
-      queue_edges = r2o.queue_edges - (x.extent -> x.ax),
+      queue_edges = r2o.queue_edges - x.uuid,
       edges = r2o.edges + (x.ax -> y))
   } yield next
 
   case class ResolvableTerminologyNestingAxiom
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleEdgeUUID,
+   extent: api.Extent,
    ax: api.TerminologyNestingAxiom,
    tg: owlapiterminologies.MutableTerminologyGraph,
    nestingC: owlapi.types.terms.ConceptKind,
@@ -642,13 +648,13 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableTerminologyNestingAxiom]
   = r2o
     .queue_edges
-    .collect { case (extent: api.Extent, x: api.TerminologyNestingAxiom) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.TerminologyNestingAxiom)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.terminologyBoxOfTerminologyBoxAxiom.get(x).flatMap(r2o.lookupGbox),
         r2o.lookupConcept(x.nestingContext)(extent),
         r2o.getTboxByIRI(x.nestingTerminology)) match {
         case (Some(tg), \/-(c), \/-(nestingTbox)) =>
-          Some(ResolvableTerminologyNestingAxiom(extent, x, tg, c, nestingTbox))
+          Some(ResolvableTerminologyNestingAxiom(uuid, extent, x, tg, c, nestingTbox))
         case _ =>
           None
       }
@@ -662,12 +668,13 @@ object OMLResolver2Ontology {
     r2o <- current
     y <- r2o.ops.addNestedTerminology(x.nestingTbox, x.nestingC, x.tg)(r2o.omfStore)
     next = r2o.copy(
-      queue_edges = r2o.queue_edges - (x.extent -> x.ax),
+      queue_edges = r2o.queue_edges - x.uuid,
       edges = r2o.edges + (x.ax -> y))
   } yield next
 
   case class ResolvableBundledTerminologyAxiom
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleEdgeUUID,
+   extent: api.Extent,
    ax: api.BundledTerminologyAxiom,
    bundle: owlapiterminologies.MutableBundle,
    bundledTbox: owlapiterminologies.MutableTerminologyBox)
@@ -677,12 +684,12 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableBundledTerminologyAxiom]
   = r2o
     .queue_edges
-    .collect { case (extent: api.Extent, x: api.BundledTerminologyAxiom) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.BundledTerminologyAxiom)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.bundleOfTerminologyBundleAxiom.get(x).flatMap(r2o.bs.get),
        r2o.getTboxByIRI(x.bundledTerminology)) match {
         case (Some(bundle), \/-(bundledTbox)) =>
-          Some(ResolvableBundledTerminologyAxiom(extent, x, bundle, bundledTbox))
+          Some(ResolvableBundledTerminologyAxiom(uuid, extent, x, bundle, bundledTbox))
         case _ =>
           None
       }
@@ -696,12 +703,13 @@ object OMLResolver2Ontology {
     r2o <- current
     y <- r2o.ops.addBundledTerminologyAxiom(x.bundle, x.bundledTbox)(r2o.omfStore)
     next = r2o.copy(
-      queue_edges = r2o.queue_edges - (x.extent -> x.ax),
+      queue_edges = r2o.queue_edges - x.uuid,
       edges = r2o.edges + (x.ax -> y))
   } yield next
 
   case class ResolvableDescriptionBoxExtendsClosedWorldDefinitions
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleEdgeUUID,
+   extent: api.Extent,
    ax: api.DescriptionBoxExtendsClosedWorldDefinitions,
    dbox: owlapi.descriptions.MutableDescriptionBox,
    tbox: owlapiterminologies.MutableTerminologyBox)
@@ -711,12 +719,12 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableDescriptionBoxExtendsClosedWorldDefinitions]
   = r2o
     .queue_edges
-    .collect { case (extent: api.Extent, x: api.DescriptionBoxExtendsClosedWorldDefinitions) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.DescriptionBoxExtendsClosedWorldDefinitions)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.descriptionBoxOfDescriptionBoxExtendsClosedWorldDefinitions.get(x).flatMap(r2o.ds.get),
         r2o.getTboxByIRI(x.closedWorldDefinitions)) match {
         case (Some(dbox), \/-(tbox)) =>
-          Some(ResolvableDescriptionBoxExtendsClosedWorldDefinitions(extent, x, dbox, tbox))
+          Some(ResolvableDescriptionBoxExtendsClosedWorldDefinitions(uuid, extent, x, dbox, tbox))
         case _ =>
           None
       }
@@ -730,12 +738,13 @@ object OMLResolver2Ontology {
     r2o <- current
     y <- r2o.ops.addDescriptionBoxExtendsClosedWorldDefinitions(x.dbox, x.tbox)(r2o.omfStore)
     next = r2o.copy(
-      queue_edges = r2o.queue_edges - (x.extent -> x.ax),
+      queue_edges = r2o.queue_edges - x.uuid,
       edges = r2o.edges + (x.ax -> y))
   } yield next
 
   case class ResolvableDescriptionBoxRefinement
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleEdgeUUID,
+   extent: api.Extent,
    ax: api.DescriptionBoxRefinement,
    dbox: owlapi.descriptions.MutableDescriptionBox,
    refined: owlapi.descriptions.MutableDescriptionBox)
@@ -745,12 +754,12 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableDescriptionBoxRefinement]
   = r2o
     .queue_edges
-    .collect { case (extent: api.Extent, x: api.DescriptionBoxRefinement) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.DescriptionBoxRefinement)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.descriptionBoxOfDescriptionBoxRefinement.get(x).flatMap(r2o.ds.get),
         r2o.getDboxByIRI(x.refinedDescriptionBox)) match {
         case (Some(dbox), \/-(refined)) =>
-          Some(ResolvableDescriptionBoxRefinement(extent, x, dbox, refined))
+          Some(ResolvableDescriptionBoxRefinement(uuid, extent, x, dbox, refined))
         case _ =>
           None
       }
@@ -764,12 +773,13 @@ object OMLResolver2Ontology {
     r2o <- current
     y <- r2o.ops.addDescriptionBoxRefinement(x.dbox, x.refined)(r2o.omfStore)
     next = r2o.copy(
-      queue_edges = r2o.queue_edges - (x.extent -> x.ax),
+      queue_edges = r2o.queue_edges - x.uuid,
       edges = r2o.edges + (x.ax -> y))
   } yield next
 
   case class ResolvableReifiedRelationship
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleElementUUID,
+   extent: api.Extent,
    rr: api.ReifiedRelationship,
    tbox: owlapiterminologies.MutableTerminologyBox,
    source: owlapi.types.terms.Entity,
@@ -782,15 +792,15 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableReifiedRelationship]
   = r2o
     .queue_elements
-    .collect { case (extent: api.Extent, x: api.ReifiedRelationship) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.ReifiedRelationship)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2o.lookupTbox),
         r2o.lookupEntity(x.source),
         r2o.lookupEntity(x.target),
         x.allNestedElements()(extent).collectFirst { case f: api.ForwardProperty => f },
         x.allNestedElements()(extent).collectFirst { case i: api.InverseProperty => i } ) match {
         case (Some(tbox), Some(source), Some(target), Some(fwd), inv) =>
-          Some(ResolvableReifiedRelationship(extent, x, tbox, source, target, fwd, inv))
+          Some(ResolvableReifiedRelationship(uuid, extent, x, tbox, source, target, fwd, inv))
         case _ =>
           None
       }
@@ -842,14 +852,15 @@ object OMLResolver2Ontology {
         )))
     }
     next = r2o.copy(
-      queue_elements = r2o.queue_elements - (x.extent -> x.rr),
+      queue_elements = r2o.queue_elements - x.uuid,
       reifiedRelationships = r2o.reifiedRelationships + (x.rr -> y),
       forwardProperties = r2o.forwardProperties + (x.fwd -> y.forwardProperty),
       inverseProperties = r2o.inverseProperties ++ invPair)
   } yield next
 
   case class ResolvableUnreifiedRelationship
-  (extent: api.Extent,
+  (uuid: api.taggedTypes.ModuleElementUUID,
+   extent: api.Extent,
    ur: api.UnreifiedRelationship,
    tbox: owlapiterminologies.MutableTerminologyBox,
    source: owlapi.types.terms.Entity,
@@ -860,13 +871,13 @@ object OMLResolver2Ontology {
   : Iterable[ResolvableUnreifiedRelationship]
   = r2o
     .queue_elements
-    .collect { case (extent: api.Extent, x: api.UnreifiedRelationship) => extent -> x }
-    .flatMap { case (extent, x) =>
+    .collect { case (uuid, (extent: api.Extent, x: api.UnreifiedRelationship)) => (uuid, extent, x) }
+    .flatMap { case (uuid, extent, x) =>
       ( extent.terminologyBoxOfTerminologyBoxStatement.get(x).flatMap(r2o.lookupTbox),
         r2o.lookupEntity(x.source),
         r2o.lookupEntity(x.target) ) match {
         case (Some(tbox), Some(source), Some(target)) =>
-          Some(ResolvableUnreifiedRelationship(extent, x, tbox, source, target))
+          Some(ResolvableUnreifiedRelationship(uuid, extent, x, tbox, source, target))
         case _ =>
           None
       }
@@ -905,7 +916,7 @@ object OMLResolver2Ontology {
       else Iterable())
     y <- r2o.ops.addUnreifiedRelationship(x.tbox, x.source, x.target, characteristics, x.ur.name)(r2o.omfStore)
     next = r2o.copy(
-      queue_elements = r2o.queue_elements - (x.extent -> x.ur),
+      queue_elements = r2o.queue_elements - x.uuid,
       unreifiedRelationships = r2o.unreifiedRelationships + (x.ur -> y))
   } yield next
 
@@ -978,7 +989,7 @@ object OMLResolver2Ontology {
         t1 <- r2o.getTbox(t0)
         s1 <- r2o.ops.addStructuredDataType(t1, tables.taggedTypes.localName(s0.name))(r2o.omfStore)
       } yield r2o.copy(
-        queue_elements = r2o.queue_elements - (e -> s0),
+        queue_elements = r2o.queue_elements - s0.uuid,
         structures = r2o.structures + (s0 -> s1))
     case (prev, _) =>
       prev
@@ -997,7 +1008,7 @@ object OMLResolver2Ontology {
         t1 <- r2o.getTbox(t0)
         s1 <- r2o.ops.addScalarDataType(t1, tables.taggedTypes.localName(s0.name))(r2o.omfStore)
       } yield r2o.copy(
-        queue_elements = r2o.queue_elements - (e -> s0),
+        queue_elements = r2o.queue_elements - s0.uuid,
         dataRanges = r2o.dataRanges + (s0 -> s1))
     case (prev, _) =>
       prev
@@ -1013,7 +1024,7 @@ object OMLResolver2Ontology {
         .flatMap { e =>
           e
             .terminologyBoxOfTerminologyBoxStatement
-            .collect { case (dr: api.RestrictedDataRange, t: api.TerminologyBox) => (e, dr, t) }
+            .collect { case (dr: api.RestrictedDataRange, t: api.TerminologyBox) => (dr.uuid, e, dr, t) }
         }
 
     convertRestrictedDataRanges(r2o.right, edrt, List.empty)(r2o.omfStore)
@@ -1022,8 +1033,8 @@ object OMLResolver2Ontology {
   @scala.annotation.tailrec
   private def convertRestrictedDataRanges
   (acc: ResolverResult,
-   edrt: Iterable[(api.Extent, api.RestrictedDataRange, api.TerminologyBox)],
-   queue: List[(api.Extent, api.RestrictedDataRange, api.TerminologyBox)],
+   edrt: Iterable[(api.taggedTypes.ModuleElementUUID, api.Extent, api.RestrictedDataRange, api.TerminologyBox)],
+   queue: List[(api.taggedTypes.ModuleElementUUID, api.Extent, api.RestrictedDataRange, api.TerminologyBox)],
    progress: Boolean = false)
   (implicit omfStore: owlapi.OWLAPIOMF#Store)
   : ResolverResult
@@ -1036,11 +1047,11 @@ object OMLResolver2Ontology {
       Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
         ConversionCommand.explainProblems(
           s"convertRestrictedDataRanges: no progress with ${queue.size} data ranges in the queue",
-          queue.map(_._2.name)))).left
+          queue.map(_._3.name)))).left
   }
   else acc match {
     case \/-(r2o) =>
-      val (e0, dr0, t0) = edrt.head
+      val (uuid, e0, dr0, t0) = edrt.head
       (r2o.lookupTbox(t0), r2o.dataRanges.get(dr0.restrictedRange)) match {
         case (Some(t1), Some(rr1)) =>
           val dr1 = dr0 match {
@@ -1050,7 +1061,7 @@ object OMLResolver2Ontology {
                   t1, tables.taggedTypes.localName(rdr0.name), rr1,
                   rdr0.length, rdr0.minLength, rdr0.maxLength)
                 .map { rdr1 => r2o.copy(
-                  queue_elements = r2o.queue_elements - (e0 -> rdr0),
+                  queue_elements = r2o.queue_elements - uuid,
                   dataRanges = r2o.dataRanges + (rdr0 -> rdr1))
                 }
             case rdr0: api.IRIScalarRestriction =>
@@ -1059,7 +1070,7 @@ object OMLResolver2Ontology {
                   t1, tables.taggedTypes.localName(rdr0.name), rr1,
                   rdr0.length, rdr0.minLength, rdr0.maxLength, rdr0.pattern)
                 .map { rdr1 => r2o.copy(
-                  queue_elements = r2o.queue_elements - (e0 -> rdr0),
+                  queue_elements = r2o.queue_elements - uuid,
                   dataRanges = r2o.dataRanges + (rdr0 -> rdr1))
                 }
             case rdr0: api.NumericScalarRestriction =>
@@ -1069,7 +1080,7 @@ object OMLResolver2Ontology {
                   rdr0.minInclusive, rdr0.maxInclusive,
                   rdr0.minExclusive, rdr0.maxExclusive)
                 .map { rdr1 => r2o.copy(
-                  queue_elements = r2o.queue_elements - (e0 -> rdr0),
+                  queue_elements = r2o.queue_elements - uuid,
                   dataRanges = r2o.dataRanges + (rdr0 -> rdr1))
                 }
             case rdr0: api.PlainLiteralScalarRestriction =>
@@ -1079,7 +1090,7 @@ object OMLResolver2Ontology {
                   rdr0.length, rdr0.minLength, rdr0.maxLength, rdr0.pattern,
                   rdr0.langRange.map(r => tables.taggedTypes.languageTagDataType(r)))
                 .map { rdr1 => r2o.copy(
-                  queue_elements = r2o.queue_elements - (e0 -> rdr0),
+                  queue_elements = r2o.queue_elements - uuid,
                   dataRanges = r2o.dataRanges + (rdr0 -> rdr1))
                 }
             case rdr0: api.ScalarOneOfRestriction =>
@@ -1087,7 +1098,7 @@ object OMLResolver2Ontology {
                 .addScalarOneOfRestriction(
                   t1, tables.taggedTypes.localName(rdr0.name), rr1)
                 .map { rdr1 => r2o.copy(
-                  queue_elements = r2o.queue_elements - (e0 -> rdr0),
+                  queue_elements = r2o.queue_elements - uuid,
                   dataRanges = r2o.dataRanges + (rdr0 -> rdr1))
                 }
             case rdr0: api.StringScalarRestriction =>
@@ -1096,7 +1107,7 @@ object OMLResolver2Ontology {
                   t1, tables.taggedTypes.localName(rdr0.name), rr1,
                   rdr0.length, rdr0.minLength, rdr0.maxLength, rdr0.pattern)
                 .map { rdr1 => r2o.copy(
-                  queue_elements = r2o.queue_elements - (e0 -> rdr0),
+                  queue_elements = r2o.queue_elements - uuid,
                   dataRanges = r2o.dataRanges + (rdr0 -> rdr1))
                 }
             case rdr0: api.SynonymScalarRestriction =>
@@ -1104,7 +1115,7 @@ object OMLResolver2Ontology {
                 .addSynonymScalarRestriction(
                   t1, tables.taggedTypes.localName(rdr0.name), rr1)
                 .map { rdr1 => r2o.copy(
-                  queue_elements = r2o.queue_elements - (e0 -> rdr0),
+                  queue_elements = r2o.queue_elements - uuid,
                   dataRanges = r2o.dataRanges + (rdr0 -> rdr1))
                 }
             case rdr0: api.TimeScalarRestriction =>
@@ -1114,7 +1125,7 @@ object OMLResolver2Ontology {
                   rdr0.minInclusive, rdr0.maxInclusive,
                   rdr0.minExclusive, rdr0.maxExclusive)
                 .map { rdr1 => r2o.copy(
-                  queue_elements = r2o.queue_elements - (e0 -> rdr0),
+                  queue_elements = r2o.queue_elements - uuid,
                   dataRanges = r2o.dataRanges + (rdr0 -> rdr1))
                 }
           }
@@ -1159,7 +1170,7 @@ object OMLResolver2Ontology {
         }
         s1 <- r2o.ops.addScalarOneOfLiteralAxiom(t1, r1, s0.value, vt1)(r2o.omfStore)
       } yield r2o.copy(
-        queue_elements = r2o.queue_elements - (e -> s0),
+        queue_elements = r2o.queue_elements - s0.uuid,
         termAxioms = r2o.termAxioms + (s0 -> s1))
     case (prev, _) =>
       prev
@@ -1185,7 +1196,7 @@ object OMLResolver2Ontology {
           tables.taggedTypes.localName(dp0.name),
           dp0.isIdentityCriteria)(r2o.omfStore)
       } yield r2o.copy(
-        queue_elements = r2o.queue_elements - (e -> dp0),
+        queue_elements = r2o.queue_elements - dp0.uuid,
         entityScalarDataProperties = r2o.entityScalarDataProperties + (dp0 -> dp1))
     case (prev, _) =>
       prev
@@ -1209,7 +1220,7 @@ object OMLResolver2Ontology {
           tables.taggedTypes.localName(dp0.name),
           dp0.isIdentityCriteria)(r2o.omfStore)
       } yield r2o.copy(
-        queue_elements = r2o.queue_elements - (e -> dp0),
+        queue_elements = r2o.queue_elements - dp0.uuid,
         entityStructuredDataProperties = r2o.entityStructuredDataProperties + (dp0 -> dp1))
     case (prev, _) =>
       prev
@@ -1232,7 +1243,7 @@ object OMLResolver2Ontology {
           t1, e1, r1,
           tables.taggedTypes.localName(dp0.name))(r2o.omfStore)
       } yield r2o.copy(
-        queue_elements = r2o.queue_elements - (e -> dp0),
+        queue_elements = r2o.queue_elements - dp0.uuid,
         scalarDataProperties = r2o.scalarDataProperties + (dp0 -> dp1))
     case (prev, _) =>
       prev
@@ -1255,7 +1266,7 @@ object OMLResolver2Ontology {
           t1, e1, r1,
           tables.taggedTypes.localName(dp0.name))(r2o.omfStore)
       } yield r2o.copy(
-        queue_elements = r2o.queue_elements - (e -> dp0),
+        queue_elements = r2o.queue_elements - dp0.uuid,
         structuredDataProperties = r2o.structuredDataProperties + (dp0 -> dp1))
     case (prev, _) =>
       prev
@@ -1929,8 +1940,8 @@ case class OMLResolver2Ontology
  omfStore: owlapi.OWLAPIOMFGraphStore,
  extents: Set[api.Extent] = Set.empty,
 
- queue_edges: Set[(api.Extent,api.ModuleEdge)] = Set.empty,
- queue_elements: Set[(api.Extent, api.ModuleElement)] = Set.empty,
+ queue_edges: Map[api.taggedTypes.ModuleEdgeUUID, (api.Extent,api.ModuleEdge)] = Map.empty,
+ queue_elements: Map[api.taggedTypes.ModuleElementUUID, (api.Extent, api.ModuleElement)] = Map.empty,
 
  // Modules
  modules
@@ -2639,10 +2650,12 @@ case class OMLResolver2Ontology
             Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
               s"convertTerminologyBox(g0=${g0.iri}) UUID mismatch\n g0.uuid=${g0.uuid}\n g1.uuid=${g1.uuid}"
             )).left
+          edges = g0.moduleEdges().to[Vector].map { e0 => e0.uuid -> (extent -> e0) }.toMap
+          elements = g0.moduleElements().to[Vector].map { e0 => e0.uuid -> (extent -> e0) }.toMap
           that = copy(
             om = omg,
-            queue_edges = this.queue_edges ++ g0.moduleEdges().map(extent -> _),
-            queue_elements = this.queue_elements ++ g0.moduleElements().map(extent -> _),
+            queue_edges = this.queue_edges ++ edges,
+            queue_elements = this.queue_elements ++ elements,
             modules = this.modules + g0,
             gs = this.gs + (g0 -> g1))
         } yield (that, g0, g1.left, i)
@@ -2673,10 +2686,12 @@ case class OMLResolver2Ontology
               s"convertBundle(b0=${b0.iri}) UUID mismatch\n b0.uuid=${b0.uuid}\n b1.uuid=${b1.uuid}"
             )).left
           omb <- om.addMutableModule(b1)(this.ops)
+          edges = b0.moduleEdges().to[Vector].map { e0 => e0.uuid -> (extent -> e0) }.toMap
+          elements = b0.moduleElements().to[Vector].map { e0 => e0.uuid -> (extent -> e0) }.toMap
           that = copy(
             om = omb,
-            queue_edges = this.queue_edges ++ b0.moduleEdges().map(extent -> _),
-            queue_elements = this.queue_elements ++ b0.moduleElements().map(extent -> _),
+            queue_edges = this.queue_edges ++ edges,
+            queue_elements = this.queue_elements ++ elements,
             modules = this.modules + b0,
             bs = this.bs + (b0 -> b1))
         } yield (that, b0, b1.left, i)
@@ -2707,10 +2722,12 @@ case class OMLResolver2Ontology
               s"convertDescriptionBox(d0=${d0.iri}) UUID mismatch\n d0.uuid=${d0.uuid}\n d1.uuid=${d1.uuid}"
             )).left
           omd <- om.addMutableModule(d1)(this.ops)
+          edges = d0.moduleEdges().to[Vector].map { e0 => e0.uuid -> (extent -> e0) }.toMap
+          elements = d0.moduleElements().to[Vector].map { e0 => e0.uuid -> (extent -> e0) }.toMap
           that = copy(
             om = omd,
-            queue_edges = this.queue_edges ++ d0.moduleEdges().map(extent -> _),
-            queue_elements = this.queue_elements ++ d0.moduleElements().map(extent -> _),
+            queue_edges = this.queue_edges ++ edges,
+            queue_elements = this.queue_elements ++ elements,
             modules = this.modules + d0,
             ds = this.ds + (d0 -> d1))
         } yield (that, d0, d1.right, i)

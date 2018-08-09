@@ -1,3 +1,3 @@
 resolvers += "Artima Maven Repository" at "https://repo.artima.com/releases"
 
-addSbtPlugin("com.artima.supersafe" % "sbtplugin" % "1.1.5")
+addSbtPlugin("com.artima.supersafe" % "sbtplugin" % "1.1.7")
