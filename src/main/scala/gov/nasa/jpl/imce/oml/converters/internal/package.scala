@@ -285,6 +285,13 @@ package object internal {
     } else
       \/-(())
 
+    _ <- options.output.toOWLCombined match {
+      case Some(combinedIRI) =>
+        OMLResolver2Ontology.convertToCombinedOntology(extents, outStore, combinedIRI)
+      case None =>
+        \/-(())
+    }
+
     // 4) Upload to SQL
 
     _ <- options.output.toSQL match {

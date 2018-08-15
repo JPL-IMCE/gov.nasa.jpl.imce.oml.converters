@@ -38,8 +38,11 @@ import org.semanticweb.owlapi.model.IRI
 import scala.collection.immutable.{::, Iterable, List, Map, Nil, Seq, Set, Vector}
 import scala.{Boolean, Function, None, Option, Some, StringContext, Unit}
 import scala.Predef.{ArrowAssoc, String}
+import scala.util.control.Exception._
 import scalaz._
 import Scalaz._
+import org.semanticweb.owlapi.formats.OWLXMLDocumentFormatFactory
+//import org.semanticweb.owlapi.formats.FunctionalSyntaxDocumentFormatFactory
 
 object OMLResolver2Ontology {
 
@@ -129,6 +132,112 @@ object OMLResolver2Ontology {
           _ <- r2o.ops.saveDescriptionBox(idbox)(outStore)
         } yield ()
     }
+  } yield r2o
+
+  def convertToCombinedOntology
+  (extents: Seq[api.Extent],
+   outStore: OWLAPIOMFGraphStore,
+   combinedIRI: String)
+  : Throwables \/ OMLResolver2Ontology
+  = for {
+    out_drc <- outStore.loadBuiltinDatatypeMap()
+    om <- outStore.initializeOntologyMapping(out_drc)
+
+    r2oModules <- extents.foldLeft {
+      OMLResolver2Ontology(om, outStore).right[OMFError.Throwables]
+    } { case (acc, apiExtent) =>
+      for {
+        prev <- acc
+        next <- OMLResolver2Ontology.convertExtent(prev)(apiExtent)
+      } yield next
+    }
+
+    r2o <- convertAllExtents(r2oModules.right)
+
+    tboxConversions <-
+      r2o
+        .modules
+        .foldLeft[OMFError.Throwables \/ (Seq[ImmutableTerminologyBox], OMLResolver2Ontology)] {
+        (Seq.empty[ImmutableTerminologyBox], r2o).right
+      } {
+        case (acc, m0: resolver.api.TerminologyBox) =>
+          for {
+            prev <- acc
+            (convs, r2oPrev) = prev
+            m1 <- r2oPrev.getTbox(m0)
+            _ = System.out.println(s"... Converting terminology ${m1.sig.kind}: ${m1.iri}")
+            next <- r2oPrev.ops.asImmutableTerminologyBox(m1, r2oPrev.om)(outStore).map { case (i1, omWithConv) =>
+              (convs :+ i1) -> r2oPrev.copy(om = omWithConv)
+            }
+          } yield next
+        case (acc, _) =>
+          acc
+      }
+
+    (tboxConvs, r2oTboxConv) = tboxConversions
+
+    combinedLogicalIRI = IRI.create(combinedIRI)
+    combinedOnt = outStore.ontManager.createOntology(combinedLogicalIRI)
+
+    _ <- tboxConvs.foldLeft[OMFError.Throwables \/ Unit](().right[OMFError.Throwables]) {
+      case (acc, itbox) =>
+        for {
+          _ <- acc
+          _ = if (outStore.isBuiltInIRI(itbox.iri))
+            System.out.println(s"... Skip axioms from built-in ontology ${itbox.iri}")
+          else {
+            System.out.println(s"...     Adding axioms from terminology ${itbox.iri}")
+            combinedOnt.addAxioms(itbox.ont.axioms())
+          }
+        } yield ()
+    }
+
+    dboxConversions <-
+      r2o
+        .modules
+        .foldLeft[OMFError.Throwables \/ (Seq[ImmutableDescriptionBox], OMLResolver2Ontology)] {
+        (Seq.empty[ImmutableDescriptionBox], r2oTboxConv).right
+      } {
+        case (acc, m0: resolver.api.DescriptionBox) =>
+          for {
+            prev <- acc
+            (convs, r2oPrev) = prev
+            m1 <- r2oPrev.getDbox(m0)
+            _ = System.out.println(s"... Converting description ${m1.sig.kind}: ${m1.iri}")
+            next <- r2oPrev.ops.asImmutableDescription(m1, r2oPrev.om)(outStore).map { case (i1, omWithConv) =>
+              (convs :+ i1) -> r2oPrev.copy(om = omWithConv)
+            }
+          } yield next
+        case (acc, _) =>
+          acc
+      }
+
+    (dboxConvs, _) = dboxConversions
+
+    _ <- dboxConvs.foldLeft[OMFError.Throwables \/ Unit](().right[OMFError.Throwables]) {
+      case (acc, idbox) =>
+        for {
+          _ <- acc
+          _ = System.out.println(s"...     Adding axioms from description ${idbox.iri}")
+          _ = combinedOnt.addAxioms(idbox.ont.axioms())
+        } yield ()
+    }
+
+    combinedOutputIRI = outStore.catalogIRIMapper.resolveIRI(combinedLogicalIRI, outStore.catalogIRIMapper.saveResolutionStrategy)
+
+    //format = new FunctionalSyntaxDocumentFormatFactory().createFormat()
+    format = new OWLXMLDocumentFormatFactory().createFormat()
+
+    _ <- nonFatalCatch[OMFError.Throwables \/ Unit]
+        .withApply {
+          cause: java.lang.Throwable =>
+            Set(cause).left
+        }
+        .apply {
+          outStore.ontManager.saveOntology(combinedOnt, format, combinedOutputIRI).right
+        }
+
+    _ = System.out.println(s"Saved combined ontology in Functional Syntax for at as: $combinedOutputIRI")
   } yield r2o
 
   private def convertExtent

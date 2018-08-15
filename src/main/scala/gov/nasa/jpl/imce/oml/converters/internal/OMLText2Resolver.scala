@@ -535,10 +535,6 @@ object OMLText2Resolver {
     }
   }
 
-
-
-
-
   protected def convertAspects
   (state: EMFProblems \/ Map[Module, OMLText2Resolver],
    entry: (Module, OMLText2Resolver))
@@ -1625,6 +1621,74 @@ object OMLText2Resolver {
             )).left
 
         }
+    }
+  }
+
+  protected def convertDescriptionBoxEdges
+  (state: EMFProblems \/ Map[Module, OMLText2Resolver],
+   entry: (Module, OMLText2Resolver))
+  (implicit f: api.OMLResolvedFactory)
+  : EMFProblems \/ Map[Module, OMLText2Resolver]
+  = {
+    entry match {
+      case (dbox: DescriptionBox, _) =>
+        val axs = dbox.moduleEdges().asScala.to[Vector]
+        axs.foldLeft(state) {
+          case (acc, axi: DescriptionBoxExtendsClosedWorldDefinitions) =>
+            for {
+              prev <- acc
+              o2ri = prev(dbox)
+              extendingi = axi.getDescriptionBox
+              extendedi = axi.getClosedWorldDefinitions
+              o2rj <-
+                (prev.get(extendingi).flatMap(_.dboxes.get(extendingi)),
+                  prev.get(extendedi).flatMap(_.tboxes.get(extendedi))) match {
+                  case (Some(extendingj), Some(extendedj)) =>
+                    val (rj, axj) = f.createDescriptionBoxExtendsClosedWorldDefinitions(o2ri.rextent, extendingj, extendedj.iri)
+                    o2ri.copy(
+                      rextent = rj,
+                      queue_edges = o2ri.queue_edges - axi.uuid(),
+                      moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
+                  case (extendingj, extendedj) =>
+                    new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"convertDescriptionBoxEdges: " +
+                        extendingj.fold(s"Failed to resolve extending=${extendingi.getIri}")(_ => s"From extending=${extendingi.getIri}") +
+                        "; " +
+                        extendedj.fold(s"Failed to resolve extended=${extendedi.getIri}")(_ => s"To extended=${extendedi.getIri}")
+                    )).left
+                }
+              next = prev.updated(dbox, o2rj)
+            } yield next
+          case (acc, axi: DescriptionBoxRefinement) =>
+            for {
+              prev <- acc
+              o2ri = prev(dbox)
+              extendingi = axi.getRefiningDescriptionBox
+              extendedi = axi.getRefinedDescriptionBox
+              o2rj <-
+                (prev.get(extendingi).flatMap(_.dboxes.get(extendingi)),
+                  prev.get(extendedi).flatMap(_.dboxes.get(extendedi))) match {
+                  case (Some(extendingj), Some(extendedj)) =>
+                    val (rj, axj) = f.createDescriptionBoxRefinement(o2ri.rextent, extendingj, extendedj.iri)
+                    o2ri.copy(
+                      rextent = rj,
+                      queue_edges = o2ri.queue_edges - axi.uuid(),
+                      moduleEdges = o2ri.moduleEdges + (axi -> axj)).right
+                  case (extendingj, extendedj) =>
+                    new EMFProblems(new java.lang.IllegalArgumentException(
+                      s"convertDescriptionBoxEdges: " +
+                        extendingj.fold(s"Failed to resolve extending=${extendingi.getIri}")(_ => s"From extending=${extendingi.getIri}") +
+                        "; " +
+                        extendedj.fold(s"Failed to resolve extended=${extendedi.getIri}")(_ => s"To extended=${extendedi.getIri}")
+                    )).left
+                }
+              next = prev.updated(dbox, o2rj)
+            } yield next
+          case (acc, _) =>
+            acc
+        }
+      case _ =>
+        state
     }
   }
 
@@ -3282,17 +3346,19 @@ object OMLText2Resolver {
     
     c80 = c7N
 
-    c81 <- c80.foldLeft(c80.right[EMFProblems])(convertConceptInstances)
+    c81 <- c80.foldLeft(c80.right[EMFProblems])(convertDescriptionBoxEdges)
 
-    c82 <- c81.foldLeft(c81.right[EMFProblems])(convertReifiedRelationshipInstances)
+    c82 <- c81.foldLeft(c81.right[EMFProblems])(convertConceptInstances)
 
-    c83 <- c82.foldLeft(c82.right[EMFProblems])(convertReifiedRelationshipInstanceDomains)
+    c83 <- c82.foldLeft(c82.right[EMFProblems])(convertReifiedRelationshipInstances)
 
-    c84 <- c83.foldLeft(c83.right[EMFProblems])(convertReifiedRelationshipInstanceRanges)
+    c84 <- c83.foldLeft(c83.right[EMFProblems])(convertReifiedRelationshipInstanceDomains)
 
-    c85 <- c84.foldLeft(c84.right[EMFProblems])(convertUnreifiedRelationshipInstances)
+    c85 <- c84.foldLeft(c84.right[EMFProblems])(convertReifiedRelationshipInstanceRanges)
 
-    c8N = c85
+    c86 <- c85.foldLeft(c85.right[EMFProblems])(convertUnreifiedRelationshipInstances)
+
+    c8N = c86
     
     // Data Property Values
 
