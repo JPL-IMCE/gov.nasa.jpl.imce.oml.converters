@@ -2339,6 +2339,8 @@ object OMLResolver2Text {
             ).left
         }
       } yield upd
+    case (acc, _) =>
+      acc
   }
 
   private val convertReifiedRelationshipInstance
@@ -2361,6 +2363,8 @@ object OMLResolver2Text {
             ).left
         }
       } yield upd
+    case (acc, _) =>
+      acc
   }
 
   private val convertReifiedRelationshipInstanceDomain
@@ -2387,6 +2391,8 @@ object OMLResolver2Text {
             ).left
         }
       } yield upd
+    case (acc, _) =>
+      acc
   }
 
   private val convertReifiedRelationshipInstanceRange
@@ -2413,6 +2419,8 @@ object OMLResolver2Text {
             ).left
         }
       } yield upd
+    case (acc, _) =>
+      acc
   }
 
   private val convertUnreifiedRelationshipInstanceTuple
@@ -2442,6 +2450,8 @@ object OMLResolver2Text {
             ).left
         }
       } yield upd
+    case (acc, _) =>
+      acc
   }
 
   private val convertSingletonInstanceStructuredDataPropertyValue
@@ -2468,6 +2478,8 @@ object OMLResolver2Text {
             )).left
         }
       } yield upd
+    case (acc, _) =>
+      acc
   }
 
   private val convertSingletonInstanceScalarDataPropertyValue
@@ -2494,6 +2506,8 @@ object OMLResolver2Text {
             )).left
         }
       } yield upd
+    case (acc, _) =>
+      acc
   }
 
   private val convertStructuredDataPropertyTuple
@@ -2519,6 +2533,8 @@ object OMLResolver2Text {
             )).left
         }
       } yield upd
+    case (acc, _) =>
+      acc
   }
 
   private val convertScalarDataPropertyValue
@@ -2553,6 +2569,8 @@ object OMLResolver2Text {
             )).left
         }
       } yield upd
+    case (acc, _) =>
+      acc
   }
 
   private val convertAnnotationPropertyValue
