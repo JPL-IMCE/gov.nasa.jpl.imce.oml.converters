@@ -383,9 +383,23 @@ object OMLConverter {
         c.copy(output = c.output.copy(toText = true))
       }
 
+    opt[String]("owl:combined")
+      .text(
+        s"""Output conversion includes a single OWL2-DL + SWRL rules ontology whose IRI is <value>.
+           |${helpIndent}The output format is OWL Functional Syntax.
+           |$helpIndent(Requires --output:catalog <catalog> or -out:cat <catalog>).
+           |$helpIndent(Not applicable for 'merge' command).
+           |""".stripMargin)
+      .abbr("o:combined")
+      .optional()
+      .maxOccurs(1)
+      .action { (iri, c) =>
+        c.copy(output = c.output.copy(toOWLCombined=Some(iri)))
+      }
+
     opt[Unit]("owl")
       .text(
-        s"""Output conversion includes OWL2-DL + SWRL rule '*.owl' ontology files, one for each OML module.
+        s"""Output conversion includes OWL2-DL + SWRL rules '*.owl' ontology files, one for each OML module.
            |$helpIndent(Not applicable for 'merge' command).
            |""".stripMargin)
       .abbr("o")

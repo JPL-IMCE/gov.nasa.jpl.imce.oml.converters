@@ -1,0 +1,8 @@
+gov.nasa.jpl.imce.oml.converters 0.11.0 is a significant update of 0.10.x
+
+# Issues Resolved:
+
+## [#68 Add support for CardinalityRestrictions](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/68)
+     
+   Partially implemented.
+   Currently supports converting from OML text => OWL

@@ -1,0 +1,45 @@
+open terminology <http://example.org/vocabulary> {
+	
+	extends <http://www.w3.org/2001/XMLSchema>
+	
+	aspect IdentifiedElement
+	
+	entityScalarDataProperty +ID {
+		domain IdentifiedElement
+		range XMLSchema:integer
+	}
+	
+	concept A
+	
+	A extendsAspect IdentifiedElement
+	
+	concept B
+	
+	B extendsAspect IdentifiedElement
+	
+	concept C
+	
+	entityScalarDataProperty +name {
+		domain C
+		range XMLSchema:string
+	}
+	
+	unreifiedRelationship a2b {
+		source = A
+		target = B
+	}
+	
+	reifiedRelationship B2C {
+		unreified = b2c
+		source = B
+		target = C
+	}
+	
+	concept C1
+	
+	C1 extendsConcept C
+	
+	concept C2
+	
+	C2 extendsConcept C
+}
