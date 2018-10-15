@@ -2093,7 +2093,7 @@ object OMLResolver2Text {
         t1 <- r2t.lookupMap(ax0, e0.terminologyBoxOfTerminologyBoxStatement)(e0).flatMap(r2t.getTbox)
         ax1 = terminologies.TerminologiesFactory.eINSTANCE.createChainRule()
         upd <- (
-          r2t.unreifiedRelationships.get(ax0.head),
+          r2t.restrictableRelationshipLookup(ax0.head),
           e0.firstSegment.get(ax0)) match {
           case (Some(h1), Some(s0)) =>
             e0.predicate.get(s0) match {
@@ -2497,6 +2497,7 @@ object OMLResolver2Text {
             si1.setDescriptionBox(d1)
             si1.setSingletonInstance(ce1)
             si1.setScalarDataProperty(sdp1)
+            si1.setScalarPropertyValue(tables2emf(si0.scalarPropertyValue))
             r2t.copy(singletonInstanceScalarDataPropertyValues = r2t.singletonInstanceScalarDataPropertyValues + (si0 -> si1)).right
           case (ur1, di1) =>
             new EMFProblems(new java.lang.IllegalArgumentException(

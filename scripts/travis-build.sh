@@ -13,4 +13,5 @@ t=$(git name-rev --tags --name-only $(git rev-parse HEAD))
 
 git submodule init
 git submodule update --checkout
-sbt -jvm-opts travis/jvmopts.compile compile test
+export JVM_OPTS=@travis/jvmopts.compile
+sbt -batch compile test
