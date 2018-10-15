@@ -1666,7 +1666,7 @@ object OMLResolver2Ontology {
       for {
         r2o <- acc
         t1 <- r2o.getGbox(t0)
-        h1 <- r2o.lookupUnreifiedRelationship(ax0.head)
+        h1 <- r2o.restrictableRelationshipLookup(ax0.head)
         ax1 <- r2o.ops.addChainRule(t1, h1, tables.taggedTypes.localName(ax0.name))(r2o.omfStore)
         _ <- ext.lookupFirstSegment(ax0) match {
           case Some(s0) =>

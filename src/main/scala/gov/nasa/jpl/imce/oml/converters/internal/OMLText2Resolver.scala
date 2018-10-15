@@ -2895,7 +2895,7 @@ object OMLText2Resolver {
 
   protected def resolvableChainRules
   (s: Map[Module, OMLText2Resolver])
-  : Iterable[(TerminologyBox, Iterable[(ChainRule, api.UnreifiedRelationship, Seq[SegmentPredicateInfo])])]
+  : Iterable[(TerminologyBox, Iterable[(ChainRule, api.RestrictableRelationship, Seq[SegmentPredicateInfo])])]
   = s.flatMap {
     case (tbox: TerminologyBox, o2r) =>
 
@@ -2990,7 +2990,7 @@ object OMLText2Resolver {
       }
 
       val tuples
-      : Iterable[(ChainRule, api.UnreifiedRelationship, Seq[SegmentPredicateInfo])]
+      : Iterable[(ChainRule, api.RestrictableRelationship, Seq[SegmentPredicateInfo])]
       = o2r
         .queue_elements
         .collect {
@@ -2998,7 +2998,7 @@ object OMLText2Resolver {
           Option.apply(x.getHead).isDefined && Option.apply(x.getFirstSegment).isDefined => x
         }
         .flatMap { x =>
-          s.accessibleLookup(o2r, _.unreifiedRelationships.get(x.getHead)).flatMap { head =>
+          s.accessibleLookup(o2r, _.restrictableRelationshipLookup(x.getHead)).flatMap { head =>
             val seg = x.getFirstSegment
             val segments = Option.apply(seg.getPredicate) match {
               case Some(pred) =>
@@ -3022,7 +3022,7 @@ object OMLText2Resolver {
 
   def updateChainRules
   (current: EMFProblems \/ Map[Module, OMLText2Resolver],
-   x: (TerminologyBox, Iterable[(ChainRule, api.UnreifiedRelationship, Seq[SegmentPredicateInfo])]))
+   x: (TerminologyBox, Iterable[(ChainRule, api.RestrictableRelationship, Seq[SegmentPredicateInfo])]))
   (implicit f: api.OMLResolvedFactory)
   : EMFProblems \/ Map[Module, OMLText2Resolver]
   = {
@@ -3141,7 +3141,7 @@ object OMLText2Resolver {
     def updateChainRules1
     (t0: TerminologyBox)
     (current: EMFProblems \/ OMLText2Resolver,
-     x: (ChainRule, api.UnreifiedRelationship, Seq[SegmentPredicateInfo]))
+     x: (ChainRule, api.RestrictableRelationship, Seq[SegmentPredicateInfo]))
     : EMFProblems \/ OMLText2Resolver
     = for {
       o2r0 <- current
