@@ -153,7 +153,9 @@ object OMLResourceSet {
   : EMFProblems \/ Map[tables.taggedTypes.IRI, Module]
   = {
     val omlTables: OMLSpecificationTables = OMLZipResource.getOrInitializeOMLSpecificationTables(rs)
-    val result = omlFiles.foldLeft(Map.empty[tables.taggedTypes.IRI, Module].right[EMFProblems]) {
+    val omlTextFiles = omlFiles.filter(_.ext == "oml")
+    val omlZipFiles = omlFiles.filter(_.ext == "omlzip")
+    val result1 = omlTextFiles.foldLeft(Map.empty[tables.taggedTypes.IRI, Module].right[EMFProblems]) {
       case (acc1, f) =>
         for {
           prev <- acc1
@@ -175,12 +177,34 @@ object OMLResourceSet {
           }
         } yield updated
     }
+    val result2 = omlZipFiles.foldLeft(result1) {
+      case (acc1, f) =>
+        for {
+          prev <- acc1
+          omlFile <- {
+            if (f.toIO.exists() && f.toIO.canRead)
+              \/-(f)
+            else
+              new EMFProblems(new java.lang.IllegalArgumentException(
+                s"loadOMLResources: Cannot read OMLZip file: " +
+                  f
+              )).left
+          }
+          modules <- OMLResourceSet.loadOMLResource(
+            rs,
+            URI.createFileURI(omlFile.toString))
+          _ = modules.foreach(omlTables.queueModule)
+          updated = modules.foldLeft(prev) { case (acc2, module) =>
+            acc2 + (tables.taggedTypes.iri(module.iri()) -> module)
+          }
+        } yield updated
+    }
     OMLZipResource.clearOMLSpecificationTables(rs)
 
     OMLLinkingService.clearCache(rs)
     OMLLinkingService.initializeCache(rs)
 
-    result
+    result2
   }
 
 }
