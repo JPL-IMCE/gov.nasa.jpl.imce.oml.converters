@@ -2419,7 +2419,7 @@ object OMLText2Resolver {
       val tuples
       : Iterable[(TerminologyNestingAxiom, api.TerminologyGraph, api.TerminologyBox, api.ConceptKind)]
       = o2r
-        .queue_elements
+        .queue_edges
         .collect { case (_, x: TerminologyNestingAxiom) => x }
         .flatMap { x =>
           ( s.lookupTerminologyGraph(x.nestedTerminology),
