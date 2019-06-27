@@ -1,5 +1,6 @@
 # Use container-based infrastructure
 sudo: false
+dist: xenial
 
 # These directories are cached to S3 at the end of the build
 cache:
@@ -18,7 +19,7 @@ addons:
       - graphviz
 
 jdk:
-- oraclejdk8
+- openjdk8
 
 language: scala
 

@@ -40,12 +40,14 @@ object ConversionCommandFromOMLMerge {
 
   def merge
   (m: ConversionCommand.MergeCatalogs,
-   conversions: ConversionCommand.OutputConversions,
+   options: OMLConverter.Options,
    outCatalog: Path)
   (implicit spark: SparkSession, sqlContext: SQLContext)
   : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
     import internal.covariantOrdering
+
+    val conversions: ConversionCommand.OutputConversions = options.output
 
     val props = new Properties()
     props.setProperty("useSSL", "false")
@@ -164,7 +166,7 @@ object ConversionCommandFromOMLMerge {
         for {
           _ <- internal
             .OMLResolver2Ontology
-            .convert(extents, outStore)
+            .convert(extents, outStore, options.output.modules)
           _ <- conversions.fuseki match {
             case None =>
               \/-(())

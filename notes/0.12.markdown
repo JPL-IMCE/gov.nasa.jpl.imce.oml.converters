@@ -11,3 +11,5 @@ gov.nasa.jpl.imce.oml.converters 0.12.x is a significant update of 0.11.x
 ## [#75 Incomplete conversion due to unresolved TerminologyNestingAxiom from OML text](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/75)
 
 ## [#77 Update for OML 0.9.7.4](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/77)
+
+## [#79 -out:modules should produce an IRI to file location mapping in YAML](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/79)

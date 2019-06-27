@@ -18,6 +18,7 @@
 
 package gov.nasa.jpl.imce.oml.converters.internal
 
+import ammonite.ops.{Path,write}
 import java.lang.{IllegalArgumentException, System}
 import java.util.UUID
 
@@ -42,6 +43,8 @@ import scala.util.control.Exception._
 import scalaz._
 import Scalaz._
 import org.semanticweb.owlapi.formats.OWLXMLDocumentFormatFactory
+
+import scala.collection.mutable
 //import org.semanticweb.owlapi.formats.FunctionalSyntaxDocumentFormatFactory
 
 object OMLResolver2Ontology {
@@ -54,7 +57,8 @@ object OMLResolver2Ontology {
 
   def convert
   (extents: Seq[api.Extent],
-   outStore: OWLAPIOMFGraphStore)
+   outStore: OWLAPIOMFGraphStore,
+   outputModule: Option[Path])
   : Throwables \/ OMLResolver2Ontology
   = for {
     out_drc <- outStore.loadBuiltinDatatypeMap()
@@ -70,6 +74,9 @@ object OMLResolver2Ontology {
     }
 
     r2o <- convertAllExtents(r2oModules.right)
+
+    buffer = new mutable.StringBuilder()
+    _ = buffer.append("---\n")
 
     tboxConversions <-
     r2o
@@ -99,7 +106,10 @@ object OMLResolver2Ontology {
           _ <- acc
           _ = System.out.println(s"... Saving terminology ${itbox.iri}")
           _ <- r2o.ops.saveTerminology(itbox)(outStore)
+          savedIRI = outStore.catalogIRIMapper.resolveIRI(itbox.iri, outStore.catalogIRIMapper.saveResolutionStrategy)
+          _ = buffer.append(s"  ${itbox.iri}: $savedIRI\n")
         } yield ()
+
     }
 
     dboxConversions <-
@@ -130,7 +140,13 @@ object OMLResolver2Ontology {
           _ <- acc
           _ = System.out.println(s"... Saving description ${idbox.iri}")
           _ <- r2o.ops.saveDescriptionBox(idbox)(outStore)
+          savedIRI = outStore.catalogIRIMapper.resolveIRI(idbox.iri, outStore.catalogIRIMapper.saveResolutionStrategy)
+          _ = buffer.append(s"  ${idbox.iri}: $savedIRI\n")
         } yield ()
+    }
+
+    _ = outputModule.foreach { outputFile =>
+      write.over(outputFile, buffer.toString)
     }
   } yield r2o
 
