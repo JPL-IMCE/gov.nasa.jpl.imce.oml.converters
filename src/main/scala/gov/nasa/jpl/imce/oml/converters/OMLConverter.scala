@@ -303,7 +303,8 @@ object OMLConverter {
 
     opt[File]("output:modules")
       .text(
-        s"""Output the IRIs of all OML modules.
+        s"""For conversion to OWL, writes a YAML file with a IRI to file location mapping for each converted OML module.
+           |${helpIndent}For other conversions, writes a text file with the list of IRIs of all OML modules.
            |$helpIndent(Not applicable for 'diff' command).
            |""".stripMargin)
       .abbr("out:modules")
@@ -526,7 +527,7 @@ object OMLConverter {
             internal.makeOutputCatalogIfNeeded(options.deleteOutputIfExists, options.outputFolder, options.output.catalog) match {
               case \/-(outCatalogPath) =>
                 ConversionCommandFromOMLSQL
-                  .sqlInputConversion(s, options.output, outCatalogPath)
+                  .sqlInputConversion(s, options, outCatalogPath)
 
               case -\/(errors) =>
                 internal.showErrorsAndExit(errors)
@@ -545,7 +546,7 @@ object OMLConverter {
 
                 ConversionCommandFromOMLMerge
                   .merge(
-                    m, options.output, outCatalogPath) match {
+                    m, options, outCatalogPath) match {
                   case \/-((outCatalog, ts)) =>
                     if (options.output.toParquet)
                       internal.toParquet(options.output, outCatalog, outCatalogPath / up, ts)
@@ -681,7 +682,7 @@ object OMLConverter {
           (outStore, outCat) = out_store_cat
           _ <- internal
             .OMLResolver2Ontology
-            .convert(extents, outStore)
+            .convert(extents, outStore, outputFolder)
           _ <- output.fuseki match {
             case None =>
               \/-(())

@@ -33,11 +33,13 @@ object ConversionCommandFromOMLSQL {
 
   def sqlInputConversion
   (s: ConversionCommand.SQLInputConversionWithServer,
-   conversions: ConversionCommand.OutputConversions,
+   options: OMLConverter.Options,
    outCatalog: Path)
   : Unit
   = {
     val conf = internal.sparkConf(this.getClass.getSimpleName)
+
+    val conversions: ConversionCommand.OutputConversions = options.output
 
     implicit val spark = SparkSession
       .builder()
@@ -107,7 +109,7 @@ object ConversionCommandFromOMLSQL {
         for {
           _ <- internal
             .OMLResolver2Ontology
-            .convert(extents, outStore)
+            .convert(extents, outStore, options.output.modules)
           _ <- conversions.fuseki match {
             case None =>
               \/-(())

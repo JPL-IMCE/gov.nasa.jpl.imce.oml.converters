@@ -211,16 +211,6 @@ package object internal {
         tuple <- extents_iri2tables
         (extents, iri2tables) = tuple
 
-        // List of module IRIs
-
-        _ <- options.output.modules match {
-          case Some(file) =>
-            writeModuleIRIs(iri2tables.map { case (iri, _) => iri }, file)
-
-          case None =>
-            \/-(())
-        }
-
         out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
         (outStore, outCat) = out_store_cat
         result <- outputConversions(extents, iri2tables, outStore, outCat, outCatalog, options, props)
@@ -230,16 +220,6 @@ package object internal {
       for {
         tuple <- extents_iri2tables
         (extents, iri2tables) = tuple
-
-        // List of module IRIs
-
-        _ <- options.output.modules match {
-          case Some(file) =>
-            writeModuleIRIs(iri2tables.map { case (iri, _) => iri }, file)
-
-          case None =>
-            \/-(())
-        }
 
       } yield None -> iri2tables
   }
@@ -274,7 +254,7 @@ package object internal {
 
     _ <- if (options.output.toOWL) {
       for {
-        _ <- OMLResolver2Ontology.convert(extents, outStore)
+        _ <- OMLResolver2Ontology.convert(extents, outStore, options.output.modules)
         _ <- options.output.fuseki match {
           case None =>
             \/-(())

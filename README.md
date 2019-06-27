@@ -244,7 +244,8 @@ OML supports three canonical representations:
                                 Verbose: show the input files found for each 'rewriteURI' entry of an OML Catalog.
      
        -out:modules, --output:modules <value>
-                                Output the IRIs of all OML modules.
+                                For conversion to OWL, writes a YAML file with a IRI to file location mapping for each converted OML module.
+                                For other conversions, writes a text file with the list of IRIs of all OML modules.
                                 (Not applicable for 'diff' command).
      
        -out:cat, --output:catalog <value>
