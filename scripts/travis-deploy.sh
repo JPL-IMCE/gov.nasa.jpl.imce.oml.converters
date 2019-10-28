@@ -6,7 +6,7 @@ set -ev
 # Error if TRAVIS_SECURE_ENV_VARS is false
 
 [ -z "${TRAVIS_TAG}" ] && exit 0;
-[ ! ${TRAVIS_SECURE_ENV_VARS} ] && exit -1;
+[ ! ${TRAVIS_SECURE_ENV_VARS} ] && exit 255;
 
 . $(dirname $0)/travis-decode.sh
 

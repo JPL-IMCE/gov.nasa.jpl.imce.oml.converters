@@ -90,19 +90,21 @@ object OMLMerge {
 
         m11 <- mergeOMLEntityStructuredDataRestrictionAxioms(m10, omlTDS)
 
-        m12 <- mergeOMLSpecializationAxioms(m11, omlTDS)
+        m12 <- mergeOMLCardinalityRestrictedEntities(m11, omlTDS)
 
-        m13 <- mergeOMLSubPropertyAxioms(m12, omlTDS)
+        m13 <- mergeOMLSpecializationAxioms(m12, omlTDS)
 
-        m14 <- mergeOMLDisjunctionAxioms(m13, omlTDS)
+        m14 <- mergeOMLSubPropertyAxioms(m13, omlTDS)
 
-        m15 <- mergeOMLInstances(m14, omlTDS)
+        m15 <- mergeOMLDisjunctionAxioms(m14, omlTDS)
 
-        m16 <- mergeOMLInstanceValues(m15, omlTDS)
+        m16 <- mergeOMLInstances(m15, omlTDS)
 
-        m17 <- mergeOMLAnnotationPropertyValues(m16, omlTDS)
+        m17 <- mergeOMLInstanceValues(m16, omlTDS)
 
-      } yield m17
+        m18 <- mergeOMLAnnotationPropertyValues(m17, omlTDS)
+
+      } yield m18
     }
 
   // TODO Verify consistency among TerminologyBox.kind
@@ -397,6 +399,27 @@ object OMLMerge {
           (mi.restrictionStructuredDataPropertyTuples union omlTD.restrictionStructuredDataPropertyTuples).distinct,
         restrictionScalarDataPropertyValues =
           (mi.restrictionScalarDataPropertyValues union omlTD.restrictionScalarDataPropertyValues).distinct
+      )
+    }
+
+    updated.right
+  }
+
+  // TODO: Verify that within a given TboxUUID, there is only one cardinality restriction for a given entityUUID
+  protected def mergeOMLCardinalityRestrictedEntities
+  (current: OMLSpecificationTypedDatasets,
+   omlTDS: Seq[(Path, OMLSpecificationTypedDatasets)])
+  (implicit spark: SparkSession, sqlContext: SQLContext)
+  : OMFError.Throwables \/ OMLSpecificationTypedDatasets
+  = {
+    val updated = omlTDS.foldLeft(current) { case (mi, (_, omlTD)) =>
+      mi.copy(
+        cardinalityRestrictedAspects =
+          (mi.cardinalityRestrictedAspects union omlTD.cardinalityRestrictedAspects).distinct,
+        cardinalityRestrictedConcepts =
+          (mi.cardinalityRestrictedConcepts union omlTD.cardinalityRestrictedConcepts).distinct,
+        cardinalityRestrictedReifiedRelationships =
+          (mi.cardinalityRestrictedReifiedRelationships union omlTD.cardinalityRestrictedReifiedRelationships).distinct
       )
     }
 

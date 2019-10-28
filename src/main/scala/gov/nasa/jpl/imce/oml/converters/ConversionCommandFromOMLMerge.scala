@@ -13,7 +13,7 @@ import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
 
 import scala.collection.immutable.{Seq, Set}
-import scala.{None, Some, StringContext, Unit}
+import scala.{None, Option, Some, StringContext, Unit}
 import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
@@ -36,6 +36,12 @@ object ConversionCommandFromOMLMerge {
     System.out.println()
     System.out.println(s"# ${t.aspects.size} aspects")
     System.out.println(s"# ${t.concepts.size} concepts")
+  }
+
+  def lookupModule(t: tables.OMLSpecificationTables, iri: tables.taggedTypes.IRI): Option[tables.Module] = {
+    t.terminologyGraphs.find(_.iri == iri) orElse
+    t.bundles.find(_.iri == iri) orElse
+    t.descriptionBoxes.find(_.iri == iri)
   }
 
   def merge
@@ -90,10 +96,6 @@ object ConversionCommandFromOMLMerge {
       outputFolder = outCatalog / up
 
       _ <- if (conversions.toOMLZip)
-        tables
-          .OMLSpecificationTables
-          .saveOMLSpecificationTables(omlTables, (outputFolder / "aggregate.omlzip").toIO) match {
-          case Success(_) =>
             allModules.foldLeft[OMFError.Throwables \/ Unit](\/-(())) {
               case (acc, (iri, ts)) =>
                 for {
@@ -112,9 +114,6 @@ object ConversionCommandFromOMLMerge {
                   }
                 } yield ()
             }
-          case Failure(t) =>
-            -\/(Set(t))
-        }
       else
         \/-(())
 
@@ -142,6 +141,21 @@ object ConversionCommandFromOMLMerge {
 
       ts = gorder.map(iri => iri -> allModules(iri))
 
+      _ = {
+        System.out.println(s"Ordered ${ts.size} modules")
+        ts.foreach { case (iri, ti) =>
+          lookupModule(ti, iri) match {
+            case Some(_: tables.TerminologyGraph) =>
+              System.out.println(s"TerminologyGraph: $iri")
+            case Some(_: tables.Bundle) =>
+              System.out.println(s"Bundle          : $iri")
+            case Some(_: tables.DescriptionBox) =>
+              System.out.println(s"DescriptionBox  : $iri")
+            case _ =>
+              System.out.println(s"N/A - error!!!  : $iri")
+          }
+        }
+      }
       extents <- ResolverUtilities.resolveTables(ResolverUtilities.initializeResolver(), ts)
 
       // List of module IRIs
