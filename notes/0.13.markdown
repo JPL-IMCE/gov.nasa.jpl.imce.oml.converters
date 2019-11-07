@@ -3,3 +3,5 @@ gov.nasa.jpl.imce.oml.converters 0.13.x is a significant update of 0.12.x
 # Issues Resolved:
 
 ## [#83 Subtle problems with merge function](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/83)
+
+## [#85 Enabling conversion from json to owl where multiple modules are involved.](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/85)
