@@ -18,7 +18,7 @@
 
 package gov.nasa.jpl.imce.oml.converters.internal
 
-import ammonite.ops.{Path,write}
+import ammonite.ops.{Path, write}
 import java.lang.{IllegalArgumentException, System}
 import java.util.UUID
 
@@ -37,12 +37,10 @@ import gov.nasa.jpl.omf.scala.core.OMFError
 import org.semanticweb.owlapi.model.IRI
 
 import scala.collection.immutable.{::, Iterable, List, Map, Nil, Seq, Set, Vector}
-import scala.{Boolean, Function, None, Option, Some, StringContext, Unit}
+import scala.{Boolean, None, Option, Some, StringContext, Tuple3, Unit}
 import scala.Predef.{ArrowAssoc, String}
-import scala.util.control.Exception._
 import scalaz._
 import Scalaz._
-import org.semanticweb.owlapi.formats.OWLXMLDocumentFormatFactory
 
 import scala.collection.mutable
 //import org.semanticweb.owlapi.formats.FunctionalSyntaxDocumentFormatFactory
@@ -64,16 +62,19 @@ object OMLResolver2Ontology {
     out_drc <- outStore.loadBuiltinDatatypeMap()
     om <- outStore.initializeOntologyMapping(out_drc)
 
-    r2oModules <- extents.foldLeft {
-      OMLResolver2Ontology(om, outStore).right[OMFError.Throwables]
+    r2oModules_builtins <- extents.foldLeft[Throwables \/ (OMLResolver2Ontology, Vector[(api.Extent, api.Module, OMLResolver2Ontology.MutableTboxOrDbox)])] {
+      (OMLResolver2Ontology(om, outStore), Vector.empty).right[OMFError.Throwables]
     } { case (acc, apiExtent) =>
       for {
-        prev <- acc
-        next <- OMLResolver2Ontology.convertExtent(prev)(apiExtent)
-      } yield next
+        prev_tuple <- acc
+        (prev, builtins0) = prev_tuple
+        next_tuple <- OMLResolver2Ontology.convertExtent(prev)(apiExtent)
+        (next, builtins1) = next_tuple
+      } yield next -> (builtins0 ++ builtins1)
     }
 
-    r2o <- convertAllExtents(r2oModules.right)
+    (r2oModules, builtins) = r2oModules_builtins
+    r2o <- convertAllExtents(r2oModules.right, builtins)
 
     buffer = new mutable.StringBuilder()
     _ = buffer.append("---\n")
@@ -150,184 +151,116 @@ object OMLResolver2Ontology {
     }
   } yield r2o
 
-  def convertToCombinedOntology
-  (extents: Seq[api.Extent],
-   outStore: OWLAPIOMFGraphStore,
-   combinedIRI: String)
-  : Throwables \/ OMLResolver2Ontology
-  = for {
-    out_drc <- outStore.loadBuiltinDatatypeMap()
-    om <- outStore.initializeOntologyMapping(out_drc)
-
-    r2oModules <- extents.foldLeft {
-      OMLResolver2Ontology(om, outStore).right[OMFError.Throwables]
-    } { case (acc, apiExtent) =>
-      for {
-        prev <- acc
-        next <- OMLResolver2Ontology.convertExtent(prev)(apiExtent)
-      } yield next
-    }
-
-    r2o <- convertAllExtents(r2oModules.right)
-
-    tboxConversions <-
-      r2o
-        .modules
-        .foldLeft[OMFError.Throwables \/ (Seq[ImmutableTerminologyBox], OMLResolver2Ontology)] {
-        (Seq.empty[ImmutableTerminologyBox], r2o).right
-      } {
-        case (acc, m0: resolver.api.TerminologyBox) =>
-          for {
-            prev <- acc
-            (convs, r2oPrev) = prev
-            m1 <- r2oPrev.getTbox(m0)
-            _ = System.out.println(s"... Converting terminology ${m1.sig.kind}: ${m1.iri}")
-            next <- r2oPrev.ops.asImmutableTerminologyBox(m1, r2oPrev.om)(outStore).map { case (i1, omWithConv) =>
-              (convs :+ i1) -> r2oPrev.copy(om = omWithConv)
-            }
-          } yield next
-        case (acc, _) =>
-          acc
-      }
-
-    (tboxConvs, r2oTboxConv) = tboxConversions
-
-    combinedLogicalIRI = IRI.create(combinedIRI)
-    combinedOnt = outStore.ontManager.createOntology(combinedLogicalIRI)
-
-    _ <- tboxConvs.foldLeft[OMFError.Throwables \/ Unit](().right[OMFError.Throwables]) {
-      case (acc, itbox) =>
-        for {
-          _ <- acc
-          _ = if (outStore.isBuiltInIRI(itbox.iri))
-            System.out.println(s"... Skip axioms from built-in ontology ${itbox.iri}")
-          else {
-            System.out.println(s"...     Adding axioms from terminology ${itbox.iri}")
-            combinedOnt.addAxioms(itbox.ont.axioms())
-          }
-        } yield ()
-    }
-
-    dboxConversions <-
-      r2o
-        .modules
-        .foldLeft[OMFError.Throwables \/ (Seq[ImmutableDescriptionBox], OMLResolver2Ontology)] {
-        (Seq.empty[ImmutableDescriptionBox], r2oTboxConv).right
-      } {
-        case (acc, m0: resolver.api.DescriptionBox) =>
-          for {
-            prev <- acc
-            (convs, r2oPrev) = prev
-            m1 <- r2oPrev.getDbox(m0)
-            _ = System.out.println(s"... Converting description ${m1.sig.kind}: ${m1.iri}")
-            next <- r2oPrev.ops.asImmutableDescription(m1, r2oPrev.om)(outStore).map { case (i1, omWithConv) =>
-              (convs :+ i1) -> r2oPrev.copy(om = omWithConv)
-            }
-          } yield next
-        case (acc, _) =>
-          acc
-      }
-
-    (dboxConvs, _) = dboxConversions
-
-    _ <- dboxConvs.foldLeft[OMFError.Throwables \/ Unit](().right[OMFError.Throwables]) {
-      case (acc, idbox) =>
-        for {
-          _ <- acc
-          _ = System.out.println(s"...     Adding axioms from description ${idbox.iri}")
-          _ = combinedOnt.addAxioms(idbox.ont.axioms())
-        } yield ()
-    }
-
-    combinedOutputIRI = outStore.catalogIRIMapper.resolveIRI(combinedLogicalIRI, outStore.catalogIRIMapper.saveResolutionStrategy)
-
-    //format = new FunctionalSyntaxDocumentFormatFactory().createFormat()
-    format = new OWLXMLDocumentFormatFactory().createFormat()
-
-    _ <- nonFatalCatch[OMFError.Throwables \/ Unit]
-        .withApply {
-          cause: java.lang.Throwable =>
-            Set(cause).left
-        }
-        .apply {
-          outStore.ontManager.saveOntology(combinedOnt, format, combinedOutputIRI).right
-        }
-
-    _ = System.out.println(s"Saved combined ontology in Functional Syntax for at as: $combinedOutputIRI")
-  } yield r2o
-
   private def convertExtent
   (prev: OMLResolver2Ontology)
   (implicit extent: api.Extent)
-  : Throwables \/ OMLResolver2Ontology
-  = for {
-    tuple <-
-    (extent.terminologyGraphs.toList,
-      extent.bundles.toList,
-      extent.descriptionBoxes.toList) match {
-      case (g :: Nil, Nil, Nil) =>
-        Function.tupled(prev.convertTerminologyGraph _)(g)
-      case (Nil, b :: Nil, Nil) =>
-        Function.tupled(prev.convertBundle _)(b)
-      case (Nil, Nil, d :: Nil) =>
-        Function.tupled(prev.convertDescriptionBox _)(d)
-      case (gs, bs, ds) =>
-        Set[java.lang.Throwable](core.OMFError.omfError(
-          s"OMLResolver2Text.convert: extent must have a single TerminologyGraph, Bundle or DescriptionBox: " +
-            s" got ${gs.size} TerminologyGraphs, ${bs.size} Bundles, ${ds.size} DescriptionBoxes")).left
-    }
+  : Throwables \/ (OMLResolver2Ontology, Vector[(api.Extent, api.Module, OMLResolver2Ontology.MutableTboxOrDbox)])
+  = convertExtentModules(
+    prev,
+    extent.terminologyGraphs.toList ++ extent.bundles.toList ++ extent.descriptionBoxes.toList)
 
-    (next, m0, m1, i) = tuple
-
-    iri = m0.iri
-
-    updated = next.copy(extents = next.extents + extent)
-
-    result <- if (updated.om.drc.isBuiltInModule(i)(updated.ops)) {
-      System.out.println(s"==> OMLResolver2Ontology w/ builtin: $iri")
-      updated.withBuiltIn(m0, m1)(extent)
-    } else {
-      //System.out.println(s"==> OMLResolver2Ontology converting: $iri")
-      //convert(updated.right[Throwables], extent, iri, m0, m1, i)
-      updated.right
-    }
-  } yield result
+  @scala.annotation.tailrec
+  private def convertExtentModules
+  (prev: OMLResolver2Ontology,
+   tuples: List[(api.taggedTypes.ModuleUUID, api.Module)],
+   builtins: Vector[(api.Extent, api.Module, OMLResolver2Ontology.MutableTboxOrDbox)] = Vector.empty)
+  (implicit extent: api.Extent)
+  : Throwables \/ (OMLResolver2Ontology, Vector[(api.Extent, api.Module, OMLResolver2Ontology.MutableTboxOrDbox)])
+  = tuples match {
+    case Nil =>
+      (prev, builtins).right
+    case (uuid, m) :: rest =>
+      m match {
+        case g: api.TerminologyGraph =>
+          prev.convertTerminologyGraph(uuid, g) match {
+            case \/-((converted, m0, m1, i)) =>
+              val updated = converted.copy(extents = converted.extents + extent)
+              val next = if (updated.om.drc.isBuiltInModule(i)(updated.ops)) {
+                builtins :+ Tuple3(extent, m0, m1)
+              } else {
+                builtins
+              }
+              convertExtentModules(updated, rest, next)
+            case -\/(errors) =>
+              -\/(errors)
+          }
+        case b: api.Bundle =>
+          prev.convertBundle(uuid, b) match {
+            case \/-((converted, m0, m1, i)) =>
+              val updated = converted.copy(extents = converted.extents + extent)
+              val next = if (updated.om.drc.isBuiltInModule(i)(updated.ops)) {
+                builtins :+ Tuple3(extent, m0, m1)
+              } else {
+                builtins
+              }
+              convertExtentModules(updated, rest, next)
+            case -\/(errors) =>
+              -\/(errors)
+          }
+        case d: api.DescriptionBox =>
+          prev.convertDescriptionBox(uuid, d) match {
+            case \/-((converted, m0, m1, i)) =>
+              val updated = converted.copy(extents = converted.extents + extent)
+              val next = if (updated.om.drc.isBuiltInModule(i)(updated.ops)) {
+                builtins :+ Tuple3(extent, m0, m1)
+              } else {
+                builtins
+              }
+              convertExtentModules(updated, rest, next)
+            case -\/(errors) =>
+              -\/(errors)
+          }
+      }
+  }
 
   // , iri: tables.taggedTypes.IRI, m0: api.Module, m1: MutableTboxOrDbox, i: IRI
-  private def convertAllExtents(c00: Throwables \/ OMLResolver2Ontology)
+  private def convertAllExtents(c00: Throwables \/ OMLResolver2Ontology, builtins: Vector[(api.Extent, api.Module, OMLResolver2Ontology.MutableTboxOrDbox)])
   : Throwables \/ OMLResolver2Ontology
   = for {
-    // AnnotationProperties
     c10 <- c00
+    _ = System.out.println("... converting AnnotationProperties")
     c11 <- convertAnnotationProperties(c10)
-    c1N = c11
+    c12 <- builtins.foldLeft[Throwables \/ OMLResolver2Ontology](c11.right) {
+      case (\/-(acc), (ext, m0, m1)) =>
+        acc.withBuiltInAnnotations(m0, m1)(ext)
+      case (-\/(errors), _) =>
+        -\/(errors)
+    }
+    c1N = c12
 
-    // TerminologyExtensions
+    _ = System.out.println("... converting TerminologyExtensions")
+
     c20 = c1N
     c21 <- convertTerminologyExtensions(c20)
     c2N = c21
 
-    // Atomic Entities & DataTypes
+    _ = System.out.println("... converting Atomic Entities & DataTypes")
     c30 = c2N
     c31 <- c30.queue_elements.foldLeft(c30.right[Throwables])(convertAspectOrConcept)
     c32 <- convertStructures(c31)
     c33 <- convertScalars(c32)
-    c3N = c33
+    c34 <- builtins.foldLeft[Throwables \/ OMLResolver2Ontology](c33.right) {
+      case (\/-(acc), (ext, m0, m1)) =>
+        acc.withBuiltInDataRanges(m0, m1)(ext)
+      case (-\/(errors), _) =>
+        -\/(errors)
+    }
+    c3N = c34
 
-    // Data Ranges
+    _ = System.out.println("... converting Data Ranges")
 
     c40 = c3N
     c41 <- convertRestrictedDataRanges(c40)
     c42 <- convertScalarOneOfLiteralAxioms(c41)
     c4N = c42
 
-    // Relational constructs
+    _ = System.out.println("... converting Relational constructs")
 
     c50 = c4N
     c51 <- eliminationConverter1(\/-(c50))
     c5N = c51
 
-    // DataRelationships
+    _ = System.out.println("... converting DataRelationships")
 
     c60 = c5N
     c61 <- convertEntityScalarDataProperties(c60)
@@ -336,21 +269,21 @@ object OMLResolver2Ontology {
     c64 <- convertStructuredDataProperties(c63)
     c6N = c64
 
-    // Restrictions
+    _ = System.out.println("... converting Restrictions")
 
     c70 = c6N
     c71 <- convertEntityRestrictionAxioms(c70)
     c72 <- convertEntityDataPropertyRestrictionAxioms(c71)
     c7N = c72
 
-    // Specializations
+    _ = System.out.println("... converting Specializations")
 
     c80 = c7N
     c81 <- convertSpecializationAxioms(c80)
     c82 <- convertSubPropertyOfAxioms(c81)
     c8N = c82
 
-    // Disjunctions
+    _ = System.out.println("... converting Disjunctions")
 
     c90 = c8N
     c91 <- convertRootConceptTaxonomyAxioms(c90)
@@ -360,7 +293,8 @@ object OMLResolver2Ontology {
     cA1 <- convertChainRules(cA0)
     cAN = cA1
 
-    // ConceptualEntityInstances & UnreifiedRelationshipInstanceTuples
+    _ = System.out.println("... converting ConceptualEntityInstances & UnreifiedRelationshipInstanceTuples")
+
     cB0 = cAN
     cB1 <- convertConceptInstances(cB0)
     cB2 <- convertReifiedRelationshipInstances(cB1)
@@ -369,7 +303,8 @@ object OMLResolver2Ontology {
     cB5 <- convertUnreifiedReifiedRelationshipInstanceTuples(cB4)
     cBN = cB5
 
-    // Data Property Values
+    _ = System.out.println("... converting Data Property Values")
+
     cC0 = cBN
     cC1 <- convertSingletonInstanceScalarDataPropertyValues(cC0)
     cC2 <- convertSingletonInstanceStructuredDataPropertyValues(cC1)
@@ -377,12 +312,14 @@ object OMLResolver2Ontology {
     cC4 <- convertScalarDataPropertyValues(cC3)
     cCN = cC4
 
-    // Annotations
+    _ = System.out.println("... converting Annotations")
+
     cD0 = cCN
     cD1 <- convertAnnotations(cD0)
     cDN = cD1
 
-    // Finished!
+    _ = System.out.println("... Finished")
+
     result = cDN
   } yield result
 
@@ -2225,46 +2162,56 @@ case class OMLResolver2Ontology
   = queue_edges.isEmpty &&
     queue_elements.isEmpty
 
-  def withBuiltIn
+  def withBuiltInAnnotations
   (m0: api.Module, m1: OMLResolver2Ontology.MutableTboxOrDbox)
   (implicit ext: api.Extent)
   : core.OMFError.Throwables \/ OMLResolver2Ontology
   = (m0, m1) match {
     case (g0: api.TerminologyGraph, -\/(g1: owlapiterminologies.TerminologyGraph)) =>
 
-      val r2oWithAPS
-      : core.OMFError.Throwables \/ OMLResolver2Ontology
-      = ext
+      ext
         .annotationProperties
         .foldLeft[core.OMFError.Throwables \/ OMLResolver2Ontology](this.right) {
-        case (acc1, (t0: api.TerminologyBox, aps0)) =>
-          for {
-            r2o <- acc1
-            t1 <- r2o.getTbox(t0)
-            next <- aps0.foldLeft(acc1) { case (acc2, ap0) =>
-              for {
-                prev <- acc2
-                apUUID = ap0.uuid
-                aps1 = t1.annotationProperties()
-                f1 = aps1.find(_.uuid == apUUID.toString)
-                updated <- f1 match {
+          case (acc1, (t0: api.TerminologyBox, aps0)) =>
+            for {
+              r2o <- acc1
+              t1 <- r2o.getTbox(t0)
+              next <- aps0.foldLeft(acc1) { case (acc2, ap0) =>
+                for {
+                  prev <- acc2
+                  apUUID = ap0.uuid
+                  aps1 = t1.annotationProperties()
+                  f1 = aps1.find(_.uuid == apUUID.toString)
+                  updated <- f1 match {
                     case Some(ap1) =>
                       prev.copy(aps = prev.aps + (ap0 -> ap1)).right
                     case _ =>
                       Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
                         s"withBuiltIn: Failed to lookup annotation property: $ap0 from ${g1.iri}")).left
                   }
-              } yield updated
-            }
-          } yield next
-        case (acc, _) =>
-          acc
-      }
+                } yield updated
+              }
+            } yield next
+          case (acc, _) =>
+            acc
+        }
+
+    case _ =>
+      Set[java.lang.Throwable](new java.lang.IllegalArgumentException(
+        s"withBuiltIn: Invalid modules: m0=$m0, m1=$m1")).left
+  }
+
+  def withBuiltInDataRanges
+  (m0: api.Module, m1: OMLResolver2Ontology.MutableTboxOrDbox)
+  (implicit ext: api.Extent)
+  : core.OMFError.Throwables \/ OMLResolver2Ontology
+  = (m0, m1) match {
+    case (g0: api.TerminologyGraph, -\/(g1: owlapiterminologies.TerminologyGraph)) =>
 
       g0
         .moduleElements()
         .selectByKindOf { case d0: api.DataRange => d0 }
-        .foldLeft[core.OMFError.Throwables \/ OMLResolver2Ontology](r2oWithAPS) {
+        .foldLeft[core.OMFError.Throwables \/ OMLResolver2Ontology](this.right) {
         case (\/-(r2o), d0) =>
           g1.lookupTerm(d0.iri().map(IRI.create), recursively=false)(this.omfStore) match {
             case Some(d1: owlapi.types.terms.DataRange) =>

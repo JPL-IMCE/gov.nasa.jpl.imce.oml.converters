@@ -334,7 +334,6 @@ object ConversionCommand {
 
   case class OutputConversions
   (toOWL: Boolean=false,
-   toOWLCombined: Option[String]=None,
    toText: Boolean=false,
    toOMLZip: Boolean=false,
    toParquetEach: Boolean=false,
@@ -346,7 +345,7 @@ object ConversionCommand {
 
     val toParquet: Boolean = toParquetEach || toParquetAggregate
 
-    val isEmpty: Boolean = !toOWL && toOWLCombined.isEmpty && !toText && !toOMLZip && !toParquet && toSQL.isEmpty
+    val isEmpty: Boolean = !toOWL && !toText && !toOMLZip && !toParquet && toSQL.isEmpty
 
     def addCatalog(c: Path): OutputConversions = copy(catalog = Some(c))
 
