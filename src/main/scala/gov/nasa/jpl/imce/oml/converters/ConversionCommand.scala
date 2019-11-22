@@ -45,8 +45,8 @@ trait ConversionCommand {
 
   def convert
   (omlCatalogScope: OMLCatalogScope,
-    outCatalog: Option[Path],
-    options: OMLConverter.Options)
+   outCatalog: Option[Path],
+   options: OMLConverter.Options)
   (implicit spark: SparkSession, sqlContext: SQLContext)
   : OMFError.Throwables \/ (Option[CatalogScope], Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
 }
@@ -58,20 +58,30 @@ object ConversionCommand {
   = message + problems.mkString("\n => ", "\n => ", "\n")
 
   sealed abstract trait ConversionFrom
+
   case object ConversionFromUnspecified extends ConversionFrom
+
   case object ConversionFromOWL extends ConversionFrom
+
   case object ConversionFromText extends ConversionFrom
+
   case object ConversionFromOWLZip extends ConversionFrom
+
   case object ConversionFromParquet extends ConversionFrom
+
   case object ConversionFromSQL extends ConversionFrom
 
   sealed abstract trait Request {
-    val from: ConversionFrom=ConversionFromUnspecified
+    val from: ConversionFrom = ConversionFromUnspecified
 
     def addCatalog(catalog: Path): Request
+
     def addMergeFolder(folder: Path): Request
+
     def addParquetFolder(folder: Path): Request
+
     def addDir1Folder(folder: Path): Request
+
     def addDir2Folder(folder: Path): Request
 
     def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
@@ -120,9 +130,13 @@ object ConversionCommand {
   case class NoRequest() extends Request {
 
     override def addCatalog(catalog: Path): Request = this
+
     override def addMergeFolder(folder: Path): Request = this
+
     override def addParquetFolder(folder: Path): Request = this
+
     override def addDir1Folder(folder: Path): Request = this
+
     override def addDir2Folder(folder: Path): Request = this
 
     override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
@@ -145,7 +159,7 @@ object ConversionCommand {
 
     override def check(output: OutputConversions, outputFolder: Option[Path], deleteIfExists: Boolean): Either[String, Unit]
     = if (folders.isEmpty)
-        Left("No OML Catalogs specified.")
+      Left("No OML Catalogs specified.")
     else {
       val catalogOccurences
       : Map[Path, Int]
@@ -163,8 +177,8 @@ object ConversionCommand {
         Left(
           redundantCatalogs
             .foldLeft(s"${redundantCatalogs.size} redundant 'oml.parquet' folders specified!\n") { case (acc, (c, n)) =>
-            acc + s"=> $n options duplicate 'oml.parquet' folders: $c\n"
-          })
+              acc + s"=> $n options duplicate 'oml.parquet' folders: $c\n"
+            })
     }
   }
 
@@ -199,7 +213,7 @@ object ConversionCommand {
   }
 
   case class CatalogInputConversion
-  (override val from: ConversionFrom=ConversionFromUnspecified
+  (override val from: ConversionFrom = ConversionFromUnspecified
   ) extends Request {
 
     override def addCatalog(catalogFile: Path): Request
@@ -219,7 +233,7 @@ object ConversionCommand {
   }
 
   case class CatalogInputConversionWithCatalog
-  (override val from: ConversionFrom=ConversionFromUnspecified,
+  (override val from: ConversionFrom = ConversionFromUnspecified,
    catalog: Path
   ) extends Request {
 
@@ -254,7 +268,8 @@ object ConversionCommand {
   }
 
   case class ParquetInputConversion() extends Request {
-    override val from: ConversionFrom=ConversionFromUnspecified
+    override val from: ConversionFrom = ConversionFromUnspecified
+
     override def addCatalog(catalog: Path): Request = this
 
     override def addMergeFolder(catalog: Path): Request = this
@@ -272,7 +287,7 @@ object ConversionCommand {
 
   case class ParquetInputConversionWithFolder
   (folder: Path) extends Request {
-    override val from: ConversionFrom=ConversionFromUnspecified
+    override val from: ConversionFrom = ConversionFromUnspecified
 
     override def addCatalog(catalog: Path): Request = this
 
@@ -298,7 +313,7 @@ object ConversionCommand {
   }
 
   case class SQLInputConversion() extends Request {
-    override val from: ConversionFrom=ConversionFromSQL
+    override val from: ConversionFrom = ConversionFromSQL
 
     override def addCatalog(catalog: Path): Request = this
 
@@ -316,7 +331,7 @@ object ConversionCommand {
   }
 
   case class SQLInputConversionWithServer(server: String) extends Request {
-    override val from: ConversionFrom=ConversionFromSQL
+    override val from: ConversionFrom = ConversionFromSQL
 
     override def addCatalog(catalog: Path): Request = this
 
@@ -333,15 +348,15 @@ object ConversionCommand {
   }
 
   case class OutputConversions
-  (toOWL: Boolean=false,
-   toText: Boolean=false,
-   toOMLZip: Boolean=false,
-   toParquetEach: Boolean=false,
-   toParquetAggregate: Boolean=false,
-   toSQL: Option[String]=None,
-   catalog: Option[Path]=None,
-   fuseki: Option[URL]=None,
-   modules: Option[Path]=None) {
+  (toOWL: Boolean = false,
+   toText: Boolean = false,
+   toOMLZip: Boolean = false,
+   toParquetEach: Boolean = false,
+   toParquetAggregate: Boolean = false,
+   toSQL: Option[String] = None,
+   catalog: Option[Path] = None,
+   fuseki: Option[URL] = None,
+   modules: Option[Path] = None) {
 
     val toParquet: Boolean = toParquetEach || toParquetAggregate
 
@@ -359,7 +374,10 @@ object ConversionCommand {
       }
   }
 
-  def createOMFStoreAndLoadCatalog(catalogFile: Path)
+  def createOMFStoreAndLoadCatalog(catalogFile: Path,
+                                   excludeOMLImports: Boolean,
+                                   excludeOMLContent: Boolean,
+                                   excludePurlImports: Boolean)
   : OMFError.Throwables \/ (OWLAPIOMFGraphStore, CatalogScope)
   = nonFatalCatch[OMFError.Throwables \/ (OWLAPIOMFGraphStore, CatalogScope)]
     .withApply {
@@ -381,7 +399,10 @@ object ConversionCommand {
           },
         OWLManager.createOWLOntologyManager(),
         cr,
-        cat
+        cat,
+        excludeOMLImports = excludeOMLImports,
+        excludeOMLContent = excludeOMLContent,
+        excludePurlImports = excludePurlImports
       )
 
       omfStore.catalogIRIMapper

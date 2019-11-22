@@ -169,126 +169,132 @@ OML supports three canonical representations:
   Produces:
   
   ```
-     BuildInfo name: gov.nasa.jpl.imce.oml.converters, version: <version>, scalaVersion: <scala version>, sbtVersion: <sbt version>, buildDateUTC: <build date>
-     Usage: omlConverter [text|owl|json|parquet|sql|diff|merge] [options] <args>...
-     
-     Command: text [options] [<oml.catalog.xml>]
-       Converts all input OML textual syntax files ('*.oml' and/or '*.omlzip') found in scope of an `oml.catalog.xml`
-     
-       [options]:
-       --resolve:all            Invoke EcoreUtils.resolveAll() before conversion
-     
-       required arguments:
-       <oml.catalog.xml>        An OASIS XML Catalog file named 'oml.catalog.xml' to search for '*.oml' and '*.oml.zip' files.
-     
-     
-     Command: owl [<oml.catalog.xml>]
-       Converts all input OML files in OWL2-DL + SWRL rules ('*.owl') found in scope of an `oml.catalog.xml`
-     
-       required arguments:
-       <oml.catalog.xml>        An OASIS XML Catalog file named 'oml.catalog.xml' to search for '*.owl' files.
-     
-     
-     Command: json [<oml.catalog.xml>]
-       Converts all input OML tabular json archive files ('*.omlzip') found in scope of an `oml.catalog.xml`
-     
-       required arguments:
-       <oml.catalog.xml>        An OASIS XML Catalog file named 'oml.catalog.xml' to search for '*.omlzip' files.
-     
-     
-     Command: parquet <oml.parquet folder>
-       Convert from folders of OML parquet table files, '<dir>/<oml table>.parquet'.
-     
-       required arguments:
-       <oml.parquet folder>     A folder of OML parquet table files: '<dir>/<oml table>.parquet'.
-     
-     
-     Command: sql <server>
-       Convert from an SQL server.
-     
-       required arguments:
-       <server>                 SQL server
-     
-     Command: diff <dir1> <dir2>
-       Compare OML files recursively between two directories.
-     
-       required arguments:
-       <dir1>                   Left side comparison, <dir1>.
-       <dir2>                   Right side comparison, <dir2>.
-     
-     Command: merge <oml.parquet folder>...
-       Merge OML content from multiple 'oml.parquet' folders.
-       To merge OML content from different representations (e.g., text, owl, json, ...),
-       first convert each representation to parquet, then merge the resulting 'oml.parquet' folders.
-     
-       required arguments:
-       <oml.parquet folder>...  One or more paths to 'oml.parquet' folders to include in the merge.
-     
-     General Options:
-     
-       --version                Shows build information.
-     
-       --help                   Prints usage information about the OML Converter.
-                                For help about launcher arguments, try: -h.
-                                To specify system properties, use:
-                                  -Dkey1=val1 ... -DkeyN=valN -- <OML Converter command & option arguments>
-                                Example for Apache SPARK properties:
-                                  -Dspark.app.name=MyConversion -Dspark.master=local[8] ... -- ...
-                                Example for Apache SPARK monitoring:
-                                  -Dspark.eventLog.enabled=true -Dspark.eventLog.dir=file:///tmp/spark-events ... -- ...
-                                Note: current directory:
-                                /opt/local/imce/users/nfr/github.imce/gov.nasa.jpl.imce.oml.converters/.idea/modules
-     
-     
-       -v:files, --verbose:files
-                                Verbose: show the input files found for each 'rewriteURI' entry of an OML Catalog.
-     
-       -out:modules, --output:modules <value>
-                                For conversion to OWL, writes a YAML file with a IRI to file location mapping for each converted OML module.
-                                For other conversions, writes a text file with the list of IRIs of all OML modules.
-                                (Not applicable for 'diff' command).
-     
-       -out:cat, --output:catalog <value>
-                                Output catalog where to write conversion results.
-                                (Cannot be used with --output or -out).
-     
-       -out, --output <value>   Output folder where to write conversion results.
-                                (Cannot be used with --output:catalog or -out:cat).
-     
-       -out:fuseki, --output:fuseki <value>
-                                Output to a fuseki server where <value> is a fuseki server url of the form:
-                                http://<hostname>:<port>/<datasetname> (i.e. without the '/data' suffix)
-                                Requires output conversion with --owl or -o.
-                                Requires the Jena Fuseki command 's-put' to be available on the path.
-                                Requires the Jena Fuseki dataset to exist.
-                                (Not applicable for 'diff' command).
-     
-       --clear                  Make sure the output folder is deleted (if it exists) and is created empty before writing conversion results.
-     
-       --hsort                  Hierarchically sort the hypergraph of OML Modules before output conversion (default = false)
-     
-       -t, --text               Output conversion includes OML as textual syntax '*.oml' files
-                                (Not applicable for 'merge' command).
-     
-       -o, --owl                Output conversion includes OWL2-DL + SWRL rule '*.owl' ontology files, one for each OML module.
-                                (Not applicable for 'merge' command).
-     
-       -j, --json               Output conversion includes archive files, '*.omlzip' of OML json tables, one for each OML module.
-                                (Not applicable for 'merge' command).
-     
-       -p:each, --parquet:each  Output conversion includes 'oml.parquet' output folders, one for each OML module.
-                                (Caution: this is slow!)
-                                Note: Ignore warnings from Apache Spark like this for some <N> and <S>:
-                                WARN TaskSetManager: Stage <N> contains a task of very large size (<S> KB). The maximum recommended task size is 100 KB.
-     
-       -p, --parquet            Output conversion aggregates all OML modules into a single 'oml.parquet' output folder.
-                                Note: Ignore warnings from Apache Spark like this for some <N> and <S>:
-                                WARN TaskSetManager: Stage <N> contains a task of very large size (<S> KB). The maximum recommended task size is 100 KB.
-     
-       -s, --sql <value>        Output conversion aggregates all OML modules into OML data stored on an SQL server.
-     
-     
-     Build information
-     name: gov.nasa.jpl.imce.oml.converters, version: <version>, scalaVersion: <scala version>, sbtVersion: <sbt version>, buildDateUTC: <build date>
+    BuildInfo name: gov.nasa.jpl.imce.oml.converters, version: 0.12-ed864e66ee04f0849ab7d2a77cc349ba1f43e7f6-SNAPSHOT, scalaVersion: 2.11.11, sbtVersion: 0.13.18, buildDateUTC: 2019-11-22-00:33
+    Usage: omlConverter [text|owl|json|parquet|sql|diff|merge] [options] <args>...
+    
+    Command: text [options] [<oml.catalog.xml>]
+      Converts all input OML textual syntax files ('*.oml' and/or '*.omlzip') found in scope of an `oml.catalog.xml`
+    
+      [options]:
+      --resolve:all            Invoke EcoreUtils.resolveAll() before conversion
+    
+      required arguments:
+      <oml.catalog.xml>        An OASIS XML Catalog file named 'oml.catalog.xml' to search for '*.oml' and '*.oml.zip' files.
+    
+    
+    Command: owl [<oml.catalog.xml>]
+      Converts all input OML files in OWL2-DL + SWRL rules ('*.owl') found in scope of an `oml.catalog.xml`
+    
+      required arguments:
+      <oml.catalog.xml>        An OASIS XML Catalog file named 'oml.catalog.xml' to search for '*.owl' files.
+    
+    
+    Command: json [<oml.catalog.xml>]
+      Converts all input OML tabular json archive files ('*.omlzip') found in scope of an `oml.catalog.xml`
+    
+      required arguments:
+      <oml.catalog.xml>        An OASIS XML Catalog file named 'oml.catalog.xml' to search for '*.omlzip' files.
+    
+    
+    Command: parquet <oml.parquet folder>
+      Convert from folders of OML parquet table files, '<dir>/<oml table>.parquet'.
+    
+      required arguments:
+      <oml.parquet folder>     A folder of OML parquet table files: '<dir>/<oml table>.parquet'.
+    
+    
+    Command: sql <server>
+      Convert from an SQL server.
+    
+      required arguments:
+      <server>                 SQL server
+    
+    Command: diff <dir1> <dir2>
+      Compare OML files recursively between two directories.
+    
+      required arguments:
+      <dir1>                   Left side comparison, <dir1>.
+      <dir2>                   Right side comparison, <dir2>.
+    
+    Command: merge <oml.parquet folder>...
+      Merge OML content from multiple 'oml.parquet' folders.
+      To merge OML content from different representations (e.g., text, owl, json, ...),
+      first convert each representation to parquet, then merge the resulting 'oml.parquet' folders.
+    
+      required arguments:
+      <oml.parquet folder>...  One or more paths to 'oml.parquet' folders to include in the merge.
+    
+    General Options:
+    
+      --version                Shows build information.
+    
+      --help                   Prints usage information about the OML Converter.
+                               For help about launcher arguments, try: -h.
+                               To specify system properties, use:
+                                 -Dkey1=val1 ... -DkeyN=valN -- <OML Converter command & option arguments>
+                               Example for Apache SPARK properties:
+                                 -Dspark.app.name=MyConversion -Dspark.master=local[8] ... -- ...
+                               Example for Apache SPARK monitoring:
+                                 -Dspark.eventLog.enabled=true -Dspark.eventLog.dir=file:///tmp/spark-events ... -- ...
+                               Note: current directory:
+                               /opt/local/imce/github.jpl-imce/gov.nasa.jpl.imce.oml.converters
+    
+    
+      -v:files, --verbose:files
+                               Verbose: show the input files found for each 'rewriteURI' entry of an OML Catalog.
+    
+      -out:modules, --output:modules <value>
+                               For conversion to OWL, writes a YAML file with a IRI to file location mapping for each converted OML module.
+                               For other conversions, writes a text file with the list of IRIs of all OML modules.
+                               (Not applicable for 'diff' command).
+    
+      -out:cat, --output:catalog <value>
+                               Output catalog where to write conversion results.
+                               (Cannot be used with --output or -out).
+    
+      -out, --output <value>   Output folder where to write conversion results.
+                               (Cannot be used with --output:catalog or -out:cat).
+    
+      -out:fuseki, --output:fuseki <value>
+                               Output to a fuseki server where <value> is a fuseki server url of the form:
+                               http://<hostname>:<port>/<datasetname> (i.e. without the '/data' suffix)
+                               Requires output conversion with --owl or -o.
+                               Requires the Jena Fuseki command 's-put' to be available on the path.
+                               Requires the Jena Fuseki dataset to exist.
+                               (Not applicable for 'diff' command).
+    
+      --clear                  Make sure the output folder is deleted (if it exists) and is created empty before writing conversion results.
+    
+      --hsort                  Disable hierarchically sort the hypergraph of OML Modules before output conversion (default = enabled)
+    
+      -t, --text               Output conversion includes OML as textual syntax '*.oml' files
+                               (Not applicable for 'merge' command).
+    
+      -o, --owl                Output conversion includes OWL2-DL + SWRL rules '*.owl' ontology files, one for each OML module.
+                               (Not applicable for 'merge' command).
+    
+      -j, --json               Output conversion includes archive files, '*.omlzip' of OML json tables, one for each OML module.
+                               (Not applicable for 'merge' command).
+    
+      -p:each, --parquet:each  Output conversion includes 'oml.parquet' output folders, one for each OML module.
+                               (Caution: this is slow!)
+                               Note: Ignore warnings from Apache Spark like this for some <N> and <S>:
+                               WARN TaskSetManager: Stage <N> contains a task of very large size (<S> KB). The maximum recommended task size is 100 KB.
+    
+      -p, --parquet            Output conversion aggregates all OML modules into a single 'oml.parquet' output folder.
+                               Note: Ignore warnings from Apache Spark like this for some <N> and <S>:
+                               WARN TaskSetManager: Stage <N> contains a task of very large size (<S> KB). The maximum recommended task size is 100 KB.
+    
+      -s, --sql <value>        Output conversion aggregates all OML modules into OML data stored on an SQL server.
+    
+    
+    Build information
+    name: gov.nasa.jpl.imce.oml.converters, version: 0.12-ed864e66ee04f0849ab7d2a77cc349ba1f43e7f6-SNAPSHOT, scalaVersion: 2.11.11, sbtVersion: 0.13.18, buildDateUTC: 2019-11-22-00:33
+    
+      --excludeOMLImports      Excludes OML imports in OWL output.
+    
+      --excludeOMLContents     Excludes OML imports and content in OWL output.
+    
+      --excludePurlImports     Excludes purl.org imports in OWL output.
           
   ```

@@ -51,7 +51,10 @@ object OMLConverter {
    outputFolder: Option[Path] = None,
    verboseFiles: Boolean = false,
    resolveAll: Boolean = false,
-   hierarchicalSort: Boolean = true
+   hierarchicalSort: Boolean = true,
+   excludeOMLImports: Boolean = false,
+   excludeOMLContent: Boolean = false,
+   excludePurlImports: Boolean = false
   )
 
   def getAbsolutePath(f: File)
@@ -446,6 +449,33 @@ object OMLConverter {
     note(BuildInfo.toString)
     note("")
 
+    opt[Unit]("excludeOMLImports")
+      .text(
+        """Excludes OML imports in OWL output.
+          |""".stripMargin)
+      .optional()
+      .action { (_, c) =>
+        c.copy(excludeOMLImports = true)
+      }
+
+    opt[Unit]("excludeOMLContents")
+      .text(
+        """Excludes OML imports and content in OWL output.
+          |""".stripMargin)
+      .optional()
+      .action { (_, c) =>
+        c.copy(excludeOMLContent = true, excludeOMLImports = true)
+      }
+
+    opt[Unit]("excludePurlImports")
+      .text(
+        """Excludes purl.org imports in OWL output.
+          |""".stripMargin)
+      .optional()
+      .action { (_, c) =>
+        c.copy(excludePurlImports = true)
+      }
+
     checkConfig(o => o.input.check(o.output, o.outputFolder, o.deleteOutputIfExists))
 
   }
@@ -454,10 +484,11 @@ object OMLConverter {
 
     val t0 = System.currentTimeMillis()
 
+    System.out.println(BuildInfo.toString)
     System.out.println(argv.mkString("# Running:\n#\n# omlConverter \\\n# ", " \\\n# ", "\n#\n"))
 
     optionsParser.parse(argv, Options()) match {
-      case Some(Options(ConversionCommand.NoRequest(), _, _, _, _, _, _)) =>
+      case Some(Options(ConversionCommand.NoRequest(), _, _, _, _, _, _, _, _, _)) =>
         System.err.println("Abnormal exit; no command requested.")
         sys.exit(-1)
 
@@ -470,7 +501,7 @@ object OMLConverter {
             internal.makeOutputCatalogIfNeeded(options.deleteOutputIfExists, options.outputFolder, options.output.catalog) match {
               case \/-(outCatalogPath) =>
                 parquetInputConversion(
-                 p, outCatalogPath, options.output, options.deleteOutputIfExists, options.outputFolder)
+                 p, outCatalogPath, options.output, options.deleteOutputIfExists, options.outputFolder, options)
 
               case -\/(errors) =>
                 internal.showErrorsAndExit(errors)
@@ -513,7 +544,7 @@ object OMLConverter {
             internal.makeOutputCatalogIfNeeded(options.deleteOutputIfExists, options.outputFolder, options.output.catalog) match {
               case \/-(outCatalogPath) =>
                 ConversionCommandFromOMLSQL
-                  .sqlInputConversion(s, options, outCatalogPath)
+                  .sqlInputConversion(s, options, outCatalogPath, excludeOMLImports = options.excludeOMLImports, excludeOMLContent = options.excludeOMLContent, excludePurlImports = options.excludePurlImports)
 
               case -\/(errors) =>
                 internal.showErrorsAndExit(errors)
@@ -532,7 +563,10 @@ object OMLConverter {
 
                 ConversionCommandFromOMLMerge
                   .merge(
-                    m, options, outCatalogPath) match {
+                    m, options, outCatalogPath,
+                    excludeOMLImports = options.excludeOMLImports,
+                    excludeOMLContent = options.excludeOMLContent,
+                    excludePurlImports = options.excludePurlImports) match {
                   case \/-((outCatalog, ts)) =>
                     if (options.output.toParquet)
                       internal.toParquet(options.output, outCatalog, outCatalogPath / up, ts)
@@ -567,7 +601,8 @@ object OMLConverter {
    outCatalog: Path,
    output: ConversionCommand.OutputConversions,
    deleteOutputIfExists: Boolean,
-   outputFolder: Option[Path])
+   outputFolder: Option[Path],
+   options: Options)
   : Unit
   = {
     import internal.covariantOrdering
@@ -664,7 +699,10 @@ object OMLConverter {
 
       _ <- if (output.toOWL) {
         for {
-          out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
+          out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog,
+            excludeOMLImports = options.excludeOMLImports,
+            excludeOMLContent = options.excludeOMLContent,
+            excludePurlImports = options.excludePurlImports)
           (outStore, outCat) = out_store_cat
           _ <- internal
             .OMLResolver2Ontology
@@ -708,7 +746,7 @@ object OMLConverter {
 
     implicit val sqlContext: SQLContext = spark.sqlContext
 
-    System.out.println(s"conversion=$conversion")
+    System.out.println(s"conversion=$conversion (exclude oml contents=${options.excludeOMLContent}, exclude oml imports=${options.excludeOMLImports}, exclude purl imports=${options.excludePurlImports})")
     System.out.println(s"# => ${omlCatalogScope.omlFiles.size} OML files to convert...")
 
     conversion.convert(omlCatalogScope, outCatalogPath, options) match {

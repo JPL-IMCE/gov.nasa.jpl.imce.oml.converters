@@ -13,7 +13,7 @@ import gov.nasa.jpl.omf.scala.core.OMFError
 import org.apache.spark.sql.{SQLContext, SparkSession}
 
 import scala.collection.immutable.{Seq, Set}
-import scala.{None, Option, Some, StringContext, Unit}
+import scala.{Boolean, None, Option, Some, StringContext, Unit}
 import scala.Predef.ArrowAssoc
 import scalaz._
 import Scalaz._
@@ -47,7 +47,10 @@ object ConversionCommandFromOMLMerge {
   def merge
   (m: ConversionCommand.MergeCatalogs,
    options: OMLConverter.Options,
-   outCatalog: Path)
+   outCatalog: Path,
+   excludeOMLImports: Boolean,
+   excludeOMLContent: Boolean,
+   excludePurlImports: Boolean)
   (implicit spark: SparkSession, sqlContext: SQLContext)
   : OMFError.Throwables \/ (CatalogScope, Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])
   = {
@@ -62,7 +65,10 @@ object ConversionCommandFromOMLMerge {
     props.setProperty("enablePacketDebug", "true")
 
     for {
-      out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
+      out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog,
+        excludeOMLImports=excludeOMLImports,
+        excludeOMLContent=excludeOMLContent,
+        excludePurlImports=excludePurlImports)
       (outStore, outCat) = out_store_cat
 
       omlTDS <- m.folders.foldLeft[OMFError.Throwables \/ Seq[(Path, OMLSpecificationTypedDatasets)]] {
