@@ -91,61 +91,61 @@ package object internal {
   }
 
   protected[converters] def makeOutputDirectoryAndCopyCatalogIfNoOutputCatalog(
-      deleteIfExists: Boolean,
-      outDir: Option[Path],
-      inCatalog: Path,
-      outCatalog: Option[Path])
+                                                                                deleteIfExists: Boolean,
+                                                                                outDir: Option[Path],
+                                                                                inCatalog: Path,
+                                                                                outCatalog: Option[Path])
   : OMFError.Throwables \/ Option[Path]
   = nonFatalCatch[OMFError.Throwables \/ Option[Path]]
-      .withApply { (t: java.lang.Throwable) =>
-        -\/(Set(t))
-      }
-      .apply {
-        (outDir, outCatalog) match {
-          case (Some(dir), None) =>
-            if (dir.toIO.exists) {
-              if (deleteIfExists) {
-                rm(dir)
-                mkdir(dir)
-                val outCat = dir / inCatalog.segments.last
-                cp(inCatalog, outCat)
-                \/-(Some(outCat))
-              } else
-                -\/(
-                  Set[java.lang.Throwable](new IllegalArgumentException(
-                    s"Output directory already exists: $dir")))
-            } else {
+    .withApply { (t: java.lang.Throwable) =>
+      -\/(Set(t))
+    }
+    .apply {
+      (outDir, outCatalog) match {
+        case (Some(dir), None) =>
+          if (dir.toIO.exists) {
+            if (deleteIfExists) {
+              rm(dir)
               mkdir(dir)
               val outCat = dir / inCatalog.segments.last
               cp(inCatalog, outCat)
               \/-(Some(outCat))
-            }
-
-          case (None, Some(outCat)) =>
-            val tmp = Path(File.createTempFile("omlConverter", "xml"))
-            rm(tmp)
-            cp(outCat, tmp)
-            val dir = outCat / up
-            rm(dir)
+            } else
+              -\/(
+                Set[java.lang.Throwable](new IllegalArgumentException(
+                  s"Output directory already exists: $dir")))
+          } else {
             mkdir(dir)
-            cp(tmp, outCat)
-            rm(tmp)
+            val outCat = dir / inCatalog.segments.last
+            cp(inCatalog, outCat)
             \/-(Some(outCat))
+          }
 
-          case (Some(dir), Some(outCat)) =>
-            -\/(Set[java.lang.Throwable](new IllegalArgumentException(
-              s"Output is ambiguous: --output $dir and --output:catalog $outCat")))
+        case (None, Some(outCat)) =>
+          val tmp = Path(File.createTempFile("omlConverter", "xml"))
+          rm(tmp)
+          cp(outCat, tmp)
+          val dir = outCat / up
+          rm(dir)
+          mkdir(dir)
+          cp(tmp, outCat)
+          rm(tmp)
+          \/-(Some(outCat))
 
-          case (None, None) =>
-            \/-(None)
+        case (Some(dir), Some(outCat)) =>
+          -\/(Set[java.lang.Throwable](new IllegalArgumentException(
+            s"Output is ambiguous: --output $dir and --output:catalog $outCat")))
 
-        }
+        case (None, None) =>
+          \/-(None)
+
       }
+    }
 
   protected[converters] def makeOutputCatalogIfNeeded(
-      deleteIfExists: Boolean,
-      outDir: Option[Path],
-      outCatalog: Option[Path]): OMFError.Throwables \/ Path =
+                                                       deleteIfExists: Boolean,
+                                                       outDir: Option[Path],
+                                                       outCatalog: Option[Path]): OMFError.Throwables \/ Path =
     nonFatalCatch[OMFError.Throwables \/ Path]
       .withApply { (t: java.lang.Throwable) =>
         -\/(Set(t))
@@ -211,7 +211,10 @@ package object internal {
         tuple <- extents_iri2tables
         (extents, iri2tables) = tuple
 
-        out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog)
+        out_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(outCatalog,
+          excludeOMLImports = options.excludeOMLImports,
+          excludeOMLContent = options.excludeOMLContent,
+          excludePurlImports = options.excludePurlImports)
         (outStore, outCat) = out_store_cat
         result <- outputConversions(extents, iri2tables, outStore, outCat, outCatalog, options, props)
       } yield result
@@ -313,8 +316,8 @@ package object internal {
   }
 
   protected[converters] def toText(
-      outCatalog: Path,
-      extents: Seq[resolver.api.Extent]): EMFProblems \/ Unit =
+                                    outCatalog: Path,
+                                    extents: Seq[resolver.api.Extent]): EMFProblems \/ Unit =
     for {
       rs_cm_cat <- OMLResourceSet.initializeResourceSetWithCatalog(outCatalog)
       (rs, _, outCat) = rs_cm_cat
@@ -358,12 +361,12 @@ package object internal {
     } yield ()
 
   protected[converters] def toParquet(
-      conversions: ConversionCommand.OutputConversions,
-      outCat: CatalogScope,
-      folder: Path,
-      ts: Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])(
-      implicit spark: SparkSession,
-      sqlContext: SQLContext): Unit = {
+                                       conversions: ConversionCommand.OutputConversions,
+                                       outCat: CatalogScope,
+                                       folder: Path,
+                                       ts: Seq[(tables.taggedTypes.IRI, OMLSpecificationTables)])(
+                                       implicit spark: SparkSession,
+                                       sqlContext: SQLContext): Unit = {
     if (conversions.toParquetAggregate) {
       val omlTables =
         ts.map(_._2).reduceLeft(OMLSpecificationTables.mergeTables)
@@ -394,9 +397,9 @@ package object internal {
   }
 
   protected[converters] def resolveOutputCatalogFileWithExtension(
-      outCat: CatalogScope,
-      iri: tables.taggedTypes.IRI,
-      extension: String): OMFError.Throwables \/ Path =
+                                                                   outCat: CatalogScope,
+                                                                   iri: tables.taggedTypes.IRI,
+                                                                   extension: String): OMFError.Throwables \/ Path =
     nonFatalCatch[OMFError.Throwables \/ Path]
       .withApply { t =>
         -\/(Set[java.lang.Throwable](t))
@@ -414,8 +417,8 @@ package object internal {
       }
 
   protected[converters] def writeModuleIRIs(
-      iris: Seq[tables.taggedTypes.IRI],
-      file: Path): OMFError.Throwables \/ Unit =
+                                             iris: Seq[tables.taggedTypes.IRI],
+                                             file: Path): OMFError.Throwables \/ Unit =
     nonFatalCatch[OMFError.Throwables \/ Unit]
       .withApply(t => -\/(Set[java.lang.Throwable](t)))
       .apply {
@@ -431,8 +434,8 @@ package object internal {
       }
 
   protected[converters] def tdbUpload(
-      catalog: Path,
-      fuseki_dataset: URL): OMFError.Throwables \/ Unit = {
+                                       catalog: Path,
+                                       fuseki_dataset: URL): OMFError.Throwables \/ Unit = {
     implicit val here: Path = pwd
     import io.circe.optics.JsonPath._
 
@@ -478,8 +481,8 @@ package object internal {
   }
 
   protected[converters] def tdbSeqUpload(dsData: String)(
-      acc: OMFError.Throwables \/ Unit,
-      iri2path: (tables.taggedTypes.IRI, Path)): OMFError.Throwables \/ Unit =
+    acc: OMFError.Throwables \/ Unit,
+    iri2path: (tables.taggedTypes.IRI, Path)): OMFError.Throwables \/ Unit =
     nonFatalCatch[OMFError.Throwables \/ Unit]
       .withApply(t => -\/(Set[java.lang.Throwable](t)))
       .apply {
@@ -490,10 +493,10 @@ package object internal {
           _ = System.out.println(
             s"# s-put -v $dsData ${iri.toString} ${omlFile.toString()}")
           res = %%("s-put",
-                   "-v",
-                   dsData,
-                   iri.toString,
-                   omlFile.toString())
+            "-v",
+            dsData,
+            iri.toString,
+            omlFile.toString())
           _ <- if (0 == res.exitCode)
             \/-(())
           else
@@ -501,18 +504,18 @@ package object internal {
               Set[java.lang.Throwable](
                 new java.io.IOException(
                   s"""Error in command:
-                 |
-                 |s-put $dsData $iri $omlFile
-                 |
-                 |$res
+                     |
+                     |s-put $dsData $iri $omlFile
+                     |
+                     |$res
                """.stripMargin
                 )))
         } yield ()
       }
 
   protected[converters] def tdbComboUpload(
-      acc1: OMFError.Throwables \/ Unit,
-      acc2: OMFError.Throwables \/ Unit): OMFError.Throwables \/ Unit =
+                                            acc1: OMFError.Throwables \/ Unit,
+                                            acc2: OMFError.Throwables \/ Unit): OMFError.Throwables \/ Unit =
     (acc1, acc2) match {
       case (\/-(_), \/-(_)) =>
         \/-(())

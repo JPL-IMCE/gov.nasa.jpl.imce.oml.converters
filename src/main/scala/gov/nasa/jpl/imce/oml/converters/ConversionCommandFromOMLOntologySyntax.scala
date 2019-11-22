@@ -71,7 +71,10 @@ case object ConversionCommandFromOMLOntologySyntax extends ConversionCommand {
     }
 
     val tuple = for {
-      in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile)
+      in_store_cat <- ConversionCommand.createOMFStoreAndLoadCatalog(omlCatalogScope.omlCatalogFile,
+        excludeOMLImports = options.excludeOMLImports,
+        excludeOMLContent = options.excludeOMLContent,
+        excludePurlImports = options.excludePurlImports)
       (inStore, inCat) = in_store_cat
 
       drc <- inStore.loadBuiltinDatatypeMap()

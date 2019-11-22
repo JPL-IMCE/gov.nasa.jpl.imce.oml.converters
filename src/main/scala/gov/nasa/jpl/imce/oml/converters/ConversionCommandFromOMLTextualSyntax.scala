@@ -69,7 +69,6 @@ case object ConversionCommandFromOMLTextualSyntax extends ConversionCommand {
         in_rs_cm_cat <- OMLResourceSet.initializeResourceSetWithCatalog(omlCatalogScope.omlCatalogFile)
         (in_rs, in_cm, in_cat) = in_rs_cm_cat
 
-
         omlFileScope = omlCatalogScope.omlFiles.values.to[Iterable]
 
         beforeLoad = System.currentTimeMillis()
