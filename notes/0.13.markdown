@@ -7,3 +7,5 @@ gov.nasa.jpl.imce.oml.converters 0.13.x is a significant update of 0.12.x
 ## [#85 Enabling conversion from json to owl where multiple modules are involved.](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/85)
 
 ## [#87 Update for options to exclude OML & purl.org](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/87)
+
+## [#89 Update for OMLZip handling of entity scalar data properties](https://github.com/JPL-IMCE/gov.nasa.jpl.imce.oml.converters/issues/89)
